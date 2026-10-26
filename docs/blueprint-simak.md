@@ -174,7 +174,7 @@ lalu menerbitkan sesi SIMAK sendiri. Kata sandi tidak pernah disimpan di SIMAK.
 | Frontend | Next.js + TypeScript | Satu framework untuk halaman guru yang kaya editor dan halaman murid yang ringan; rendering server membantu HP berdaya rendah |
 | Basis data | MariaDB + Drizzle ORM | Diputuskan pemilik dan sudah dipakai di proyek-proyeknya; Drizzle memberi skema TypeScript yang menjadi sumber kebenaran tunggal dan migrasi yang terkontrol |
 | Penyimpanan berkas | RustFS | S3-compatible, self-hosted, cocok untuk foto pekerjaan murid dan lampiran materi tanpa biaya per berkas; diakses lewat presigned URL |
-| Pengemasan | Docker + npm | Seluruh sistem naik dengan satu docker compose; npm workspaces mengelola monorepo sesuai permintaan, sementara Bun dipakai sebagai runtime aplikasi |
+| Pengemasan | Docker + npm | Layanan aplikasi naik dengan satu docker compose dan memakai MariaDB eksternal melalui network Docker bersama; npm workspaces mengelola monorepo, sementara Bun dipakai sebagai runtime aplikasi |
 
 Catatan soal npm dan Bun: keduanya dipakai dengan peran yang tegas agar tidak berebut. npm adalah pengelola paket dan workspace monorepo; Bun adalah runtime yang menjalankan API (dan skrip pengembangan). Jangan mencampur pengelola paket lain ke dalam repositori yang sama.
 
@@ -278,7 +278,7 @@ Aturan berkas: unggahan selalu lewat presigned URL dari API (klien tidak pernah 
 | --- | --- | --- |
 | `web` | Build dari `apps/web` (Next.js) | Antarmuka guru dan murid |
 | `api` | Build dari `apps/api` (Bun + Hono) | REST API, ekspor laporan, presign RustFS |
-| `db` | `mariadb:11.4` (rilis LTS) | Volume persisten; migrasi Drizzle dijalankan saat api start |
+| `mariadb` | Container MariaDB RUAS pada network `ferileenet` | Dikelola Compose terpisah; database SIMAK harus dibuat terpisah dari database RUAS dan migrasinya dijalankan melalui Drizzle |
 | `storage` | `rustfs` (S3-compatible) | Volume persisten; konsol admin tidak diekspos ke publik |
 | `proxy` | Caddy atau Nginx | HTTPS dan pemetaan domain: web di domain utama, API di `/api` atau subdomain api |
 
@@ -304,7 +304,8 @@ simak/
 ### Variabel lingkungan minimum (`.env.example`, tanpa nilai rahasia)
 
 ```text
-DATABASE_URL=            koneksi MariaDB SIMAK (dipakai Drizzle dan API)
+SIMAK_DATABASE_URL=      koneksi MariaDB SIMAK dari container API (`mariadb:3306`)
+DATABASE_URL=            koneksi MariaDB SIMAK dari host untuk Drizzle dan seed
 RUAS_AUTH_MODE=          shared-db | internal-endpoint (ditetapkan di Tahap 0)
 RUAS_DATABASE_URL=       diisi bila RUAS_AUTH_MODE=shared-db; akses baca saja
 RUAS_AUTH_ENDPOINT=      diisi bila RUAS_AUTH_MODE=internal-endpoint
@@ -351,7 +352,7 @@ Estimasi di bawah ini adalah estimasi kasar untuk pengerjaan paruh waktu oleh sa
 
 | Tahap | Hasil tahap | Estimasi |
 | --- | --- | --- |
-| 0. Fondasi | Monorepo, docker compose (web, api, MariaDB, RustFS, proxy), skema Drizzle + migrasi, verifikasi mekanisme autentikasi RUAS dan login bersama, CRUD kelas dan penyusunan anggota dari username RUAS | Estimasi 3–5 hari kerja |
+| 0. Fondasi | Monorepo, docker compose aplikasi (web, api, RustFS, proxy) dengan MariaDB eksternal, skema Drizzle + migrasi, verifikasi mekanisme autentikasi RUAS dan login bersama, CRUD kelas dan penyusunan anggota dari username RUAS | Estimasi 3–5 hari kerja |
 | 1. Materi | Editor blok modul, unggah RustFS via presigned URL, terbit / arsip, halaman baca murid yang ringan | Estimasi 4–6 hari kerja |
 | 2. LKPD | Editor butir LKPD untuk 7 jenis blok, halaman kerja murid dengan autosave draf, penilaian otomatis blok objektif | Estimasi 6–9 hari kerja |
 | 3. Penugasan dan penilaian | Penugasan ke kelas + jadwal + tautan RUAS, pengumpulan dan tanda terlambat, layar penilaian guru, exit ticket 3-2-1 | Estimasi 4–6 hari kerja |
@@ -368,7 +369,7 @@ Total estimasi MVP: **21–32 hari kerja paruh waktu.** Angka ini mengasumsikan 
 - [ ] Nilai otomatis blok objektif benar pada kasus uji, termasuk format angka beribuan.
 - [ ] Penugasan memuat tombol kuis RUAS dan kliknya tercatat di activity log.
 - [ ] Rekap satu sesi bisa diekspor ke PDF dan Excel dan angkanya cocok dengan data pengumpulan.
-- [ ] Seluruh sistem naik dari nol dengan satu perintah docker compose di server bersih, mengikuti README.
+- [ ] Layanan aplikasi naik dari nol dengan satu perintah docker compose setelah MariaDB eksternal dan network `ferileenet` tersedia, mengikuti README.
 
 ---
 

@@ -7,6 +7,8 @@ services:
       - NODE_ENV=production
     depends_on:
       - api
+    networks:
+      - simak
     restart: unless-stopped
 
   api:
@@ -14,7 +16,7 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     environment:
-      - DATABASE_URL=mysql://${MARIADB_USER:-simak}:${MARIADB_PASSWORD:-simak}@db:3306/${MARIADB_DATABASE:-simak}
+      - DATABASE_URL=${SIMAK_DATABASE_URL:?SIMAK_DATABASE_URL wajib diisi; gunakan hostname mariadb pada network ferileenet}
       - RUAS_AUTH_MODE=${RUAS_AUTH_MODE:-internal-endpoint}
       - RUAS_DATABASE_URL=${RUAS_DATABASE_URL:-}
       - RUAS_AUTH_ENDPOINT=${RUAS_AUTH_ENDPOINT:-}
@@ -26,29 +28,11 @@ services:
       - RUSTFS_SECRET_KEY=${RUSTFS_SECRET_KEY:-rustfsadmin}
       - API_PORT=3001
     depends_on:
-      db:
-        condition: service_healthy
       storage:
         condition: service_started
-    restart: unless-stopped
-
-  db:
-    image: mariadb:11.4
-    environment:
-      - MARIADB_DATABASE=${MARIADB_DATABASE:-simak}
-      - MARIADB_USER=${MARIADB_USER:-simak}
-      - MARIADB_PASSWORD=${MARIADB_PASSWORD:-simak}
-      - MARIADB_ROOT_PASSWORD=${MARIADB_ROOT_PASSWORD:-rootsecret}
-    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
-    ports:
-      - "127.0.0.1:3309:3306"
-    volumes:
-      - db_data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
+    networks:
+      - simak
+      - ferileenet
     restart: unless-stopped
 
   storage:
@@ -61,6 +45,8 @@ services:
     ports:
       - "127.0.0.1:9013:9000"
       - "127.0.0.1:9014:9001"
+    networks:
+      - simak
     restart: unless-stopped
 
   proxy:
@@ -77,10 +63,17 @@ services:
     depends_on:
       - web
       - api
+    networks:
+      - simak
     restart: unless-stopped
 
 volumes:
-  db_data:
   rustfs_data:
   caddy_data:
   caddy_config:
+
+networks:
+  simak:
+    driver: bridge
+  ferileenet:
+    external: true

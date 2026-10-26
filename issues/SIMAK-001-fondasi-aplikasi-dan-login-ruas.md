@@ -29,7 +29,8 @@ yang dapat dipakai.
 ## Acceptance criteria
 
 - [x] `docker compose` memiliki konfigurasi layanan inti yang dibutuhkan untuk
-      pengembangan, termasuk web, API, MariaDB, dan RustFS.
+      pengembangan, termasuk web, API, RustFS, dan koneksi ke MariaDB eksternal
+      pada network `ferileenet`.
 - [x] Mekanisme `RUAS_AUTH_MODE=internal-endpoint` dipilih berdasarkan pemeriksaan
       implementasi RUAS dan dicatat di dokumentasi.
 - [x] Migrasi database pertama telah dihasilkan dari schema Drizzle.

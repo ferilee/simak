@@ -23,6 +23,7 @@ services:
       - SESSION_SECRET=${SESSION_SECRET:?SESSION_SECRET wajib diisi; salin .env.example ke .env}
       - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost}
       - RUSTFS_ENDPOINT=${SIMAK_RUSTFS_ENDPOINT:-http://rustfs:9000}
+      - RUSTFS_PUBLIC_ENDPOINT=${RUSTFS_PUBLIC_ENDPOINT:-}
       - RUSTFS_BUCKET=${RUSTFS_BUCKET:-simak}
       - RUSTFS_ACCESS_KEY=${RUSTFS_ACCESS_KEY:-rustfsadmin}
       - RUSTFS_SECRET_KEY=${RUSTFS_SECRET_KEY:-rustfsadmin}

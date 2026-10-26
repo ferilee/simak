@@ -126,4 +126,11 @@ export const joinClassSchema = z.object({
   joinCode: z.string().trim().min(1).max(12),
 });
 
+export const presignUploadSchema = z.object({
+  moduleId: z.number().int().positive(),
+  filename: z.string().trim().min(1).max(255),
+  contentType: z.enum(["image/jpeg", "image/png", "image/webp", "application/pdf"]),
+  size: z.number().int().positive().max(10 * 1024 * 1024),
+});
+
 export const moduleBlockTypeSchema = z.enum(MODULE_BLOCK_TYPES);

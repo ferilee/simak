@@ -24,6 +24,7 @@ export default function GuruPage() {
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
   const [blockHtml, setBlockHtml] = useState("");
+  const [attachment, setAttachment] = useState<File | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -106,6 +107,50 @@ export default function GuruPage() {
     }
   }
 
+  async function addAttachmentBlock(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedId || !attachment) return;
+    setMessage("");
+    try {
+      if (attachment.size > 10 * 1024 * 1024) throw new Error("Ukuran lampiran maksimal 10 MB.");
+      const presign = await apiRequest<{
+        ok: true;
+        data: { upload_url: string; attachment_key: string; content_type: string };
+      }>("/uploads/presign", {
+        method: "POST",
+        body: JSON.stringify({
+          moduleId: selectedId,
+          filename: attachment.name,
+          contentType: attachment.type,
+          size: attachment.size,
+        }),
+      });
+      const upload = await fetch(presign.data.upload_url, {
+        method: "PUT",
+        headers: { "Content-Type": presign.data.content_type },
+        body: attachment,
+      });
+      if (!upload.ok) throw new Error("Lampiran gagal diunggah ke penyimpanan.");
+
+      const isImage = attachment.type.startsWith("image/");
+      await apiRequest(`/modules/${selectedId}/blocks`, {
+        method: "POST",
+        body: JSON.stringify({
+          content: isImage
+            ? { type: "gambar", attachmentKey: presign.data.attachment_key, caption: attachment.name }
+            : { type: "berkas", attachmentKey: presign.data.attachment_key, label: attachment.name },
+          attachmentKey: presign.data.attachment_key,
+          sortOrder: 0,
+        }),
+      });
+      setAttachment(null);
+      event.currentTarget.reset();
+      setMessage("Lampiran ditambahkan.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Lampiran belum dapat ditambahkan.");
+    }
+  }
+
   if (loading) return <main style={styles.container}><p>Memuat ruang guru...</p></main>;
 
   return (
@@ -163,6 +208,18 @@ export default function GuruPage() {
               style={styles.textarea}
             />
             <button type="submit" style={styles.primaryButton}>Tambahkan blok</button>
+          </form>
+          <h2 style={styles.sectionTitle}>Tambah lampiran</h2>
+          <form onSubmit={addAttachmentBlock} style={styles.form}>
+            <input
+              required
+              type="file"
+              accept="image/jpeg,image/png,image/webp,application/pdf"
+              onChange={(event) => setAttachment(event.target.files?.[0] ?? null)}
+              style={styles.input}
+            />
+            <small style={styles.muted}>JPG, PNG, WebP, atau PDF. Maksimal 10 MB.</small>
+            <button type="submit" style={styles.primaryButton}>Unggah lampiran</button>
           </form>
         </section>
       ) : null}

@@ -8,6 +8,10 @@ const envSchema = z.object({
   RUAS_AUTH_ENDPOINT: z.string().optional(),
   SESSION_SECRET: z.string().min(16),
   RUSTFS_ENDPOINT: z.string().url(),
+  RUSTFS_PUBLIC_ENDPOINT: z.preprocess(
+    (value) => value === "" ? undefined : value,
+    z.string().url().optional(),
+  ),
   RUSTFS_BUCKET: z.string().default("simak"),
   RUSTFS_ACCESS_KEY: z.string().min(1),
   RUSTFS_SECRET_KEY: z.string().min(1),

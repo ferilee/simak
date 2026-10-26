@@ -49,13 +49,13 @@ export default function ModulePage() {
       <h1 style={styles.title}>{data.module.title}</h1>
       {data.module.description ? <p style={styles.description}>{data.module.description}</p> : null}
       <article style={styles.content}>
-        {data.blocks.map((block) => <ModuleBlock key={block.id} block={block} />)}
+        {data.blocks.map((block) => <ModuleBlock key={block.id} block={block} moduleId={data.module.id} />)}
       </article>
     </main>
   );
 }
 
-function ModuleBlock({ block }: { block: Block }) {
+function ModuleBlock({ block, moduleId }: { block: Block; moduleId: number }) {
   if (block.type === "sub_bab") {
     return <h2 style={styles.subheading}>{String(block.content.title ?? "Sub-bab")}</h2>;
   }
@@ -66,9 +66,37 @@ function ModuleBlock({ block }: { block: Block }) {
     return <p style={styles.notice}>Video tersedia melalui tautan pembelajaran.</p>;
   }
   if (block.type === "gambar" || block.type === "berkas") {
-    return <p style={styles.notice}>Lampiran akan tersedia setelah penyimpanan berkas Tahap 1 selesai.</p>;
+    return <AttachmentBlock block={block} moduleId={moduleId} />;
   }
   return null;
+}
+
+function AttachmentBlock({ block, moduleId }: { block: Block; moduleId: number }) {
+  const contentKey = typeof block.content.attachmentKey === "string" ? block.content.attachmentKey : null;
+  const key = block.attachment_key ?? contentKey;
+  const [url, setUrl] = useState<string | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!key) return;
+    void apiRequest<{ ok: true; data: { download_url: string } }>(
+      `/uploads/download?moduleId=${moduleId}&key=${encodeURIComponent(key)}`,
+    )
+      .then((response) => setUrl(response.data.download_url))
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Lampiran belum dapat dibuka."));
+  }, [key, moduleId]);
+
+  if (error) return <p style={styles.notice}>{error}</p>;
+  if (!url) return <p style={styles.notice}>Memuat lampiran...</p>;
+  if (block.type === "gambar") {
+    return (
+      <figure style={styles.figure}>
+        <img src={url} alt={String(block.content.caption ?? "Lampiran materi")} style={styles.image} />
+        {block.content.caption ? <figcaption>{String(block.content.caption)}</figcaption> : null}
+      </figure>
+    );
+  }
+  return <a href={url} target="_blank" rel="noreferrer" style={styles.fileLink}>Buka {String(block.content.label ?? "lampiran")} →</a>;
 }
 
 function renderSafeHtml(html: string) {
@@ -91,5 +119,8 @@ const styles = {
   subheading: { fontSize: 24, margin: "24px 0 0", borderTop: "1px solid #eaecf0", paddingTop: 20 },
   textBlock: { color: "#344054" },
   notice: { color: "#667085", background: "#f8f9fc", padding: 12, borderRadius: 8 },
+  figure: { margin: 0, display: "grid", gap: 8 },
+  image: { maxWidth: "100%", borderRadius: 10 },
+  fileLink: { color: "#175cd3", fontWeight: 700 },
   error: { color: "#b42318", background: "#fef3f2", padding: 12, borderRadius: 8 },
 };

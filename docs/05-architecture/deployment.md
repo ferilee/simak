@@ -21,6 +21,7 @@ Variabel wajib untuk Compose SIMAK:
 ```env
 SIMAK_DATABASE_URL=mysql://simak:<password>@mariadb:3306/simak
 SIMAK_RUSTFS_ENDPOINT=http://rustfs:9000
+RUSTFS_PUBLIC_ENDPOINT=https://storage.example.com
 ```
 
 Hostname `mariadb` hanya berlaku dari container yang ikut `ferileenet`. Untuk
@@ -31,6 +32,8 @@ Jika `ferileenet` dipakai bersama aplikasi lain, pastikan alias `mariadb` dan
 `rustfs` menunjuk container infrastruktur SIMAK/RUAS yang benar. Alias khusus
 dapat dipakai dengan mengatur `SIMAK_DATABASE_URL` dan
 `SIMAK_RUSTFS_ENDPOINT`.
+`RUSTFS_PUBLIC_ENDPOINT` harus menunjuk endpoint S3 yang dapat dijangkau
+browser karena URL unggah presigned dikirim langsung ke browser.
 
 Proxy SIMAK mempublikasikan HTTP pada port `8080` dan HTTPS pada port `8443`
 secara default. Nilai tersebut dapat diubah dengan `SIMAK_HTTP_PORT` dan

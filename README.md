@@ -90,6 +90,9 @@ RustFS juga harus tersedia pada network yang sama. Nilai endpoint dari dalam
 container API adalah `http://rustfs:9000`. Jika `ferileenet` dipakai banyak
 aplikasi dan hostname `rustfs` sudah dipakai container lain, tambahkan alias
 khusus pada Compose RustFS lalu isi `SIMAK_RUSTFS_ENDPOINT` dengan alias itu.
+Untuk unggahan langsung dari browser, isi `RUSTFS_PUBLIC_ENDPOINT` dengan
+endpoint S3 RustFS yang dapat dijangkau browser. Pada development terisolasi,
+`.env.dev.example` sudah memakai `http://localhost:9019`.
 
 ## Menjalankan seluruh sistem dengan Docker
 

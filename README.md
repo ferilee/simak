@@ -21,7 +21,7 @@ mudah dipakai saat implementasi.
 | Basis data | MariaDB via Drizzle ORM mode MySQL (`packages/db`) |
 | Berkas | RustFS (S3-compatible), bucket `simak`, lewat presigned URL |
 | Paket | npm workspaces (monorepo) — npm mengelola paket, Bun menjalankan aplikasi |
-| Pengemasan | Docker Compose: `web`, `api`, `storage`, `proxy` (Caddy); MariaDB memakai layanan eksternal |
+| Pengemasan | Docker Compose: `web`, `api`, `proxy` (Caddy); MariaDB dan RustFS memakai layanan eksternal |
 
 ## Mulai cepat (pengembangan lokal)
 
@@ -33,8 +33,7 @@ cp .env.example .env        # lalu sesuaikan nilainya
 # isi RUAS_AUTH_ENDPOINT dengan URL lengkap endpoint login RUAS, misalnya http://localhost:3000/api/auth
 # pastikan database SIMAK tersedia pada container MariaDB di network ferileenet
 
-# Nyalakan storage SIMAK; MariaDB dikelola oleh Compose RUAS yang sudah ada:
-docker compose up -d storage
+# MariaDB dan RustFS dikelola oleh Compose infrastruktur yang sudah ada.
 
 npm run db:generate         # hasilkan migrasi dari skema Drizzle
 npm run db:migrate          # terapkan migrasi ke MariaDB
@@ -46,10 +45,10 @@ npm run dev:web             # Web di http://localhost:3000
 
 ## Menyiapkan MariaDB eksternal
 
-Compose SIMAK tidak membuat container MariaDB. API mengakses container yang
-sudah ada dengan hostname `mariadb` melalui network Docker eksternal
-`ferileenet`. Gunakan database terpisah dari database RUAS agar tabel `users`
-SIMAK tidak bercampur dengan tabel RUAS.
+Compose SIMAK tidak membuat container MariaDB atau RustFS. API mengakses
+container yang sudah ada dengan hostname `mariadb` dan `rustfs` melalui network
+Docker eksternal `ferileenet`. Gunakan database terpisah dari database RUAS agar
+tabel `users` SIMAK tidak bercampur dengan tabel RUAS.
 
 Buat database dan user SIMAK satu kali menggunakan kredensial root MariaDB,
 lalu isi `SIMAK_DATABASE_URL` di `.env`:
@@ -74,6 +73,9 @@ Network `ferileenet` harus sudah dibuat oleh Compose RUAS sebelum SIMAK
 dijalankan. Jika network belum ada, buat dengan `docker network create
 ferileenet` atau jalankan Compose RUAS terlebih dahulu.
 
+RustFS juga harus tersedia pada network yang sama. Nilai endpoint dari dalam
+container API adalah `http://rustfs:9000`.
+
 ## Menjalankan seluruh sistem dengan Docker
 
 ```bash
@@ -81,9 +83,8 @@ cp .env.example .env        # sesuaikan SESSION_SECRET dan kata sandi basis data
 docker compose up -d --build
 ```
 
-Layanan: `web` (Next.js), `api` (Hono di Bun), `storage` (RustFS; konsol admin
-hanya dari localhost:9014), `proxy` (Caddy). MariaDB tetap dikelola oleh
-Compose RUAS.
+Layanan: `web` (Next.js), `api` (Hono di Bun), dan `proxy` (Caddy). MariaDB
+dan RustFS dikelola oleh Compose infrastruktur terpisah.
 
 ## Struktur
 
@@ -108,8 +109,8 @@ simak/
 
 ## Checklist Tahap 0 — Fondasi (pekerjaan pertama)
 
-- [ ] `docker compose up` menaikkan empat layanan SIMAK dari nol setelah
-      MariaDB eksternal dan network `ferileenet` tersedia.
+- [ ] `docker compose up` menaikkan tiga layanan SIMAK dari nol setelah
+      MariaDB, RustFS, dan network `ferileenet` tersedia.
 - [x] Migrasi Drizzle pertama terbentuk dari skema di `packages/db` dan teraplikasi bersih.
 - [x] **Buktikan mekanisme akun RUAS**: kode RUAS menyediakan `POST /api/auth`,
       sehingga MVP memakai `RUAS_AUTH_MODE=internal-endpoint`.

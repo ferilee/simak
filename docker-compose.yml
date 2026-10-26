@@ -22,31 +22,14 @@ services:
       - RUAS_AUTH_ENDPOINT=${RUAS_AUTH_ENDPOINT:-}
       - SESSION_SECRET=${SESSION_SECRET:?SESSION_SECRET wajib diisi; salin .env.example ke .env}
       - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost}
-      - RUSTFS_ENDPOINT=http://storage:9000
+      - RUSTFS_ENDPOINT=http://rustfs:9000
       - RUSTFS_BUCKET=${RUSTFS_BUCKET:-simak}
       - RUSTFS_ACCESS_KEY=${RUSTFS_ACCESS_KEY:-rustfsadmin}
       - RUSTFS_SECRET_KEY=${RUSTFS_SECRET_KEY:-rustfsadmin}
       - API_PORT=3001
-    depends_on:
-      storage:
-        condition: service_started
     networks:
       - simak
       - ferileenet
-    restart: unless-stopped
-
-  storage:
-    image: rustfs/rustfs:latest
-    environment:
-      - RUSTFS_ACCESS_KEY=${RUSTFS_ACCESS_KEY:-rustfsadmin}
-      - RUSTFS_SECRET_KEY=${RUSTFS_SECRET_KEY:-rustfsadmin}
-    volumes:
-      - rustfs_data:/data
-    ports:
-      - "127.0.0.1:9013:9000"
-      - "127.0.0.1:9014:9001"
-    networks:
-      - simak
     restart: unless-stopped
 
   proxy:
@@ -68,7 +51,6 @@ services:
     restart: unless-stopped
 
 volumes:
-  rustfs_data:
   caddy_data:
   caddy_config:
 

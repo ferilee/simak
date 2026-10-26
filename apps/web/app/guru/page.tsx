@@ -110,6 +110,7 @@ export default function GuruPage() {
   async function addAttachmentBlock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedId || !attachment) return;
+    const form = event.currentTarget;
     setMessage("");
     try {
       if (attachment.size > 10 * 1024 * 1024) throw new Error("Ukuran lampiran maksimal 10 MB.");
@@ -144,7 +145,7 @@ export default function GuruPage() {
         }),
       });
       setAttachment(null);
-      event.currentTarget.reset();
+      form.reset();
       setMessage("Lampiran ditambahkan.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Lampiran belum dapat ditambahkan.");

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ACTIVITY_EVENTS, ROLES } from "./block-types";
+import { ACTIVITY_EVENTS, CONTENT_STATUS, MODULE_BLOCK_TYPES, ROLES } from "./block-types";
 
 // ---------- Autentikasi ----------
 // Kata sandi hanya diteruskan untuk diverifikasi ke sumber akun RUAS.
@@ -103,3 +103,27 @@ export const createClassSchema = z.object({
 });
 
 export const roleSchema = z.enum(ROLES);
+
+// ---------- Modul materi ----------
+
+export const createModuleSchema = z.object({
+  title: z.string().min(1).max(200),
+  subject: z.string().min(1).max(100),
+  description: z.string().max(5000).optional(),
+});
+
+export const updateModuleSchema = createModuleSchema.partial().extend({
+  status: z.enum(CONTENT_STATUS).optional(),
+});
+
+export const createModuleBlockSchema = z.object({
+  sortOrder: z.number().int().min(0).optional(),
+  content: moduleBlockContentSchema,
+  attachmentKey: z.string().max(512).optional(),
+});
+
+export const joinClassSchema = z.object({
+  joinCode: z.string().trim().min(1).max(12),
+});
+
+export const moduleBlockTypeSchema = z.enum(MODULE_BLOCK_TYPES);

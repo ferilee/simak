@@ -30,7 +30,8 @@ Prasyarat: Node.js + npm, Bun, dan Docker.
 ```bash
 npm install                 # dari akar repo — memasang semua workspace
 cp .env.example .env        # lalu sesuaikan nilainya
-# isi RUAS_AUTH_ENDPOINT dengan URL lengkap endpoint login RUAS, misalnya http://localhost:3000/api/auth
+# isi RUAS_AUTH_ENDPOINT dengan URL lengkap yang dapat dijangkau dari container API
+# contoh: https://ruas.smkpasirian-lmj.sch.id/api/auth
 # pastikan database SIMAK tersedia pada container MariaDB di network ferileenet
 
 # MariaDB dan RustFS dikelola oleh Compose infrastruktur yang sudah ada.

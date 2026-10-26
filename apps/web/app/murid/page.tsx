@@ -28,7 +28,7 @@ type TodayResponse = {
 
 type MeResponse = {
   ok: true;
-  user: { name: string; username: string };
+  user: { name: string; username: string; role: "guru" | "murid" };
 };
 
 export default function MuridPage() {
@@ -42,11 +42,13 @@ export default function MuridPage() {
 
   async function load() {
     try {
-      const [me, today] = await Promise.all([
-        apiRequest<MeResponse>("/auth/me"),
-        apiRequest<TodayResponse>("/murid/today"),
-      ]);
+      const me = await apiRequest<MeResponse>("/auth/me");
       setUser(me.user);
+      if (me.user.role !== "murid") {
+        setMessage("Akun ini berperan sebagai guru. Keluar dahulu lalu masuk dengan akun murid.");
+        return;
+      }
+      const today = await apiRequest<TodayResponse>("/murid/today");
       setData(today.data);
     } catch (error) {
       if (error instanceof Error && error.message === "Belum masuk.") {
@@ -57,6 +59,11 @@ export default function MuridPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function logout() {
+    await apiRequest("/auth/logout", { method: "POST" }).catch(() => undefined);
+    router.replace("/login");
   }
 
   useEffect(() => {
@@ -108,6 +115,7 @@ export default function MuridPage() {
             </button>
           </div>
         </form>
+        <button type="button" onClick={() => void logout()} style={styles.logoutButton}>Keluar</button>
       </header>
 
       {message ? <p role="alert" style={styles.error}>{message}</p> : null}
@@ -159,6 +167,7 @@ const styles = {
   joinRow: { display: "flex", gap: 8 },
   input: { border: "1px solid #d0d5dd", borderRadius: 8, padding: "10px 12px", minWidth: 0 },
   button: { border: 0, borderRadius: 8, background: "#175cd3", color: "white", padding: "10px 14px", fontWeight: 700 },
+  logoutButton: { border: "1px solid #d0d5dd", borderRadius: 8, background: "white", padding: "10px 14px", whiteSpace: "nowrap" as const },
   error: { background: "#fef3f2", color: "#b42318", borderRadius: 8, padding: 12 },
   sectionTitle: { fontSize: 20, margin: "32px 0 12px" },
   empty: { color: "#667085", background: "#f8f9fc", borderRadius: 10, padding: 16 },

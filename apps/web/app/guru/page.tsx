@@ -14,6 +14,7 @@ type ModuleSummary = {
 };
 
 type ModulesResponse = { ok: true; data: ModuleSummary[] };
+type MeResponse = { ok: true; user: { role: "guru" | "murid" } };
 
 export default function GuruPage() {
   const router = useRouter();
@@ -28,6 +29,11 @@ export default function GuruPage() {
 
   async function loadModules() {
     try {
+      const me = await apiRequest<MeResponse>("/auth/me");
+      if (me.user.role !== "guru") {
+        setMessage("Akun ini berperan sebagai murid. Keluar dahulu lalu masuk dengan akun guru.");
+        return;
+      }
       const response = await apiRequest<ModulesResponse>("/modules");
       setModules(response.data);
       setSelectedId((current) => current ?? response.data[0]?.id ?? null);
@@ -40,6 +46,11 @@ export default function GuruPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function logout() {
+    await apiRequest("/auth/logout", { method: "POST" }).catch(() => undefined);
+    router.replace("/login");
   }
 
   useEffect(() => {
@@ -99,8 +110,13 @@ export default function GuruPage() {
 
   return (
     <main style={styles.container}>
-      <p style={styles.eyebrow}>SIMAK · GURU</p>
-      <h1 style={styles.title}>Materi pembelajaran</h1>
+      <div style={styles.topline}>
+        <div>
+          <p style={styles.eyebrow}>SIMAK · GURU</p>
+          <h1 style={styles.title}>Materi pembelajaran</h1>
+        </div>
+        <button type="button" onClick={() => void logout()} style={styles.secondaryButton}>Keluar</button>
+      </div>
       <p style={styles.muted}>Buat modul, susun blok materi, lalu terbitkan untuk murid.</p>
       {message ? <p role="alert" style={styles.message}>{message}</p> : null}
 
@@ -156,6 +172,7 @@ export default function GuruPage() {
 
 const styles = {
   container: { maxWidth: 860, margin: "0 auto", padding: "32px 20px 64px" },
+  topline: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 },
   eyebrow: { color: "#475467", fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", margin: "0 0 8px" },
   title: { fontSize: 32, margin: 0 },
   muted: { color: "#667085", lineHeight: 1.5 },

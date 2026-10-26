@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, or } from "drizzle-orm";
 import { db, schema } from "@simak/db";
 import { requireRole } from "../middleware/auth";
 
@@ -25,11 +25,17 @@ muridRoutes.get("/today", async (c) => {
     .where(and(eq(classMembers.studentId, user.userId), eq(classes.isArchived, false)));
 
   const teacherIds = [...new Set(memberships.map((membership) => membership.teacherId))];
+  const subjects = [...new Set(memberships.map((membership) => membership.subject))];
   const publishedModules = teacherIds.length
     ? await db
         .select()
         .from(modules)
-        .where(and(eq(modules.status, "terbit"), inArray(modules.teacherId, teacherIds)))
+        .where(
+          and(
+            eq(modules.status, "terbit"),
+            or(inArray(modules.teacherId, teacherIds), inArray(modules.subject, subjects)),
+          ),
+        )
         .orderBy(asc(modules.updatedAt))
     : [];
 
@@ -73,8 +79,8 @@ muridRoutes.get("/modules/:id", async (c) => {
     .where(
       and(
         eq(classMembers.studentId, user.userId),
-        eq(classes.teacherId, module.teacherId),
         eq(classes.isArchived, false),
+        or(eq(classes.teacherId, module.teacherId), eq(classes.subject, module.subject)),
       ),
     )
     .limit(1);

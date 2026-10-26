@@ -1,0 +1,48 @@
+services:
+  simak-dev-mariadb:
+    image: mariadb:11.4
+    environment:
+      MARIADB_DATABASE: simak
+      MARIADB_USER: simak
+      MARIADB_PASSWORD: ${SIMAK_DEV_DB_PASSWORD:-simak-dev-password}
+      MARIADB_ROOT_PASSWORD: ${SIMAK_DEV_DB_ROOT_PASSWORD:-simak-dev-root-password}
+    ports:
+      - "${SIMAK_DEV_DB_PORT:-3319}:3306"
+    volumes:
+      - simak_dev_mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -u root -p$${MARIADB_ROOT_PASSWORD} --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      ferileenet:
+        aliases:
+          - simak-dev-mariadb
+    restart: unless-stopped
+
+  simak-dev-rustfs:
+    image: rustfs/rustfs:latest
+    command: /data
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+      RUSTFS_CONSOLE_ENABLE: "true"
+    ports:
+      - "${SIMAK_DEV_RUSTFS_PORT:-9019}:9000"
+      - "${SIMAK_DEV_RUSTFS_CONSOLE_PORT:-9020}:9001"
+    volumes:
+      - simak_dev_rustfs_data:/data
+    networks:
+      ferileenet:
+        aliases:
+          - simak-dev-rustfs
+    restart: unless-stopped
+
+volumes:
+  simak_dev_mariadb_data:
+  simak_dev_rustfs_data:
+
+networks:
+  ferileenet:
+    external: true

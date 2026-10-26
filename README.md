@@ -44,6 +44,18 @@ npm run dev:api             # API di http://localhost:3001 (cek /health)
 npm run dev:web             # Web di http://localhost:3000
 ```
 
+Untuk menjalankan seluruh stack secara terisolasi di mesin development, gunakan
+override infrastruktur lokal. Override ini membuat MariaDB dan RustFS khusus
+SIMAK dengan hostname unik, sehingga tidak bertabrakan dengan container lain
+yang memakai `ferileenet`:
+
+```bash
+cp .env.dev.example .env
+docker compose -f docker-compose.yml -f docker-compose.dev-infra.yml up -d --build
+```
+
+Port MariaDB host untuk perintah migrasi lokal adalah `3319`.
+
 ## Menyiapkan MariaDB eksternal
 
 Compose SIMAK tidak membuat container MariaDB atau RustFS. API mengakses

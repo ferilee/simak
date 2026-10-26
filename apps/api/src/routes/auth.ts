@@ -44,7 +44,12 @@ authRoutes.post("/login", zValidator("json", loginSchema), async (c) => {
   }
 
   clearLoginAttempts(attemptKey);
-  const user = await upsertSimakProfile(identity);
+  let user;
+  try {
+    user = await upsertSimakProfile(identity);
+  } catch {
+    return c.json({ ok: false, message: "Penyimpanan SIMAK sedang tidak tersedia." }, 503);
+  }
   const session = createSession(user);
   attachSessionCookie(c, session);
 

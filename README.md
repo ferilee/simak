@@ -85,6 +85,10 @@ docker compose up -d --build
 
 Layanan: `web` (Next.js), `api` (Hono di Bun), dan `proxy` (Caddy). MariaDB
 dan RustFS dikelola oleh Compose infrastruktur terpisah.
+Proxy SIMAK memakai `localhost:8080` untuk HTTP dan `localhost:8443` untuk
+HTTPS secara default agar tidak mengambil port 80/443 milik reverse proxy host.
+Dengan konfigurasi default, buka `https://simak.localhost:8443`. Atur
+`SIMAK_HTTP_PORT` dan `SIMAK_HTTPS_PORT` bila port lain diperlukan.
 
 ## Struktur
 

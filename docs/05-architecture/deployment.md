@@ -27,6 +27,10 @@ Hostname `mariadb` hanya berlaku dari container yang ikut `ferileenet`. Untuk
 perintah migrasi yang dijalankan dari host, gunakan alamat dan port MariaDB
 yang memang dipublikasikan oleh deployment tersebut.
 
+Proxy SIMAK mempublikasikan HTTP pada port `8080` dan HTTPS pada port `8443`
+secara default. Nilai tersebut dapat diubah dengan `SIMAK_HTTP_PORT` dan
+`SIMAK_HTTPS_PORT` jika host sudah memiliki reverse proxy pada port 80/443.
+
 ## Lingkungan
 
 1. `local` untuk pengembangan.

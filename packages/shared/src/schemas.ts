@@ -1,0 +1,105 @@
+import { z } from "zod";
+import { ACTIVITY_EVENTS, ROLES } from "./block-types";
+
+// ---------- Autentikasi ----------
+// Kata sandi hanya diteruskan untuk diverifikasi ke sumber akun RUAS.
+// SIMAK tidak pernah menyimpannya (lihat blueprint Bagian 05).
+export const loginSchema = z.object({
+  username: z.string().min(1).max(64),
+  password: z.string().min(1).max(128),
+});
+
+// ---------- Konten blok modul (disimpan di module_blocks.content_json) ----------
+// MariaDB tidak menegakkan skema JSON, jadi validasi Zod di API adalah satu-satunya penjaga.
+
+export const moduleBlockContentSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("teks"),
+    html: z.string().max(100_000),
+  }),
+  z.object({
+    type: z.literal("gambar"),
+    attachmentKey: z.string().min(1),
+    caption: z.string().max(500).optional(),
+  }),
+  z.object({
+    type: z.literal("video"),
+    youtubeUrl: z.string().url(),
+    caption: z.string().max(500).optional(),
+  }),
+  z.object({
+    type: z.literal("berkas"),
+    attachmentKey: z.string().min(1),
+    label: z.string().min(1).max(200),
+  }),
+  z.object({
+    type: z.literal("sub_bab"),
+    title: z.string().min(1).max(200),
+  }),
+]);
+export type ModuleBlockContent = z.infer<typeof moduleBlockContentSchema>;
+
+// ---------- Opsi butir LKPD (disimpan di worksheet_items.options_json) ----------
+
+export const worksheetItemOptionsSchema = z.discriminatedUnion("itemType", [
+  z.object({
+    itemType: z.literal("isian_singkat"),
+    // Toleransi angka untuk penilaian otomatis, mis. 0.01 untuk dua desimal.
+    tolerance: z.number().min(0).default(0),
+    caseSensitive: z.boolean().default(false),
+    unit: z.string().max(20).optional(),
+  }),
+  z.object({
+    itemType: z.literal("pilihan_ganda"),
+    options: z.array(z.string().min(1).max(500)).min(2).max(6),
+  }),
+  z.object({
+    itemType: z.literal("uraian"),
+    placeholder: z.string().max(200).optional(),
+  }),
+  z.object({
+    itemType: z.literal("unggah_foto"),
+    maxFiles: z.number().int().min(1).max(5).default(1),
+    instruction: z.string().max(500).optional(),
+  }),
+  z.object({
+    itemType: z.literal("langkah_berurutan"),
+    // Langkah dalam urutan acak untuk ditampilkan; urutan benar ada di answer_key.
+    steps: z.array(z.string().min(1).max(300)).min(2).max(10),
+  }),
+  z.object({
+    itemType: z.literal("refleksi"),
+  }),
+  z.object({
+    itemType: z.literal("tautan_ruas"),
+    url: z.string().url(),
+    label: z.string().min(1).max(100).default("Buka Kuis di RUAS"),
+  }),
+]);
+export type WorksheetItemOptions = z.infer<typeof worksheetItemOptionsSchema>;
+
+// ---------- Exit ticket 3-2-1 ----------
+
+export const exitTicketSchema = z.object({
+  understood3: z.string().min(1).max(2000),
+  examples2: z.string().min(1).max(2000),
+  confusing1: z.string().min(1).max(2000),
+});
+export type ExitTicketInput = z.infer<typeof exitTicketSchema>;
+
+// ---------- Aktivitas / presensi ----------
+
+export const activitySchema = z.object({
+  assignmentId: z.number().int().positive(),
+  event: z.enum(ACTIVITY_EVENTS),
+});
+
+// ---------- Kelas ----------
+
+export const createClassSchema = z.object({
+  name: z.string().min(1).max(100),
+  subject: z.string().min(1).max(100),
+  academicYear: z.string().min(4).max(20),
+});
+
+export const roleSchema = z.enum(ROLES);

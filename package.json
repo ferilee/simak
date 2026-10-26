@@ -1,0 +1,23 @@
+{
+  "name": "simak",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SIMAK — Sumber Informasi, Materi, dan Aktivitas Kelas. Aplikasi materi dan LKPD interaktif pendamping RUAS.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w @simak/api",
+    "dev:web": "npm run dev -w @simak/web",
+    "build:web": "npm run build -w @simak/web",
+    "db:generate": "npm run generate -w @simak/db",
+    "db:migrate": "npm run migrate -w @simak/db",
+    "db:seed": "npm run seed -w @simak/db",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

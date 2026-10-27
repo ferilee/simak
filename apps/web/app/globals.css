@@ -1065,6 +1065,21 @@ a {
   scroll-margin-top: 24px;
 }
 
+.teacher-grading-section,
+.teacher-attempt-layout,
+.teacher-attempt-list,
+.teacher-attempt-review,
+.teacher-answer-card {
+  min-width: 0;
+}
+
+.teacher-attempt-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(0, 1.3fr);
+  align-items: start;
+  gap: 16px;
+}
+
 .module-overview {
   display: grid;
   gap: 16px;
@@ -1801,6 +1816,37 @@ a {
   .wizard-layout {
     grid-template-columns: 1fr;
     gap: 14px;
+  }
+
+  .teacher-attempt-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .teacher-grading-section,
+  .teacher-attempt-review,
+  .teacher-answer-card {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .teacher-attempt-review input,
+  .teacher-attempt-review textarea,
+  .teacher-attempt-review > button {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .teacher-attempt-review > button {
+    white-space: normal;
+  }
+
+  .teacher-answer-card > strong,
+  .teacher-answer-card > p,
+  .teacher-answer-card > small {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 
   .wizard-sidebar {

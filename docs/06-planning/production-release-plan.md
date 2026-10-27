@@ -34,10 +34,11 @@ Target production: `simak.smkpasirian-lmj.sch.id`.
 
 ## Catatan RustFS
 
-`RUSTFS_PUBLIC_ENDPOINT` belum ditentukan dari informasi deployment saat ini.
-Nilai tersebut harus berupa hostname HTTPS yang dapat dijangkau browser, bukan
-`http://rustfs:9000` dan bukan `localhost`. Container RustFS existing tetap
-dipakai melalui network `ferileenet`; SIMAK tidak membuat service RustFS kedua.
+`RUSTFS_PUBLIC_ENDPOINT` production menggunakan
+`https://rustfs.ferilee.gurumuda.eu.org`. Nilai tersebut harus tetap berupa
+hostname HTTPS yang dapat dijangkau browser, bukan `http://rustfs:9000` dan
+bukan `localhost`. Container RustFS existing tetap dipakai melalui network
+`ferileenet`; SIMAK tidak membuat service RustFS kedua.
 
 ## Batasan
 

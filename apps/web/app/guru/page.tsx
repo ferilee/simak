@@ -132,6 +132,7 @@ export default function GuruPage() {
   const router = useRouter();
   const [modules, setModules] = useState<ModuleSummary[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [showCreateModule, setShowCreateModule] = useState(false);
   const [title, setTitle] = useState("");
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
@@ -395,6 +396,7 @@ export default function GuruPage() {
       setSubject("");
       setDescription("");
       setSelectedId(response.data.id);
+      setShowCreateModule(false);
       await loadModules();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Modul belum dapat dibuat.");
@@ -676,28 +678,38 @@ export default function GuruPage() {
           </div>
 
           <div className="guru-content">
-      <section className="wizard-step-panel" data-active={guruStep === 0} style={{ ...styles.panel, marginTop: 0 }}>
-        <h2 style={styles.sectionTitle}>Buat modul</h2>
-        <form onSubmit={createModule} style={styles.form}>
-          <input required value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Judul modul" style={styles.input} />
-          <input required value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="Mata pelajaran" style={styles.input} />
-          <textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Deskripsi singkat" rows={3} style={styles.textarea} />
-          <button type="submit" style={styles.primaryButton}>Buat draf</button>
-        </form>
-      </section>
+      <section className="wizard-step-panel module-overview" data-active={guruStep === 0}>
+        <div className="module-section-heading">
+          <div>
+            <h2 style={styles.sectionTitle}>Materi saya</h2>
+            <p className="module-section-summary">{modules.length} modul · pilih satu untuk mengelola isinya</p>
+          </div>
+          {modules.length > 0 ? (
+            <button type="button" className="module-create-trigger" onClick={() => setShowCreateModule((current) => !current)}>
+              {showCreateModule ? "Tutup" : "+ Buat modul"}
+            </button>
+          ) : <span className="module-create-hint">Mulai dari modul pertama</span>}
+        </div>
 
-      <section className="wizard-step-panel" data-active={guruStep === 0}>
-        <h2 style={styles.sectionTitle}>Modul saya</h2>
-        {modules.length === 0 ? <p style={styles.empty}>Belum ada modul.</p> : (
-          <div style={styles.list}>
+        {showCreateModule || modules.length === 0 ? (
+          <form onSubmit={createModule} className="module-create-panel" style={styles.form}>
+            <input required value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Judul modul" style={styles.input} />
+            <input required value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="Mata pelajaran" style={styles.input} />
+            <textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Deskripsi singkat" rows={3} style={styles.textarea} />
+            <button type="submit" style={styles.primaryButton}>Buat draf</button>
+          </form>
+        ) : null}
+
+        {modules.length === 0 ? <p style={styles.empty}>Belum ada modul. Buat modul pertama untuk mulai menyusun materi.</p> : (
+          <div className="module-list">
             {modules.map((module) => (
-              <article key={module.id} style={{ ...styles.module, borderColor: selectedId === module.id ? "#175cd3" : "#eaecf0" }}>
-                <button type="button" onClick={() => setSelectedId(module.id)} style={styles.moduleSelect}>
+              <article key={module.id} className={`module-row ${selectedId === module.id ? "is-selected" : ""}`}>
+                <button type="button" onClick={() => setSelectedId(module.id)} className="module-row-main">
                   <strong>{module.title}</strong>
-                  <span style={styles.muted}>{module.subject} · versi {module.version}</span>
+                  <span>{module.subject} · versi {module.version}</span>
                 </button>
-                <span style={styles.status}>{module.status}</span>
-                <button type="button" onClick={() => void changeStatus(module)} style={styles.secondaryButton}>
+                <span className={`module-status module-status-${module.status}`}>{module.status}</span>
+                <button type="button" onClick={() => void changeStatus(module)} className="module-row-action">
                   {module.status === "terbit" ? "Arsipkan" : "Terbitkan"}
                 </button>
               </article>

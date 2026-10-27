@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api/v1";
@@ -43,37 +44,52 @@ export default function LoginPage() {
   }
 
   return (
-    <main style={{ maxWidth: 420, margin: "0 auto", padding: "48px 20px" }}>
-      <h1>Masuk ke SIMAK</h1>
-      <p>Gunakan username dan password RUAS yang sudah Anda miliki.</p>
+    <main className="site-shell">
+      <header className="site-header container">
+        <Link className="brand" href="/" aria-label="SIMAK beranda">
+          <span className="brand-mark" aria-hidden="true">S</span>
+          SIMAK
+        </Link>
+      </header>
 
-      <form onSubmit={submit} style={{ display: "grid", gap: 16 }}>
-        <label>
-          Username
-          <input
-            autoComplete="username"
-            required
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
-            style={{ display: "block", width: "100%", marginTop: 6, padding: 10 }}
-          />
-        </label>
-        <label>
-          Password
-          <input
-            type="password"
-            autoComplete="current-password"
-            required
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            style={{ display: "block", width: "100%", marginTop: 6, padding: 10 }}
-          />
-        </label>
-        {message ? <p role="alert" style={{ color: "#b42318" }}>{message}</p> : null}
-        <button type="submit" disabled={loading} style={{ padding: 12 }}>
-          {loading ? "Memverifikasi..." : "Masuk"}
-        </button>
-      </form>
+      <div className="auth-layout container">
+        <section className="auth-card" aria-labelledby="login-title">
+          <Link className="back-link" href="/">← Kembali ke beranda</Link>
+          <p className="eyebrow">Akses pembelajaran</p>
+          <h1 id="login-title">Masuk ke SIMAK</h1>
+          <p className="auth-card-intro">Gunakan username dan password RUAS yang sudah Anda miliki.</p>
+
+          <form className="auth-form" onSubmit={submit}>
+            <label className="field" htmlFor="username">
+              Username
+              <input
+                id="username"
+                autoComplete="username"
+                required
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                placeholder="Masukkan username RUAS"
+              />
+            </label>
+            <label className="field" htmlFor="password">
+              Password
+              <input
+                id="password"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Masukkan password RUAS"
+              />
+            </label>
+            {message ? <p className="form-alert" role="alert" aria-live="polite">{message}</p> : null}
+            <button className="button" type="submit" disabled={loading}>
+              {loading ? "Memverifikasi..." : "Masuk"}
+            </button>
+          </form>
+        </section>
+      </div>
     </main>
   );
 }

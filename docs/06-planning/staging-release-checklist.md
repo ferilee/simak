@@ -72,8 +72,14 @@ Jangan memakai `down -v` kecuali memang ingin menghapus seluruh data staging.
 - [ ] Login akun RUAS nonaktif.
 - [ ] Uji end-to-end guru–murid dan ekspor melalui browser staging.
 - [ ] Uji sentuh/layout pada HP Android dan koneksi lambat.
-- [ ] Uji Safari iOS fisik melalui hostname LAN dan sertifikat yang dipercaya perangkat.
+- [~] Uji Safari iOS fisik ditunda sampai perangkat tersedia; smoke test User-Agent iPhone dan endpoint LAN sudah lulus.
 - [ ] Uji 36 pengumpulan authenticated dalam jendela 15 menit.
+
+## Pengecualian yang disetujui
+
+- Pengujian Safari iOS fisik ditunda atas keputusan pemilik proyek karena
+  perangkat belum tersedia. Pengujian wajib dilakukan sebelum SIMAK dipakai
+  sebagai pilot pada perangkat iOS.
 
 - [ ] Buat file environment staging di luar repository; jangan menyalin `.env` production.
 - [ ] Pastikan `SIMAK_DATABASE_URL` menunjuk database SIMAK staging yang terpisah.

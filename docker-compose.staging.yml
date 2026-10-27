@@ -67,6 +67,7 @@ services:
       dockerfile: apps/web/Dockerfile
     environment:
       NODE_ENV: production
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-https://simak-staging.localhost:18443}
     depends_on:
       - api
     networks:

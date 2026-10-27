@@ -25,6 +25,37 @@ menggunakan database, bucket, akun, dan domain yang terpisah dari production.
 
 ## Persiapan staging
 
+Untuk staging lokal terisolasi, siapkan dan jalankan:
+
+```bash
+cp .env.staging.example .env.staging
+docker compose --env-file .env.staging -p simak-staging -f docker-compose.staging.yml up -d --build
+set -a; source .env.staging; set +a
+npm run db:migrate
+npm run db:seed
+```
+
+Buka `https://simak-staging.localhost:18443`. Port staging berbeda dari
+development: MariaDB `3339`, RustFS `9119/9120`, HTTP `18080`, dan HTTPS
+`18443`. Hentikan hanya stack ini dengan:
+
+```bash
+docker compose --env-file .env.staging -p simak-staging -f docker-compose.staging.yml down
+```
+
+Jangan memakai `down -v` kecuali memang ingin menghapus seluruh data staging.
+
+### Hasil run staging lokal — 27 Oktober 2026
+
+- [x] Compose staging tervalidasi dan stack terisolasi berhasil naik.
+- [x] MariaDB staging healthy pada port `3339`.
+- [x] RustFS staging aktif pada port `9119/9120`.
+- [x] Migrasi database dan seed data contoh berhasil.
+- [x] `https://simak-staging.localhost:18443/` dan `/login` mengembalikan HTTP 200.
+- [x] Endpoint guru tanpa sesi mengembalikan HTTP 401.
+- [ ] Login valid/salah dan akun nonaktif dengan akun RUAS contoh.
+- [ ] Uji end-to-end guru–murid dan ekspor melalui browser staging.
+
 - [ ] Buat file environment staging di luar repository; jangan menyalin `.env` production.
 - [ ] Pastikan `SIMAK_DATABASE_URL` menunjuk database SIMAK staging yang terpisah.
 - [ ] Pastikan `SIMAK_RUSTFS_ENDPOINT` dan `RUSTFS_PUBLIC_ENDPOINT` menunjuk bucket staging.

@@ -1,0 +1,103 @@
+services:
+  mariadb:
+    image: mariadb:11.4
+    environment:
+      MARIADB_DATABASE: simak
+      MARIADB_USER: simak
+      MARIADB_PASSWORD: ${SIMAK_STAGING_DB_PASSWORD:?SIMAK_STAGING_DB_PASSWORD wajib diisi}
+      MARIADB_ROOT_PASSWORD: ${SIMAK_STAGING_DB_ROOT_PASSWORD:?SIMAK_STAGING_DB_ROOT_PASSWORD wajib diisi}
+    ports:
+      - "${SIMAK_STAGING_DB_PORT:-3339}:3306"
+    volumes:
+      - simak_staging_mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -u root -p$${MARIADB_ROOT_PASSWORD} --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - simak-staging
+    restart: unless-stopped
+
+  rustfs:
+    image: rustfs/rustfs:latest
+    command: /data
+    environment:
+      RUSTFS_ACCESS_KEY: ${SIMAK_STAGING_RUSTFS_ACCESS_KEY:?SIMAK_STAGING_RUSTFS_ACCESS_KEY wajib diisi}
+      RUSTFS_SECRET_KEY: ${SIMAK_STAGING_RUSTFS_SECRET_KEY:?SIMAK_STAGING_RUSTFS_SECRET_KEY wajib diisi}
+      RUSTFS_CONSOLE_ENABLE: "true"
+    ports:
+      - "${SIMAK_STAGING_RUSTFS_PORT:-9119}:9000"
+      - "${SIMAK_STAGING_RUSTFS_CONSOLE_PORT:-9120}:9001"
+    volumes:
+      - simak_staging_rustfs_data:/data
+    networks:
+      - simak-staging
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: mysql://simak:${SIMAK_STAGING_DB_PASSWORD}@mariadb:3306/simak
+      RUAS_AUTH_MODE: ${RUAS_AUTH_MODE:-internal-endpoint}
+      RUAS_DATABASE_URL: ${RUAS_DATABASE_URL:-}
+      RUAS_AUTH_ENDPOINT: ${RUAS_AUTH_ENDPOINT:-}
+      SESSION_SECRET: ${SIMAK_STAGING_SESSION_SECRET:?SIMAK_STAGING_SESSION_SECRET wajib diisi}
+      CORS_ORIGIN: ${SIMAK_STAGING_CORS_ORIGIN:-http://localhost:18080}
+      RUSTFS_ENDPOINT: http://rustfs:9000
+      RUSTFS_PUBLIC_ENDPOINT: ${SIMAK_STAGING_RUSTFS_PUBLIC_ENDPOINT:-http://localhost:9119}
+      RUSTFS_BUCKET: ${SIMAK_STAGING_RUSTFS_BUCKET:-simak-staging}
+      RUSTFS_ACCESS_KEY: ${SIMAK_STAGING_RUSTFS_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${SIMAK_STAGING_RUSTFS_SECRET_KEY}
+      API_PORT: 3001
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      rustfs:
+        condition: service_started
+    networks:
+      - simak-staging
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      NODE_ENV: production
+    depends_on:
+      - api
+    networks:
+      - simak-staging
+    restart: unless-stopped
+
+  proxy:
+    image: caddy:2
+    environment:
+      SITE_DOMAIN: ${SIMAK_STAGING_SITE_DOMAIN:-simak-staging.localhost}
+    ports:
+      - "${SIMAK_STAGING_HTTP_PORT:-18080}:80"
+      - "${SIMAK_STAGING_HTTPS_PORT:-18443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - simak_staging_caddy_data:/data
+      - simak_staging_caddy_config:/config
+    depends_on:
+      - web
+      - api
+    networks:
+      - simak-staging
+    restart: unless-stopped
+
+volumes:
+  simak_staging_mariadb_data:
+  simak_staging_rustfs_data:
+  simak_staging_caddy_data:
+  simak_staging_caddy_config:
+
+networks:
+  simak-staging:
+    name: simak-staging
+    driver: bridge

@@ -71,6 +71,7 @@ export function publicUser(user: SessionUser) {
     id: user.userId,
     ruas_user_id: user.ruasUserId,
     username: user.username,
+    display_name: user.name,
     name: user.name,
     role: user.role,
   };

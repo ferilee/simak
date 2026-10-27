@@ -40,7 +40,7 @@ type TodayResponse = {
 
 type MeResponse = {
   ok: true;
-  user: { name: string; username: string; role: "guru" | "murid" };
+  user: { display_name?: string; name?: string; username: string; role: "guru" | "murid" };
 };
 
 export default function MuridPage() {
@@ -58,6 +58,7 @@ export default function MuridPage() {
     { title: "Penugasan", description: "Kerjakan aktivitas yang tersedia" },
     { title: "Materi", description: "Baca materi yang diterbitkan" },
   ];
+  const displayName = user?.display_name ?? user?.name ?? "Murid";
 
   async function load() {
     try {
@@ -118,7 +119,7 @@ export default function MuridPage() {
             SIMAK
           </Link>
           <p className="eyebrow" style={{ marginTop: 28 }}>Ruang murid</p>
-          <h1 className="dashboard-title">Halo, {user?.name ?? "Murid"}</h1>
+          <h1 className="dashboard-title">Halo, {displayName}</h1>
           <p className="dashboard-subtitle">Ikuti langkah belajar Anda dari satu ruang yang terarah.</p>
         </div>
         <div className="dashboard-actions">
@@ -138,9 +139,9 @@ export default function MuridPage() {
       <div className="container wizard-layout wizard-theme-murid">
         <aside className="wizard-sidebar" aria-label="Langkah ruang murid">
           <div className="wizard-profile">
-            <span className="wizard-avatar">{(user?.name ?? "M").slice(0, 1).toUpperCase()}</span>
+            <span className="wizard-avatar">{displayName.slice(0, 1).toUpperCase()}</span>
             <div>
-              <strong>{user?.name ?? "Murid"}</strong>
+              <strong>{displayName}</strong>
               <span>Ruang murid</span>
             </div>
           </div>

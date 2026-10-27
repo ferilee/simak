@@ -17,7 +17,7 @@ Semua endpoint menggunakan JSON dan berada di bawah `/api/v1`.
 | Refleksi | `POST /assignments/:id/exit-ticket` |
 | Penilaian | `GET/PATCH /grading/assignments/:id` |
 | Aktivitas | `POST /activity` |
-| Laporan | `GET /reports/session?assignmentId=:id`, `GET /reports/range` |
+| Laporan | `GET /reports/session?assignmentId=:id[&format=csv]`, `GET /reports/range` |
 
 ## Aturan kontrak
 

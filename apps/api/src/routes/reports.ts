@@ -4,7 +4,7 @@ import { db, schema } from "@simak/db";
 import { requireRole } from "../middleware/auth";
 
 // Rekap bukti = agregasi submissions + activity_logs + exit_tickets (Tahap 4).
-// Format: ?format=pdf | xlsx
+// Format: JSON (default) atau CSV yang dapat dibuka di Excel.
 export const reportRoutes = new Hono();
 
 reportRoutes.use("*", requireRole("guru"));
@@ -100,23 +100,56 @@ reportRoutes.get("/session", async (c) => {
     };
   });
 
+  const data = {
+    assignment: {
+      id: assignment.id,
+      title: assignment.title,
+      opens_at: assignment.opensAt,
+      due_at: assignment.dueAt,
+    },
+    summary: {
+      total_students: rows.length,
+      hadir: rows.filter((row) => row.hadir).length,
+      submitted: rows.filter((row) => row.submission_status !== "belum").length,
+      exit_ticket: rows.filter((row) => row.exit_ticket_submitted).length,
+    },
+    students: rows,
+  };
+
+  if (c.req.query("format") === "csv") {
+    const csvRows = [
+      ["Nama", "Username", "Kelas", "Presensi", "Status LKPD", "Waktu kumpul", "Nilai LKPD", "Exit ticket", "Waktu exit ticket", "Kuis RUAS", "Waktu buka RUAS"],
+      ...rows.map((row) => [
+        row.name,
+        row.username,
+        row.class_name,
+        row.hadir ? "Hadir" : "Belum hadir",
+        row.submission_status,
+        csvDate(row.submitted_at),
+        row.total_score === null ? "" : String(row.total_score),
+        row.exit_ticket_submitted ? "Sudah" : "Belum",
+        csvDate(row.exit_ticket_submitted_at),
+        row.ruas_opened_at ? "Dibuka" : "Belum",
+        csvDate(row.ruas_opened_at),
+      ]),
+    ];
+    const csv = `\uFEFF${csvRows.map((row) => row.map(csvEscape).join(",")).join("\r\n")}\r\n`;
+    c.header("Content-Type", "text/csv; charset=utf-8");
+    c.header("Content-Disposition", `attachment; filename=\"simak-rekap-${assignment.id}.csv\"`);
+    return c.body(csv);
+  }
+
   return c.json({
     ok: true,
-    data: {
-      assignment: {
-        id: assignment.id,
-        title: assignment.title,
-        opens_at: assignment.opensAt,
-        due_at: assignment.dueAt,
-      },
-      summary: {
-        total_students: rows.length,
-        hadir: rows.filter((row) => row.hadir).length,
-        submitted: rows.filter((row) => row.submission_status !== "belum").length,
-        exit_ticket: rows.filter((row) => row.exit_ticket_submitted).length,
-      },
-      students: rows,
-    },
+    data,
   });
 });
 reportRoutes.get("/range", (c) => c.json({ ok: false, message: "Tahap 4." }, 501));
+
+function csvDate(value: Date | null) {
+  return value?.toISOString() ?? "";
+}
+
+function csvEscape(value: string) {
+  return /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
+}

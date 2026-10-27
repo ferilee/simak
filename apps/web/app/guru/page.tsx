@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiRequest } from "../../lib/api";
+import { apiBase, apiRequest } from "../../lib/api";
 
 type ModuleSummary = {
   id: number;
@@ -257,6 +257,25 @@ export default function GuruPage() {
       setMessage(error instanceof Error ? error.message : "Rekap sesi belum dapat dimuat.");
     } finally {
       setSessionReportLoading(false);
+    }
+  }
+
+  async function downloadSessionReport(assignmentId: number) {
+    try {
+      const response = await fetch(`${apiBase}/reports/session?assignmentId=${assignmentId}&format=csv`, { credentials: "include" });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { message?: string };
+        throw new Error(body.message ?? "Rekap belum dapat diunduh.");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `simak-rekap-${assignmentId}.csv`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Rekap belum dapat diunduh.");
     }
   }
 
@@ -672,6 +691,7 @@ export default function GuruPage() {
           {!sessionReportLoading && sessionReport ? (
             <>
               <p style={styles.muted}>{sessionReport.assignment.title} · batas {formatDate(sessionReport.assignment.due_at)}</p>
+              <button type="button" onClick={() => void downloadSessionReport(sessionReport.assignment.id)} style={styles.secondaryButton}>Unduh Excel (CSV)</button>
               <div style={styles.reportSummary}>
                 <div style={styles.reportMetric}><strong>{sessionReport.summary.total_students}</strong><span>Murid</span></div>
                 <div style={styles.reportMetric}><strong>{sessionReport.summary.hadir}</strong><span>Hadir</span></div>

@@ -1,0 +1,13 @@
+# TLS production diterminasi oleh Nginx Proxy Manager. Caddy hanya merutekan
+# HTTP internal dari NPM ke web dan API SIMAK.
+:80 {
+	encode gzip
+
+	handle /api/* {
+		reverse_proxy api:3001
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}

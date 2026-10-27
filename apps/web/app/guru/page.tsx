@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiBase, apiRequest } from "../../lib/api";
 
@@ -608,21 +609,28 @@ export default function GuruPage() {
     }
   }
 
-  if (loading) return <main style={styles.container}><p>Memuat ruang guru...</p></main>;
+  if (loading) return <main className="dashboard-shell container"><p>Memuat ruang guru...</p></main>;
 
   return (
-    <main style={styles.container}>
-      <div style={styles.topline}>
+    <main className="dashboard-shell">
+      <header className="dashboard-header container">
         <div>
-          <p style={styles.eyebrow}>SIMAK · GURU</p>
-          <h1 style={styles.title}>Materi pembelajaran</h1>
+          <Link className="brand" href="/" aria-label="SIMAK beranda">
+            <span className="brand-mark" aria-hidden="true">S</span>
+            SIMAK
+          </Link>
+          <p className="eyebrow" style={{ marginTop: 28 }}>Ruang guru</p>
+          <h1 className="dashboard-title">Materi pembelajaran</h1>
+          <p className="dashboard-subtitle">Buat modul, susun blok materi, lalu terbitkan untuk murid.</p>
         </div>
-        <button type="button" onClick={() => void logout()} style={styles.secondaryButton}>Keluar</button>
-      </div>
-      <p style={styles.muted}>Buat modul, susun blok materi, lalu terbitkan untuk murid.</p>
-      {message ? <p role="alert" style={styles.message}>{message}</p> : null}
+        <div className="dashboard-actions">
+          <button type="button" onClick={() => void logout()} className="button button-secondary">Keluar</button>
+        </div>
+      </header>
+      {message ? <p className="dashboard-alert container" role="alert" aria-live="polite">{message}</p> : null}
 
-      <section style={styles.panel}>
+      <div className="container guru-content">
+      <section style={{ ...styles.panel, marginTop: 0 }}>
         <h2 style={styles.sectionTitle}>Buat modul</h2>
         <form onSubmit={createModule} style={styles.form}>
           <input required value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Judul modul" style={styles.input} />
@@ -949,6 +957,7 @@ export default function GuruPage() {
           ) : null}
         </section>
       ) : null}
+      </div>
     </main>
   );
 }

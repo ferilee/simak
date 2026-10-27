@@ -529,6 +529,28 @@ a {
   color: var(--color-danger);
 }
 
+.guru-content {
+  padding-bottom: 48px;
+}
+
+.guru-content > section {
+  scroll-margin-top: 24px;
+}
+
+.guru-panel-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+@media (max-width: 760px) {
+  .guru-panel-heading {
+    display: grid;
+    gap: 4px;
+  }
+}
+
 @media (max-width: 760px) {
   .container {
     width: min(100% - 32px, 680px);

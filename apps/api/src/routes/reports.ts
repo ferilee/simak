@@ -175,31 +175,53 @@ function createSessionPdf(data: {
     ruas_opened_at: Date | null;
   }[];
 }) {
-  const lines = [
-    `SIMAK - Rekap Sesi: ${data.assignment.title}`,
-    `Batas pengumpulan: ${data.assignment.due_at.toISOString()}`,
-    `Murid: ${data.summary.total_students} | Hadir: ${data.summary.hadir} | Kumpul LKPD: ${data.summary.submitted} | Exit ticket: ${data.summary.exit_ticket}`,
-    "",
-    "No.  Murid                         Kelas             Presensi  LKPD       Nilai  Exit  RUAS",
-    "-".repeat(96),
-    ...data.students.map((student, index) => `${String(index + 1).padEnd(4)} ${student.name} (${student.username}) | ${student.class_name} | ${student.hadir ? "Hadir" : "Belum hadir"} | ${student.submission_status} | ${student.total_score === null ? "-" : student.total_score} | ${student.exit_ticket_submitted ? "Sudah" : "Belum"} | ${student.ruas_opened_at ? "Dibuka" : "Belum"}`),
+  const columns = [
+    { title: "No.", width: 28, chars: 4 },
+    { title: "Murid", width: 150, chars: 24 },
+    { title: "Kelas", width: 95, chars: 15 },
+    { title: "Presensi", width: 65, chars: 9 },
+    { title: "LKPD", width: 55, chars: 8 },
+    { title: "Nilai", width: 45, chars: 6 },
+    { title: "Exit", width: 45, chars: 6 },
+    { title: "RUAS", width: 40, chars: 6 },
   ];
-
-  const linesPerPage = 48;
-  const pages: string[][] = [];
-  for (let index = 0; index < lines.length; index += linesPerPage) pages.push(lines.slice(index, index + linesPerPage));
+  const tableRows = data.students.map((student, index) => [
+    String(index + 1),
+    `${student.name} (${student.username})`,
+    student.class_name,
+    student.hadir ? "Hadir" : "Belum hadir",
+    student.submission_status,
+    student.total_score === null ? "-" : String(student.total_score),
+    student.exit_ticket_submitted ? "Sudah" : "Belum",
+    student.ruas_opened_at ? "Dibuka" : "Belum",
+  ]);
+  const maxTableHeight = 661;
+  const pageRows: string[][][] = [];
+  let currentPage: string[][] = [];
+  let currentHeight = 0;
+  for (const row of tableRows) {
+    const height = pdfRowHeight(row, columns);
+    if (currentPage.length > 0 && currentHeight + height > maxTableHeight) {
+      pageRows.push(currentPage);
+      currentPage = [];
+      currentHeight = 0;
+    }
+    currentPage.push(row);
+    currentHeight += height;
+  }
+  if (currentPage.length > 0 || pageRows.length === 0) pageRows.push(currentPage);
 
   const objects: (string | null)[] = [null, "<< /Type /Catalog /Pages 2 0 R >>", null, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"];
   const pageRefs: string[] = [];
-  for (const pageLines of pages) {
-    const content = pageLines.map((line, index) => pdfText(line, 40, 800 - index * 16, index === 0 ? 15 : 9)).join("");
+  for (const [pageIndex, rows] of pageRows.entries()) {
+    const content = createPdfPage(data, rows, columns, pageIndex + 1, pageRows.length);
     const pageObject = objects.length;
     const contentObject = pageObject + 1;
     pageRefs.push(`${pageObject} 0 R`);
     objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentObject} 0 R >>`);
     objects.push(`<< /Length ${content.length} >>\nstream\n${content}endstream`);
   }
-  objects[2] = `<< /Type /Pages /Kids [${pageRefs.join(" ")}] /Count ${pages.length} >>`;
+  objects[2] = `<< /Type /Pages /Kids [${pageRefs.join(" ")}] /Count ${pageRows.length} >>`;
 
   let pdf = "%PDF-1.4\n";
   const offsets = [0];
@@ -212,6 +234,92 @@ function createSessionPdf(data: {
   for (let index = 1; index < objects.length; index += 1) pdf += `${String(offsets[index]).padStart(10, "0")} 00000 n \n`;
   pdf += `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
   return pdf;
+}
+
+function createPdfPage(
+  data: { assignment: { title: string; due_at: Date }; summary: { total_students: number; hadir: number; submitted: number; exit_ticket: number } },
+  rows: string[][],
+  columns: { title: string; width: number; chars: number }[],
+  pageNumber: number,
+  pageCount: number,
+) {
+  const left = 36;
+  const tableWidth = columns.reduce((total, column) => total + column.width, 0);
+  let content = "";
+  content += pdfText(`SIMAK - Rekap Sesi: ${data.assignment.title}`, left, 805, 15);
+  content += pdfText(`Batas pengumpulan: ${pdfDate(data.assignment.due_at)}`, left, 783, 9);
+  content += pdfText(`Murid: ${data.summary.total_students} | Hadir: ${data.summary.hadir} | Kumpul LKPD: ${data.summary.submitted} | Exit ticket: ${data.summary.exit_ticket}`, left, 768, 9);
+  if (pageCount > 1) content += pdfText(`Halaman ${pageNumber} dari ${pageCount}`, 470, 805, 8);
+
+  let y = 735;
+  content += pdfRect(left, y - 24, tableWidth, 24, true);
+  let x = left;
+  for (const column of columns) {
+    content += pdfText(column.title, x + 4, y - 16, 8);
+    x += column.width;
+  }
+  y -= 24;
+
+  for (const row of rows) {
+    const height = pdfRowHeight(row, columns);
+    content += pdfRect(left, y - height, tableWidth, height);
+    x = left;
+    row.forEach((value, index) => {
+      const column = columns[index]!;
+      const wrapped = wrapPdfText(value, column.chars);
+      wrapped.forEach((line, lineIndex) => {
+        content += pdfText(line, x + 4, y - 14 - lineIndex * 10, 7.5);
+      });
+      x += column.width;
+    });
+    x = left;
+    for (const column of columns.slice(0, -1)) {
+      x += column.width;
+      content += `${x} ${y - height} m ${x} ${y} l S\n`;
+    }
+    y -= height;
+  }
+  return content;
+}
+
+function pdfRowHeight(row: string[], columns: { chars: number }[]) {
+  const lineCount = Math.max(...row.map((value, index) => wrapPdfText(value, columns[index]!.chars).length));
+  return Math.max(24, lineCount * 10 + 10);
+}
+
+function wrapPdfText(value: string, maxChars: number) {
+  const words = value.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    if (word.length > maxChars) {
+      if (current) lines.push(current);
+      for (let index = 0; index < word.length; index += maxChars) lines.push(word.slice(index, index + maxChars));
+      current = "";
+      continue;
+    }
+    const next = current ? `${current} ${word}` : word;
+    if (next.length > maxChars) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = next;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.length > 0 ? lines : [""];
+}
+
+function pdfRect(x: number, y: number, width: number, height: number, fill = false) {
+  return fill
+    ? `0.93 0.95 0.98 rg ${x} ${y} ${width} ${height} re f 0 0 0 rg ${x} ${y} ${width} ${height} re S\n`
+    : `${x} ${y} ${width} ${height} re S\n`;
+}
+
+function pdfDate(value: Date | null) {
+  return value
+    ? new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Jakarta" }).format(value)
+    : "-";
 }
 
 function pdfText(value: string, x: number, y: number, size: number) {

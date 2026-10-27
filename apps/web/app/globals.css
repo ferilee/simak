@@ -1041,6 +1041,117 @@ a {
     white-space: normal;
   }
 
+  .wizard-theme-murid .wizard-sidebar {
+    border: 0;
+    padding: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .wizard-theme-murid .wizard-profile,
+  .wizard-theme-murid .wizard-side-note {
+    display: none;
+  }
+
+  .wizard-theme-murid .wizard-steps {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
+    margin: 0;
+    padding: 0 4px;
+  }
+
+  .wizard-theme-murid .wizard-steps::before,
+  .wizard-theme-murid .wizard-steps::after {
+    position: absolute;
+    top: 20px;
+    bottom: auto;
+    left: 16.66%;
+    display: block;
+    height: 3px;
+    border: 0;
+    content: "";
+  }
+
+  .wizard-theme-murid .wizard-steps::before {
+    right: 16.66%;
+    width: auto;
+    background: #d0d5dd;
+  }
+
+  .wizard-theme-murid .wizard-steps::after {
+    right: auto;
+    width: 0;
+    background: var(--wizard-accent);
+    transition: width 180ms ease;
+  }
+
+  .wizard-theme-murid .wizard-steps-1::after {
+    width: 33.33%;
+  }
+
+  .wizard-theme-murid .wizard-steps-2::after {
+    width: 66.66%;
+  }
+
+  .wizard-theme-murid .wizard-step {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 0 3px;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    text-align: center;
+  }
+
+  .wizard-theme-murid .wizard-step:hover,
+  .wizard-theme-murid .wizard-step.is-active {
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .wizard-theme-murid .wizard-step > span:last-child {
+    justify-items: center;
+    gap: 1px;
+    text-align: center;
+  }
+
+  .wizard-theme-murid .wizard-step strong {
+    font-size: 12px;
+    line-height: 1.2;
+  }
+
+  .wizard-theme-murid .wizard-step small {
+    max-width: 108px;
+    font-size: 10px;
+    line-height: 1.25;
+  }
+
+  .wizard-theme-murid .wizard-step-number {
+    width: 40px;
+    height: 40px;
+  }
+
+  .wizard-theme-murid .wizard-step.is-active .wizard-step-number {
+    box-shadow: 0 0 0 4px var(--wizard-accent-ring), 0 0 18px rgba(14, 147, 132, 0.35);
+  }
+
+  .wizard-theme-murid .wizard-main {
+    border-radius: 24px;
+    padding: 20px 16px;
+  }
+
+  .wizard-theme-murid .wizard-footer {
+    grid-template-columns: 1fr;
+  }
+
+  .wizard-theme-murid .wizard-footer .button-secondary:disabled {
+    display: none;
+  }
+
   .toast {
     top: 12px;
     right: 16px;

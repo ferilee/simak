@@ -137,7 +137,7 @@ export default function MuridPage() {
               <span>Ruang murid</span>
             </div>
           </div>
-          <nav className="wizard-steps">
+          <nav className={`wizard-steps wizard-steps-${studentStep}`}>
             {studentSteps.map((step, index) => (
               <button
                 key={step.title}
@@ -252,7 +252,7 @@ export default function MuridPage() {
 
           <footer className="wizard-footer">
             <button type="button" className="button button-secondary" onClick={() => setStudentStep((current) => Math.max(0, current - 1))} disabled={studentStep === 0}>← Sebelumnya</button>
-            <button type="button" className="button" onClick={() => setStudentStep((current) => Math.min(studentSteps.length - 1, current + 1))} disabled={studentStep === studentSteps.length - 1}>Langkah berikutnya →</button>
+            <button type="button" className="button" onClick={() => setStudentStep((current) => Math.min(studentSteps.length - 1, current + 1))} disabled={studentStep === studentSteps.length - 1}>{studentStep === studentSteps.length - 1 ? "Selesai" : "Lanjutkan →"}</button>
           </footer>
         </section>
       </div>

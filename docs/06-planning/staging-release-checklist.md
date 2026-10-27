@@ -1,6 +1,6 @@
 # Checklist Staging dan Rilis SIMAK
 
-**Status:** Tahap 4 — siap divalidasi di staging.
+**Status:** Conditional GO untuk pilot staging; NO-GO production.
 
 Dokumen ini adalah gerbang sebelum image SIMAK dipromosikan ke VPS. Pekerjaan
 fitur dilakukan dan diverifikasi di development terlebih dahulu; staging
@@ -80,6 +80,26 @@ Jangan memakai `down -v` kecuali memang ingin menghapus seluruh data staging.
 - Pengujian Safari iOS fisik ditunda atas keputusan pemilik proyek karena
   perangkat belum tersedia. Pengujian wajib dilakukan sebelum SIMAK dipakai
   sebagai pilot pada perangkat iOS.
+
+## Keputusan release gate — 27 Oktober 2026
+
+**Status: CONDITIONAL GO untuk pilot staging; NO-GO untuk production.**
+
+Gate ditutup setelah stack staging, alur guru–murid, penilaian, ekspor,
+impor RUAS, persistence, backup/restore, smoke mobile, dan hardening otomatis
+berhasil. Stack terakhir tetap sehat: MariaDB healthy, LAN HTTP 200, dan HTTPS
+HTTP 200.
+
+Pengecualian yang harus tetap dibawa ke tiket tindak lanjut:
+
+- akun RUAS nonaktif belum diuji karena akun uji belum tersedia;
+- 36 pengumpulan authenticated nyata belum dijalankan; yang lulus baru beban
+  sintetis handler laporan dan 36 request halaman login;
+- uji Safari iOS fisik ditunda sampai perangkat tersedia.
+
+Tidak ada push GHCR, perubahan VPS, atau promosi production sebagai bagian dari
+keputusan ini. Sebelum production, semua pengecualian di atas harus ditutup
+atau disetujui eksplisit sebagai risiko rilis.
 
 - [ ] Buat file environment staging di luar repository; jangan menyalin `.env` production.
 - [ ] Pastikan `SIMAK_DATABASE_URL` menunjuk database SIMAK staging yang terpisah.

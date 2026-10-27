@@ -53,6 +53,9 @@ Jangan memakai `down -v` kecuali memang ingin menghapus seluruh data staging.
 - [x] Migrasi database dan seed data contoh berhasil.
 - [x] `https://simak-staging.localhost:18443/` dan `/login` mengembalikan HTTP 200.
 - [x] Endpoint guru tanpa sesi mengembalikan HTTP 401.
+- [x] Restart seluruh Compose tanpa `down -v` mempertahankan 5 users, 2 penugasan, dan 2 nilai RUAS.
+- [x] Dump MariaDB `31.559` bytes dan snapshot RustFS `4.657` bytes dibuat.
+- [x] Dump MariaDB berhasil dipulihkan ke database sementara dengan jumlah data `5 / 2 / 2`.
 - [ ] Login valid/salah dan akun nonaktif dengan akun RUAS contoh.
 - [ ] Uji end-to-end guru–murid dan ekspor melalui browser staging.
 

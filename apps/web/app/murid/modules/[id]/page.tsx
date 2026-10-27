@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { apiRequest } from "../../../../lib/api";
 import { Toast } from "../../../../components/Toast";
+import { MathHtml, MathText } from "../../../../components/MathContent";
 
 type Block = {
   id: number;
@@ -49,7 +50,7 @@ export default function ModulePage() {
       <Link href="/murid" style={styles.back}>← Ruang murid</Link>
       <p style={styles.subject}>{data.module.subject}</p>
       <h1 style={styles.title}>{data.module.title}</h1>
-      {data.module.description ? <p style={styles.description}>{data.module.description}</p> : null}
+      {data.module.description ? <p style={styles.description}><MathText text={data.module.description} /></p> : null}
       <article style={styles.content}>
         {data.blocks.map((block) => <ModuleBlock key={block.id} block={block} moduleId={data.module.id} />)}
       </article>
@@ -74,7 +75,7 @@ function ModuleBlock({ block, moduleId }: { block: Block; moduleId: number }) {
     return <h2 style={styles.subheading}>{String(block.content.title ?? "Sub-bab")}</h2>;
   }
   if (block.type === "teks") {
-    return <div style={styles.textBlock}>{renderSafeHtml(String(block.content.html ?? ""))}</div>;
+    return <MathHtml html={String(block.content.html ?? "")} className="math-rich-content" />;
   }
   if (block.type === "video") {
     return <p style={styles.notice}>Video tersedia melalui tautan pembelajaran.</p>;
@@ -111,16 +112,6 @@ function AttachmentBlock({ block, moduleId }: { block: Block; moduleId: number }
     );
   }
   return <a href={url} target="_blank" rel="noreferrer" style={styles.fileLink}>Buka {String(block.content.label ?? "lampiran")} →</a>;
-}
-
-function renderSafeHtml(html: string) {
-  const allowedTags = new Set(["p", "strong", "em", "br", "sub", "sup", "b", "i"]);
-  const sanitized = html
-    .replace(/<\/?(script|style|iframe|object|embed|form)[^>]*>/gi, "")
-    .replace(/\s+on[a-z-]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
-    .replace(/<([a-z0-9-]+)(?:\s[^>]*)?>/gi, (match, tag: string) => allowedTags.has(tag.toLowerCase()) ? `<${tag.toLowerCase()}>` : "")
-    .replace(/<\/([a-z0-9-]+)>/gi, (match, tag: string) => allowedTags.has(tag.toLowerCase()) ? `</${tag.toLowerCase()}>` : "");
-  return <span dangerouslySetInnerHTML={{ __html: sanitized }} />;
 }
 
 const styles = {

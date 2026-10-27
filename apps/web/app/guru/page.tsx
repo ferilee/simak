@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiBase, apiRequest } from "../../lib/api";
 import { Toast } from "../../components/Toast";
+import { MathText } from "../../components/MathContent";
 
 type ModuleSummary = {
   id: number;
@@ -890,6 +891,7 @@ export default function GuruPage() {
               rows={6}
               style={styles.textarea}
             />
+            <small style={styles.muted}>Rumus LaTeX didukung: gunakan <code>\(...\)</code> untuk rumus sebaris atau <code>\[...\]</code> untuk rumus terpisah.</small>
             <button type="submit" style={styles.primaryButton}>Tambahkan blok</button>
           </form>
           <h2 style={styles.sectionTitle}>Tambah lampiran</h2>
@@ -988,6 +990,7 @@ export default function GuruPage() {
               <option value="tautan_ruas">Tautan RUAS</option>
             </select>
             <textarea required value={itemPrompt} onChange={(event) => setItemPrompt(event.target.value)} placeholder="Pertanyaan" rows={3} style={styles.textarea} />
+            <small style={styles.muted}>Rumus LaTeX didukung: <code>\(...\)</code> sebaris atau <code>\[...\]</code> terpisah.</small>
             {itemType === "pilihan_ganda" ? <textarea required value={itemOptions} onChange={(event) => setItemOptions(event.target.value)} placeholder="Pilihan jawaban, satu per baris" rows={4} style={styles.textarea} /> : null}
             {itemType === "isian_singkat" ? (
               <>
@@ -1234,13 +1237,13 @@ export default function GuruPage() {
       ) : null}
 
       {selectedWorksheetId ? (
-        <section className="wizard-step-panel" data-active={guruStep === 4} style={styles.panel}>
+        <section className="wizard-step-panel teacher-grading-section" data-active={guruStep === 4} style={styles.panel}>
           <h2 style={styles.sectionTitle}>Pengumpulan LKPD</h2>
           {attemptLoading && attempts.length === 0 ? <p style={styles.muted}>Memuat pengumpulan...</p> : null}
           {!attemptLoading && attempts.length === 0 ? <p style={styles.empty}>Belum ada murid yang mengumpulkan LKPD ini.</p> : null}
           {attempts.length > 0 ? (
-            <div style={styles.attemptLayout}>
-              <div style={styles.list}>
+            <div className="teacher-attempt-layout">
+              <div className="teacher-attempt-list" style={styles.list}>
                 {attempts.map((attempt) => (
                   <button
                     key={attempt.id}
@@ -1255,13 +1258,13 @@ export default function GuruPage() {
                 ))}
               </div>
               {attemptDetail ? (
-                <div style={styles.review}>
+                <div className="teacher-attempt-review" style={styles.review}>
                   <h3 style={styles.reviewTitle}>{attemptDetail.attempt.student_name}</h3>
                   <p style={styles.muted}>{attemptDetail.attempt.username} · status {attemptDetail.attempt.status}</p>
                   {attemptDetail.items.map((item, index) => (
-                    <article key={item.id} style={styles.answerCard}>
-                      <strong>{index + 1}. {item.prompt}</strong>
-                      <p style={styles.answerText}>{item.answer_text || "Tidak ada jawaban."}</p>
+                    <article key={item.id} className="teacher-answer-card" style={styles.answerCard}>
+                      <strong>{index + 1}. <MathText text={item.prompt} /></strong>
+                      <p style={styles.answerText}><MathText text={item.answer_text || "Tidak ada jawaban."} /></p>
                       {item.attachment_key ? (
                         <button
                           type="button"
@@ -1271,7 +1274,7 @@ export default function GuruPage() {
                           Lihat foto jawaban
                         </button>
                       ) : null}
-                      <small style={styles.muted}>Kunci: {item.answer_key || "Tidak ada kunci otomatis."} · Maksimal {item.points} poin</small>
+                      <small style={styles.muted}>Kunci: <MathText text={item.answer_key || "Tidak ada kunci otomatis."} /> · Maksimal {item.points} poin</small>
                       <input
                         type="number"
                         min={0}
@@ -1336,7 +1339,6 @@ const styles = {
   module: { display: "grid", gridTemplateColumns: "1fr auto auto", alignItems: "center", gap: 12, border: "1px solid", borderRadius: 10, padding: 14 },
   moduleSelect: { display: "grid", textAlign: "left" as const, gap: 4, border: 0, background: "transparent", padding: 0, font: "inherit" },
   status: { fontSize: 13, color: "#475467" },
-  attemptLayout: { display: "grid", gridTemplateColumns: "minmax(180px, 0.7fr) minmax(0, 1.3fr)", gap: 16, alignItems: "start" },
   attempt: { display: "grid", textAlign: "left" as const, gap: 4, border: "1px solid", borderRadius: 10, background: "white", padding: 14, font: "inherit" },
   review: { display: "grid", gap: 12 },
   reviewTitle: { margin: 0, fontSize: 20 },

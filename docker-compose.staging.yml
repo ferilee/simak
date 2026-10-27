@@ -81,7 +81,7 @@ services:
       - "${SIMAK_STAGING_HTTP_PORT:-18080}:80"
       - "${SIMAK_STAGING_HTTPS_PORT:-18443}:443"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./Caddyfile.staging:/etc/caddy/Caddyfile:ro
       - simak_staging_caddy_data:/data
       - simak_staging_caddy_config:/config
     depends_on:

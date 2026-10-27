@@ -1,0 +1,24 @@
+{$SITE_DOMAIN:simak-staging.localhost} {
+	encode gzip
+
+	handle /api/* {
+		reverse_proxy api:3001
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}
+
+# Akses iOS di jaringan lokal tanpa bergantung pada .localhost atau CA lokal.
+:80 {
+	encode gzip
+
+	handle /api/* {
+		reverse_proxy api:3001
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}

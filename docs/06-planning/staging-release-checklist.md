@@ -35,9 +35,11 @@ npm run db:migrate
 npm run db:seed
 ```
 
-Buka `https://simak-staging.localhost:18443`. Port staging berbeda dari
-development: MariaDB `3339`, RustFS `9119/9120`, HTTP `18080`, dan HTTPS
-`18443`. Hentikan hanya stack ini dengan:
+Buka `https://simak-staging.localhost:18443`. Untuk iPhone pada Wi-Fi yang
+sama, ganti `SIMAK_STAGING_LAN_HOST` dan `SIMAK_STAGING_LAN_ORIGIN` dengan IP
+LAN komputer staging, lalu buka `http://IP-LAN-KOMPUTER:18080`. Port staging
+berbeda dari development: MariaDB `3339`, RustFS `9119/9120`, HTTP `18080`,
+dan HTTPS `18443`. Hentikan hanya stack ini dengan:
 
 ```bash
 docker compose --env-file .env.staging -p simak-staging -f docker-compose.staging.yml down
@@ -58,6 +60,7 @@ Jangan memakai `down -v` kecuali memang ingin menghapus seluruh data staging.
 - [x] Dump MariaDB berhasil dipulihkan ke database sementara dengan jumlah data `5 / 2 / 2`.
 - [x] Smoke request dengan User-Agent Android ke `/`, `/login`, dan `/guru` mengembalikan HTTP 200.
 - [x] Smoke request dengan User-Agent iPhone Safari ke `/`, `/login`, dan `/guru` mengembalikan HTTP 200.
+- [x] Endpoint LAN `http://10.32.0.45:18080` mengembalikan login HTTP 200 dan CORS origin LAN yang benar.
 - [x] Beban ringan 36 request paralel ke halaman login: 36/36 HTTP 200, rata-rata 0,17 detik, maksimum 0,25 detik.
 - [ ] Login valid/salah dan akun nonaktif dengan akun RUAS contoh.
 - [ ] Uji end-to-end guru–murid dan ekspor melalui browser staging.

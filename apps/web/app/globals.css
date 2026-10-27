@@ -1444,6 +1444,25 @@ a {
   display: none;
 }
 
+.katex-display {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-block: 0.25rem;
+}
+
+.math-rich-content {
+  color: #344054;
+}
+
+.math-rich-content > :first-child {
+  margin-top: 0;
+}
+
+.math-rich-content > :last-child {
+  margin-bottom: 0;
+}
+
 .wizard-step small {
   color: var(--color-muted);
   font-size: 12px;
@@ -1849,6 +1868,7 @@ a {
   .wizard-theme-guru .wizard-sidebar {
     position: fixed;
     z-index: 20;
+    top: auto;
     right: 0;
     bottom: 0;
     left: 0;

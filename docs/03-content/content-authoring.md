@@ -31,3 +31,20 @@ pembahasan, dan bobot. Jenis blok menentukan komponen tampilan dan cara penilaia
 - Jangan memakai pilihan ganda sebagai pengganti kuis asesmen RUAS.
 - Pastikan jawaban manual memiliki rubrik atau kriteria yang dapat digunakan guru.
 
+## Rumus matematika
+
+SIMAK merender ekspresi LaTeX menggunakan KaTeX pada teks materi, petunjuk,
+pertanyaan LKPD, pilihan jawaban, dan tampilan penilaian guru. Gunakan salah
+satu delimiter berikut:
+
+| Bentuk | Contoh |
+| --- | --- |
+| Sebaris | `Luas persegi (s^2)` |
+| Terpisah | `\[x = \frac{-b \pm \sqrt{b^2-4ac}}{2a}\]` |
+| Alternatif | `$a^2+b^2=c^2$` atau `$$\sum_{i=1}^{n} i$$` |
+
+KaTeX mendukung sebagian besar perintah matematika umum, tetapi bukan seluruh
+paket dan makro LaTeX. Rumus yang tidak dikenali tetap ditampilkan sebagai
+teks sumber agar isi pembelajaran tidak hilang. Rumus panjang dapat digeser
+secara horizontal pada layar kecil.
+

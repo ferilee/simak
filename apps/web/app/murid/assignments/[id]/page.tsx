@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { apiRequest } from "../../../../lib/api";
 import { Toast } from "../../../../components/Toast";
+import { MathText } from "../../../../components/MathContent";
 
 type AssignmentDetail = {
   assignment: {
@@ -92,7 +93,7 @@ export default function AssignmentPage() {
       <Link href="/murid" style={styles.back}>← Ruang murid</Link>
       <p style={styles.eyebrow}>SIMAK · PENUGASAN</p>
       <h1 style={styles.title}>{data.assignment.title}</h1>
-      {data.assignment.instructions ? <p style={styles.instructions}>{data.assignment.instructions}</p> : null}
+      {data.assignment.instructions ? <p style={styles.instructions}><MathText text={data.assignment.instructions} /></p> : null}
       <p style={styles.meta}>Status: <strong>{data.assignment.progress}</strong> · batas {formatDate(data.assignment.due_at)}</p>
       {message ? <Toast message={message} onDismiss={() => setMessage("")} /> : null}
 

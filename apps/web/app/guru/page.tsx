@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiBase, apiRequest } from "../../lib/api";
 import { Toast } from "../../components/Toast";
+import { MathText } from "../../components/MathContent";
 
 type ModuleSummary = {
   id: number;
@@ -782,6 +783,7 @@ export default function GuruPage() {
               rows={6}
               style={styles.textarea}
             />
+            <small style={styles.muted}>Rumus LaTeX didukung: gunakan <code>\(...\)</code> untuk rumus sebaris atau <code>\[...\]</code> untuk rumus terpisah.</small>
             <button type="submit" style={styles.primaryButton}>Tambahkan blok</button>
           </form>
           <h2 style={styles.sectionTitle}>Tambah lampiran</h2>
@@ -847,6 +849,7 @@ export default function GuruPage() {
               <option value="uraian">Uraian</option>
             </select>
             <textarea required value={itemPrompt} onChange={(event) => setItemPrompt(event.target.value)} placeholder="Pertanyaan" rows={3} style={styles.textarea} />
+            <small style={styles.muted}>Rumus LaTeX didukung: <code>\(...\)</code> sebaris atau <code>\[...\]</code> terpisah.</small>
             {itemType === "pilihan_ganda" ? <textarea required value={itemOptions} onChange={(event) => setItemOptions(event.target.value)} placeholder="Pilihan jawaban, satu per baris" rows={4} style={styles.textarea} /> : null}
             <input value={itemAnswerKey} onChange={(event) => setItemAnswerKey(event.target.value)} placeholder="Kunci jawaban (opsional)" style={styles.input} />
             <input type="number" min={0} max={1000} value={itemPoints} onChange={(event) => setItemPoints(event.target.value)} placeholder="Poin" style={styles.input} />
@@ -1082,9 +1085,9 @@ export default function GuruPage() {
                   <p style={styles.muted}>{attemptDetail.attempt.username} · status {attemptDetail.attempt.status}</p>
                   {attemptDetail.items.map((item, index) => (
                     <article key={item.id} style={styles.answerCard}>
-                      <strong>{index + 1}. {item.prompt}</strong>
-                      <p style={styles.answerText}>{item.answer_text || "Tidak ada jawaban."}</p>
-                      <small style={styles.muted}>Kunci: {item.answer_key || "Tidak ada kunci otomatis."} · Maksimal {item.points} poin</small>
+                      <strong>{index + 1}. <MathText text={item.prompt} /></strong>
+                      <p style={styles.answerText}><MathText text={item.answer_text || "Tidak ada jawaban."} /></p>
+                      <small style={styles.muted}>Kunci: <MathText text={item.answer_key || "Tidak ada kunci otomatis."} /> · Maksimal {item.points} poin</small>
                       <input
                         type="number"
                         min={0}

@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { apiRequest } from "../../../../lib/api";
 import { Toast } from "../../../../components/Toast";
+import { MathText } from "../../../../components/MathContent";
 
 type WorksheetItem = {
   id: number;
@@ -164,14 +165,14 @@ export default function WorksheetPage() {
       <Link href={`/murid/modules/${data.worksheet.module_id}`} style={styles.back}>← Kembali ke materi</Link>
       <p style={styles.eyebrow}>SIMAK · LKPD</p>
       <h1 style={styles.title}>{data.worksheet.title}</h1>
-      {data.worksheet.instructions ? <p style={styles.instructions}>{data.worksheet.instructions}</p> : null}
+      {data.worksheet.instructions ? <p style={styles.instructions}><MathText text={data.worksheet.instructions} /></p> : null}
       {assignmentId ? <p style={styles.integrityNotice}>Untuk membantu guru meninjau proses belajar, SIMAK mencatat indikasi seperti berpindah halaman dan aktivitas clipboard. Ini bukan penilaian otomatis bahwa Anda melakukan kecurangan.</p> : null}
       {message ? <Toast message={message} onDismiss={() => setMessage("")} /> : null}
 
       <section style={styles.list}>
         {data.items.map((item, index) => (
           <article key={item.id} style={styles.question}>
-            <strong>{index + 1}. {item.prompt}</strong>
+            <strong>{index + 1}. <MathText text={item.prompt} /></strong>
             <span style={styles.points}>{item.points} poin</span>
             <AnswerField item={item} value={answers[item.id] ?? ""} disabled={status !== "draf"} onChange={(value) => setAnswer(item.id, value)} />
           </article>
@@ -190,7 +191,7 @@ function AnswerField({ item, value, disabled, onChange }: { item: WorksheetItem;
   if (item.item_type === "pilihan_ganda") {
     const options = Array.isArray(item.options?.options) ? item.options.options.filter((option): option is string => typeof option === "string") : [];
     return <div style={styles.options}>{options.map((option) => (
-      <label key={option} style={styles.option}><input type="radio" name={`item-${item.id}`} value={option} checked={value === option} disabled={disabled} onChange={(event) => onChange(event.target.value)} />{option}</label>
+      <label key={option} style={styles.option}><input type="radio" name={`item-${item.id}`} value={option} checked={value === option} disabled={disabled} onChange={(event) => onChange(event.target.value)} /><MathText text={option} /></label>
     ))}</div>;
   }
   if (item.item_type === "uraian") {

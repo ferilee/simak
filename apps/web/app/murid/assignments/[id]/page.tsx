@@ -21,6 +21,8 @@ type AssignmentDetail = {
   exit_ticket_submitted: boolean;
 };
 type AssignmentResponse = { ok: true; data: AssignmentDetail };
+type AssignmentStepId = "worksheet" | "quiz" | "exit";
+type AssignmentStep = { id: AssignmentStepId; label: string; title: string; description: string };
 
 export default function AssignmentPage() {
   const params = useParams<{ id: string }>();
@@ -31,6 +33,7 @@ export default function AssignmentPage() {
   const [confusing1, setConfusing1] = useState("");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [stepIndex, setStepIndex] = useState(0);
 
   async function load() {
     try {
@@ -76,6 +79,14 @@ export default function AssignmentPage() {
   if (message && !data) return <main style={styles.container}><Toast message={message} onDismiss={() => setMessage("")} /><Link href="/murid">← Kembali</Link></main>;
   if (!data) return <main style={styles.container}><p>Memuat penugasan...</p></main>;
 
+  const steps: AssignmentStep[] = [
+    ...(data.worksheet ? [{ id: "worksheet" as const, label: "LKPD", title: "Kerjakan LKPD", description: "Selesaikan latihan sebelum mengikuti kuis." }] : []),
+    ...(data.assignment.ruas_quiz_url ? [{ id: "quiz" as const, label: "Kuis RUAS", title: "Ikuti kuis RUAS", description: "Buka asesmen melalui RUAS setelah menyelesaikan LKPD." }] : []),
+    { id: "exit", label: "Exit ticket", title: "Refleksi 3-2-1", description: "Tuliskan hal yang sudah dipahami dan yang masih membingungkan." },
+  ];
+  const currentStepIndex = Math.min(stepIndex, steps.length - 1);
+  const currentStep = steps[currentStepIndex];
+
   return (
     <main style={styles.container}>
       <Link href="/murid" style={styles.back}>← Ruang murid</Link>
@@ -85,26 +96,58 @@ export default function AssignmentPage() {
       <p style={styles.meta}>Status: <strong>{data.assignment.progress}</strong> · batas {formatDate(data.assignment.due_at)}</p>
       {message ? <Toast message={message} onDismiss={() => setMessage("")} /> : null}
 
-      <section style={styles.panel}>
-        <h2 style={styles.heading}>Materi dan LKPD</h2>
-        {data.worksheet ? <Link href={`/murid/worksheets/${data.worksheet.id}?assignmentId=${data.assignment.id}`} style={styles.actionLink}>Buka {data.worksheet.title} →</Link> : <p style={styles.muted}>Tidak ada LKPD pada penugasan ini.</p>}
-        {data.attempt?.total_score !== null && data.attempt?.total_score !== undefined ? <p style={styles.score}>Nilai LKPD: {data.attempt.total_score}</p> : null}
-      </section>
+      <nav className="assignment-stepper" aria-label="Urutan penugasan">
+        {steps.map((step, index) => (
+          <button
+            key={step.id}
+            type="button"
+            className={`assignment-step ${index === currentStepIndex ? "is-active" : ""}`}
+            onClick={() => setStepIndex(index)}
+            aria-current={index === currentStepIndex ? "step" : undefined}
+          >
+            <span className="assignment-step-number">{index + 1}</span>
+            <span className="assignment-step-copy"><strong>{step.label}</strong><small>{step.description}</small></span>
+          </button>
+        ))}
+      </nav>
 
-      {data.assignment.ruas_quiz_url ? <section style={styles.panel}>
-        <h2 style={styles.heading}>Kuis RUAS</h2>
-        <p style={styles.muted}>Buka kuis asesmen melalui RUAS. Aktivitas pembukaan dicatat di SIMAK.</p>
-        <button type="button" onClick={openRuas} style={styles.primaryButton}>Buka Kuis di RUAS</button>
-      </section> : null}
+      <section className="assignment-flow-panel">
+        <p className="assignment-flow-kicker">Langkah {currentStepIndex + 1} dari {steps.length}</p>
+        <h2 style={styles.heading}>{currentStep.title}</h2>
+        <p style={styles.muted}>{currentStep.description}</p>
 
-      <section style={styles.panel}>
-        <h2 style={styles.heading}>Exit ticket 3-2-1</h2>
-        <form onSubmit={submitExitTicket} style={styles.form}>
-          <textarea required value={understood3} onChange={(event) => setUnderstood3(event.target.value)} placeholder="3 hal yang saya pahami" rows={3} style={styles.textarea} />
-          <textarea required value={examples2} onChange={(event) => setExamples2(event.target.value)} placeholder="2 contoh penerapan" rows={3} style={styles.textarea} />
-          <textarea required value={confusing1} onChange={(event) => setConfusing1(event.target.value)} placeholder="1 hal yang masih membingungkan" rows={3} style={styles.textarea} />
-          <button type="submit" disabled={saving} style={styles.primaryButton}>{data.exit_ticket_submitted ? "Perbarui exit ticket" : "Kirim exit ticket"}</button>
-        </form>
+        {currentStep.id === "worksheet" && data.worksheet ? (
+          <div className="assignment-flow-content">
+            <p style={styles.muted}>Buka LKPD berikut dan kirimkan jawaban sesuai instruksi.</p>
+            <Link href={`/murid/worksheets/${data.worksheet.id}?assignmentId=${data.assignment.id}`} className="assignment-flow-action" style={styles.actionLink}>Buka {data.worksheet.title} →</Link>
+            {data.attempt?.total_score !== null && data.attempt?.total_score !== undefined ? <p style={styles.score}>Nilai LKPD: {data.attempt.total_score}</p> : null}
+          </div>
+        ) : null}
+
+        {currentStep.id === "quiz" && data.assignment.ruas_quiz_url ? (
+          <div className="assignment-flow-content">
+            <p style={styles.muted}>Buka kuis asesmen melalui RUAS. Aktivitas pembukaan dicatat di SIMAK.</p>
+            <button type="button" onClick={openRuas} style={styles.primaryButton}>Buka Kuis di RUAS</button>
+          </div>
+        ) : null}
+
+        {currentStep.id === "exit" ? (
+          <form onSubmit={submitExitTicket} style={styles.form}>
+            <textarea required value={understood3} onChange={(event) => setUnderstood3(event.target.value)} placeholder="3 hal yang saya pahami" rows={3} style={styles.textarea} />
+            <textarea required value={examples2} onChange={(event) => setExamples2(event.target.value)} placeholder="2 contoh penerapan" rows={3} style={styles.textarea} />
+            <textarea required value={confusing1} onChange={(event) => setConfusing1(event.target.value)} placeholder="1 hal yang masih membingungkan" rows={3} style={styles.textarea} />
+            <button type="submit" disabled={saving} style={styles.primaryButton}>{data.exit_ticket_submitted ? "Perbarui exit ticket" : "Kirim exit ticket"}</button>
+          </form>
+        ) : null}
+
+        <div className="assignment-flow-navigation">
+          <button type="button" className="assignment-flow-secondary" onClick={() => setStepIndex((current) => Math.max(0, current - 1))} disabled={currentStepIndex === 0}>← Sebelumnya</button>
+          {currentStepIndex < steps.length - 1 ? (
+            <button type="button" className="assignment-flow-primary" onClick={() => setStepIndex((current) => Math.min(steps.length - 1, current + 1))}>Lanjut ke {steps[currentStepIndex + 1].label} →</button>
+          ) : (
+            <Link href="/murid" className="assignment-flow-primary">Selesai</Link>
+          )}
+        </div>
       </section>
     </main>
   );

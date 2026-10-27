@@ -60,6 +60,12 @@ export default function MuridPage() {
     { title: "Penugasan", description: "Kerjakan aktivitas yang tersedia" },
   ];
   const displayName = user?.display_name ?? user?.name ?? "Murid";
+  const activeAssignments = data.assignments
+    .filter((assignment) => new Date(assignment.due_at).getTime() >= Date.now())
+    .sort((left, right) => new Date(left.due_at).getTime() - new Date(right.due_at).getTime());
+  const pastAssignments = data.assignments
+    .filter((assignment) => new Date(assignment.due_at).getTime() < Date.now())
+    .sort((left, right) => new Date(right.due_at).getTime() - new Date(left.due_at).getTime());
 
   async function load() {
     try {
@@ -232,22 +238,24 @@ export default function MuridPage() {
             <section className="wizard-step-content">
               <div className="dashboard-section-heading">
                 <h3>Penugasan aktif</h3>
-                <span>{data.assignments.length} penugasan</span>
+                <span>{activeAssignments.length} penugasan</span>
               </div>
-              {data.assignments.length === 0 ? (
-                <p className="empty-state">Belum ada penugasan untuk kelas Anda.</p>
-              ) : (
+              {activeAssignments.length > 0 ? (
                 <div className="content-list">
-                  {data.assignments.map((assignment) => (
-                    <Link key={assignment.id} href={`/murid/assignments/${assignment.id}`} className="content-card content-link">
-                      <strong>{assignment.title}</strong>
-                      <span className="content-muted">{assignment.instructions ?? "Buka detail penugasan untuk mulai."}</span>
-                      <span className="content-meta">Status: {assignment.progress} · batas {formatDate(assignment.due_at)}</span>
-                      <span className="content-action">Buka penugasan →</span>
-                    </Link>
-                  ))}
+                  {activeAssignments.map((assignment) => <AssignmentCard key={assignment.id} assignment={assignment} />)}
                 </div>
-              )}
+              ) : <p className="empty-state">{pastAssignments.length > 0 ? "Tidak ada penugasan aktif saat ini." : "Belum ada penugasan untuk kelas Anda."}</p>}
+              {pastAssignments.length > 0 ? (
+                <details className="assignment-history">
+                  <summary>
+                    <strong>Riwayat penugasan</strong>
+                    <span>{pastAssignments.length} tugas</span>
+                  </summary>
+                  <div className="content-list">
+                    {pastAssignments.map((assignment) => <AssignmentCard key={assignment.id} assignment={assignment} />)}
+                  </div>
+                </details>
+              ) : null}
             </section>
           ) : null}
 
@@ -281,6 +289,17 @@ export default function MuridPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+function AssignmentCard({ assignment }: { assignment: AssignmentSummary }) {
+  return (
+    <Link href={`/murid/assignments/${assignment.id}`} className="content-card content-link">
+      <strong>{assignment.title}</strong>
+      <span className="content-muted">{assignment.instructions ?? "Buka detail penugasan untuk mulai."}</span>
+      <span className="content-meta">Status: {assignment.progress} · batas {formatDate(assignment.due_at)}</span>
+      <span className="content-action">Buka penugasan →</span>
+    </Link>
   );
 }
 

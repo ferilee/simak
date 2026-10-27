@@ -68,6 +68,27 @@ type AssignmentGradingSummary = {
   students: AssignmentStudentSummary[];
 };
 type AssignmentGradingResponse = { ok: true; data: AssignmentGradingSummary };
+type SessionReportRow = {
+  student_id: number;
+  name: string;
+  username: string;
+  class_name: string;
+  hadir: boolean;
+  opened_at: string | null;
+  started_lkpd_at: string | null;
+  submission_status: "belum" | "draf" | "terkumpul" | "dinilai";
+  submitted_at: string | null;
+  total_score: number | null;
+  exit_ticket_submitted: boolean;
+  exit_ticket_submitted_at: string | null;
+  ruas_opened_at: string | null;
+};
+type SessionReport = {
+  assignment: { id: number; title: string; opens_at: string; due_at: string };
+  summary: { total_students: number; hadir: number; submitted: number; exit_ticket: number };
+  students: SessionReportRow[];
+};
+type SessionReportResponse = { ok: true; data: SessionReport };
 type WorksheetAttemptItem = {
   id: number;
   prompt: string;
@@ -129,6 +150,9 @@ export default function GuruPage() {
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<number | null>(null);
   const [assignmentSummary, setAssignmentSummary] = useState<AssignmentGradingSummary | null>(null);
   const [assignmentSummaryLoading, setAssignmentSummaryLoading] = useState(false);
+  const [selectedReportAssignmentId, setSelectedReportAssignmentId] = useState<number | null>(null);
+  const [sessionReport, setSessionReport] = useState<SessionReport | null>(null);
+  const [sessionReportLoading, setSessionReportLoading] = useState(false);
   const [scoreDrafts, setScoreDrafts] = useState<Record<number, string>>({});
   const [noteDrafts, setNoteDrafts] = useState<Record<number, string>>({});
   const [teacherComment, setTeacherComment] = useState("");
@@ -220,6 +244,19 @@ export default function GuruPage() {
       setMessage(error instanceof Error ? error.message : "Ringkasan penugasan belum dapat dimuat.");
     } finally {
       setAssignmentSummaryLoading(false);
+    }
+  }
+
+  async function loadSessionReport(assignmentId: number) {
+    setSelectedReportAssignmentId(assignmentId);
+    setSessionReportLoading(true);
+    try {
+      const response = await apiRequest<SessionReportResponse>(`/reports/session?assignmentId=${assignmentId}`);
+      setSessionReport(response.data);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Rekap sesi belum dapat dimuat.");
+    } finally {
+      setSessionReportLoading(false);
     }
   }
 
@@ -625,8 +662,41 @@ export default function GuruPage() {
           <input type="url" value={assignmentRuasUrl} onChange={(event) => setAssignmentRuasUrl(event.target.value)} placeholder="Tautan kuis RUAS (opsional)" style={styles.input} />
           <button type="submit" style={styles.primaryButton}>Buat draf penugasan</button>
         </form>
-        {assignments.length > 0 ? <div style={{ ...styles.list, marginTop: 16 }}>{assignments.map((assignment) => <article key={assignment.id} style={styles.assignmentCard}><div style={styles.assignmentInfo}><strong>{assignment.title}</strong><span style={styles.muted}>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span style={styles.muted}>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><div style={styles.actionRow}><button type="button" onClick={() => void loadAssignmentSummary(assignment.id)} style={styles.secondaryButton}>{selectedAssignmentId === assignment.id ? "Segarkan exit ticket" : "Lihat exit ticket"}</button><button type="button" onClick={() => void changeAssignmentStatus(assignment)} style={styles.secondaryButton}>{assignment.status === "terbit" ? "Tutup" : "Terbitkan"}</button></div></article>)}</div> : <p style={styles.empty}>Belum ada penugasan.</p>}
+        {assignments.length > 0 ? <div style={{ ...styles.list, marginTop: 16 }}>{assignments.map((assignment) => <article key={assignment.id} style={styles.assignmentCard}><div style={styles.assignmentInfo}><strong>{assignment.title}</strong><span style={styles.muted}>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span style={styles.muted}>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><div style={styles.actionRow}><button type="button" onClick={() => void loadSessionReport(assignment.id)} style={styles.secondaryButton}>{selectedReportAssignmentId === assignment.id ? "Segarkan rekap" : "Lihat rekap"}</button><button type="button" onClick={() => void loadAssignmentSummary(assignment.id)} style={styles.secondaryButton}>{selectedAssignmentId === assignment.id ? "Segarkan exit ticket" : "Lihat exit ticket"}</button><button type="button" onClick={() => void changeAssignmentStatus(assignment)} style={styles.secondaryButton}>{assignment.status === "terbit" ? "Tutup" : "Terbitkan"}</button></div></article>)}</div> : <p style={styles.empty}>Belum ada penugasan.</p>}
       </section>
+
+      {selectedReportAssignmentId ? (
+        <section style={styles.panel}>
+          <h2 style={styles.sectionTitle}>Rekap sesi</h2>
+          {sessionReportLoading ? <p style={styles.muted}>Memuat rekap sesi...</p> : null}
+          {!sessionReportLoading && sessionReport ? (
+            <>
+              <p style={styles.muted}>{sessionReport.assignment.title} · batas {formatDate(sessionReport.assignment.due_at)}</p>
+              <div style={styles.reportSummary}>
+                <div style={styles.reportMetric}><strong>{sessionReport.summary.total_students}</strong><span>Murid</span></div>
+                <div style={styles.reportMetric}><strong>{sessionReport.summary.hadir}</strong><span>Hadir</span></div>
+                <div style={styles.reportMetric}><strong>{sessionReport.summary.submitted}</strong><span>Kumpul LKPD</span></div>
+                <div style={styles.reportMetric}><strong>{sessionReport.summary.exit_ticket}</strong><span>Exit ticket</span></div>
+              </div>
+              {sessionReport.students.length === 0 ? <p style={styles.empty}>Belum ada murid di kelas tujuan.</p> : (
+                <div style={styles.reportTableWrap}>
+                  <table style={styles.reportTable}>
+                    <thead><tr><th style={styles.reportCell}>Murid</th><th style={styles.reportCell}>Presensi</th><th style={styles.reportCell}>LKPD</th><th style={styles.reportCell}>Nilai</th><th style={styles.reportCell}>Exit ticket</th><th style={styles.reportCell}>RUAS</th></tr></thead>
+                    <tbody>{sessionReport.students.map((student) => <tr key={student.student_id}>
+                      <td style={styles.reportCell}><strong>{student.name}</strong><br /><span style={styles.muted}>{student.username} · {student.class_name}</span></td>
+                      <td style={styles.reportCell}>{student.hadir ? "Hadir" : "Belum hadir"}</td>
+                      <td style={styles.reportCell}>{student.submission_status}</td>
+                      <td style={styles.reportCell}>{student.total_score === null ? "—" : student.total_score}</td>
+                      <td style={styles.reportCell}>{student.exit_ticket_submitted ? "Sudah" : "Belum"}</td>
+                      <td style={styles.reportCell}>{student.ruas_opened_at ? "Dibuka" : "Belum"}</td>
+                    </tr>)}</tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          ) : null}
+        </section>
+      ) : null}
 
       {selectedAssignmentId ? (
         <section style={styles.panel}>
@@ -753,6 +823,11 @@ const styles = {
   exitTicketLayout: { display: "grid", gap: 12 },
   exitTicketCard: { display: "grid", gap: 12, border: "1px solid #eaecf0", borderRadius: 10, padding: 14 },
   exitTicketField: { display: "grid", gap: 6, background: "#f8f9fc", borderRadius: 8, padding: 12 },
+  reportSummary: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10 },
+  reportMetric: { display: "grid", gap: 4, border: "1px solid #eaecf0", borderRadius: 10, padding: 12 },
+  reportTableWrap: { overflowX: "auto" as const },
+  reportTable: { width: "100%", borderCollapse: "collapse" as const, minWidth: 680 },
+  reportCell: { borderBottom: "1px solid #eaecf0", padding: "10px 8px", textAlign: "left" as const, verticalAlign: "top" as const },
 };
 
 function toDateTimeLocal(value: Date) {

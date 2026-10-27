@@ -61,8 +61,15 @@ Jangan memakai `down -v` kecuali memang ingin menghapus seluruh data staging.
 - [x] Smoke request dengan User-Agent Android ke `/`, `/login`, dan `/guru` mengembalikan HTTP 200.
 - [x] Smoke request dengan User-Agent iPhone Safari ke `/`, `/login`, dan `/guru` mengembalikan HTTP 200.
 - [x] Endpoint LAN `http://10.32.0.45:18080` mengembalikan login HTTP 200 dan CORS origin LAN yang benar.
+- [x] Hardening role: murid ke laporan/impor RUAS mendapat 403.
+- [x] Hardening ownership: guru lain ke penugasan asing mendapat 404.
+- [x] Validasi parameter rentang invalid mendapat 400.
+- [x] Login dengan identifier/password palsu mendapat 401.
+- [x] Beban authenticated sintetis 36 laporan pada handler API: 36/36 HTTP 200 dalam 406 ms total; load melalui proxy dan submit nyata tetap pending.
 - [x] Beban ringan 36 request paralel ke halaman login: 36/36 HTTP 200, rata-rata 0,17 detik, maksimum 0,25 detik.
-- [ ] Login valid/salah dan akun nonaktif dengan akun RUAS contoh.
+- [ ] Login dengan password salah menggunakan akun RUAS contoh.
+- [ ] Login valid dengan akun RUAS contoh.
+- [ ] Login akun RUAS nonaktif.
 - [ ] Uji end-to-end guru–murid dan ekspor melalui browser staging.
 - [ ] Uji sentuh/layout pada HP Android dan koneksi lambat.
 - [ ] Uji Safari iOS fisik melalui hostname LAN dan sertifikat yang dipercaya perangkat.

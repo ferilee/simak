@@ -394,6 +394,16 @@ a {
   gap: 10px;
 }
 
+.dashboard-logout-murid {
+  gap: 8px;
+}
+
+.dashboard-logout-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
 .join-panel {
   display: grid;
   min-width: min(100%, 320px);
@@ -960,8 +970,34 @@ a {
     padding-block: 28px 24px;
   }
 
+  .dashboard-header-murid {
+    position: relative;
+    padding-right: 58px;
+  }
+
+  .dashboard-header-murid .dashboard-actions {
+    position: absolute;
+    top: 20px;
+    right: 0;
+  }
+
   .dashboard-actions {
     justify-content: flex-start;
+  }
+
+  .dashboard-logout-murid {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+  }
+
+  .dashboard-logout-murid .dashboard-logout-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
 
   .join-panel {

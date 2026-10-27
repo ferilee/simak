@@ -111,7 +111,7 @@ export default function MuridPage() {
 
   return (
     <main className="dashboard-shell">
-      <header className="dashboard-header container">
+      <header className="dashboard-header dashboard-header-murid container">
         <div>
           <Link className="brand" href="/" aria-label="SIMAK beranda">
             <span className="brand-mark" aria-hidden="true">S</span>
@@ -122,7 +122,14 @@ export default function MuridPage() {
           <p className="dashboard-subtitle">Ikuti langkah belajar Anda dari satu ruang yang terarah.</p>
         </div>
         <div className="dashboard-actions">
-          <button type="button" onClick={() => void logout()} className="button button-secondary">Keluar</button>
+          <button type="button" onClick={() => void logout()} className="button button-secondary dashboard-logout-murid" aria-label="Keluar" title="Keluar">
+            <svg className="dashboard-logout-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10 17l5-5-5-5" />
+              <path d="M15 12H3" />
+              <path d="M21 19V5a2 2 0 0 0-2-2h-6" />
+            </svg>
+            <span className="dashboard-logout-label">Keluar</span>
+          </button>
         </div>
       </header>
 

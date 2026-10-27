@@ -332,13 +332,30 @@ muridRoutes.get("/worksheets/:id/attempt", async (c) => {
   if (!(await accessibleWorksheet(user.userId, worksheetId))) return c.json({ ok: false, message: "LKPD belum tersedia untuk kelas Anda." }, 404);
   const attempt = await getOrCreateAttempt(user.userId, worksheetId);
   const answers = await db.select().from(worksheetAnswers).where(eq(worksheetAnswers.attemptId, attempt.id));
+  // Pembahasan hanya dibuka setelah LKPD dikumpulkan/dinilai. Kunci jawaban
+  // (answer_key) tidak pernah dikirim ke murid.
+  let explanations: Record<number, string> | undefined;
+  if (attempt.status !== "draf") {
+    const items = await db
+      .select({ id: worksheetItems.id, explanation: worksheetItems.explanation })
+      .from(worksheetItems)
+      .where(eq(worksheetItems.worksheetId, worksheetId));
+    explanations = Object.fromEntries(
+      items.filter((item) => item.explanation).map((item) => [item.id, item.explanation!]),
+    );
+  }
   return c.json({
     ok: true,
     data: {
       id: attempt.id,
       status: attempt.status,
       submitted_at: attempt.submittedAt,
-      answers: answers.map((answer) => ({ item_id: answer.worksheetItemId, answer_text: answer.answerText })),
+      answers: answers.map((answer) => ({
+        item_id: answer.worksheetItemId,
+        answer_text: answer.answerText,
+        attachment_key: answer.attachmentKey,
+      })),
+      ...(explanations ? { explanations } : {}),
     },
   });
 });

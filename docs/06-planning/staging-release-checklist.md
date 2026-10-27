@@ -56,8 +56,12 @@ Jangan memakai `down -v` kecuali memang ingin menghapus seluruh data staging.
 - [x] Restart seluruh Compose tanpa `down -v` mempertahankan 5 users, 2 penugasan, dan 2 nilai RUAS.
 - [x] Dump MariaDB `31.559` bytes dan snapshot RustFS `4.657` bytes dibuat.
 - [x] Dump MariaDB berhasil dipulihkan ke database sementara dengan jumlah data `5 / 2 / 2`.
+- [x] Smoke request dengan User-Agent Android ke `/`, `/login`, dan `/guru` mengembalikan HTTP 200.
+- [x] Beban ringan 36 request paralel ke halaman login: 36/36 HTTP 200, rata-rata 0,17 detik, maksimum 0,25 detik.
 - [ ] Login valid/salah dan akun nonaktif dengan akun RUAS contoh.
 - [ ] Uji end-to-end guru–murid dan ekspor melalui browser staging.
+- [ ] Uji sentuh/layout pada HP Android dan koneksi lambat.
+- [ ] Uji 36 pengumpulan authenticated dalam jendela 15 menit.
 
 - [ ] Buat file environment staging di luar repository; jangan menyalin `.env` production.
 - [ ] Pastikan `SIMAK_DATABASE_URL` menunjuk database SIMAK staging yang terpisah.

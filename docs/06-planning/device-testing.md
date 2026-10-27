@@ -26,3 +26,14 @@ unggah foto, dan pengumpulan.
 - Tombol utama dapat digunakan dari layar kecil.
 - Satu kelas sekitar 36 murid dapat mengumpulkan dalam jendela 15 menit.
 
+## Baseline staging otomatis
+
+Pada 27 Oktober 2026, halaman `/`, `/login`, dan `/guru` berhasil dimuat dengan
+User-Agent Android. Beban ringan 36 request paralel ke `/login` menghasilkan
+36/36 HTTP 200, rata-rata 0,17 detik, dan maksimum 0,25 detik.
+
+Baseline ini hanya memeriksa proxy dan halaman publik. Ia belum membuktikan
+layout sentuh, jaringan lambat, autosave, unggah foto, atau 36 pengumpulan
+authenticated; skenario tersebut tetap harus dijalankan dari HP/DevTools dan
+akun murid staging.
+

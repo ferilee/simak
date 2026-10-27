@@ -138,6 +138,14 @@ export const presignUploadSchema = z.object({
   size: z.number().int().positive().max(10 * 1024 * 1024),
 });
 
+// Presign unggah foto jawaban LKPD oleh murid — hanya berkas gambar.
+export const presignWorksheetUploadSchema = z.object({
+  worksheetId: z.number().int().positive(),
+  filename: z.string().trim().min(1).max(255),
+  contentType: z.enum(["image/jpeg", "image/png", "image/webp"]),
+  size: z.number().int().positive().max(10 * 1024 * 1024),
+});
+
 // ---------- LKPD ----------
 
 export const createWorksheetSchema = z.object({

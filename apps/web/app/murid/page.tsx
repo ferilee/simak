@@ -56,8 +56,8 @@ export default function MuridPage() {
 
   const studentSteps = [
     { title: "Kelas saya", description: "Gabung dan lihat kelas aktif" },
-    { title: "Penugasan", description: "Kerjakan aktivitas yang tersedia" },
     { title: "Materi", description: "Baca materi yang diterbitkan" },
+    { title: "Penugasan", description: "Kerjakan aktivitas yang tersedia" },
   ];
   const displayName = user?.display_name ?? user?.name ?? "Murid";
 
@@ -228,7 +228,7 @@ export default function MuridPage() {
             </div>
           ) : null}
 
-          {studentStep === 1 ? (
+          {studentStep === 2 ? (
             <section className="wizard-step-content">
               <div className="dashboard-section-heading">
                 <h3>Penugasan aktif</h3>
@@ -251,7 +251,7 @@ export default function MuridPage() {
             </section>
           ) : null}
 
-          {studentStep === 2 ? (
+          {studentStep === 1 ? (
             <section className="wizard-step-content">
               <div className="dashboard-section-heading">
                 <h3>Materi terbit</h3>

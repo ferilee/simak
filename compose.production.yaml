@@ -62,8 +62,10 @@ services:
   migrate:
     image: ${SIMAK_API_IMAGE:-ghcr.io/ferilee/simak-api}:${SIMAK_IMAGE_TAG:?SIMAK_IMAGE_TAG wajib diisi}
     profiles: ["ops"]
+    working_dir: /app/packages/db
     environment:
       DATABASE_URL: ${SIMAK_DATABASE_URL:?SIMAK_DATABASE_URL wajib diisi}
+    entrypoint: ["bun"]
     command: ["/app/packages/db/node_modules/.bin/drizzle-kit", "migrate", "--config", "/app/packages/db/drizzle.config.ts"]
     networks:
       - ferileenet

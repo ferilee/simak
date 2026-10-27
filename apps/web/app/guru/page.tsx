@@ -718,15 +718,23 @@ export default function GuruPage() {
         )}
       </section>
 
-      <section className="wizard-step-panel" data-active={guruStep === 2} style={styles.panel}>
-        <h2 style={styles.sectionTitle}>Kelas saya</h2>
-        <form onSubmit={createClass} style={styles.form}>
-          <input required value={className} onChange={(event) => setClassName(event.target.value)} placeholder="Nama kelas, misalnya XI DPIB" style={styles.input} />
-          <input required value={classSubject} onChange={(event) => setClassSubject(event.target.value)} placeholder="Mata pelajaran" style={styles.input} />
-          <input required value={classAcademicYear} onChange={(event) => setClassAcademicYear(event.target.value)} placeholder="Tahun ajaran, misalnya 2026/2027" style={styles.input} />
-          <button type="submit" style={styles.primaryButton}>Buat kelas</button>
-        </form>
-        {classes.length > 0 ? <div style={{ ...styles.list, marginTop: 16 }}>{classes.map((kelas) => <article key={kelas.id} style={styles.classCard}><div style={styles.assignmentInfo}><strong>{kelas.name}</strong><span style={styles.muted}>{kelas.subject} · {kelas.academic_year}</span><span style={styles.muted}>Kode gabung: <strong>{kelas.join_code}</strong></span></div></article>)}</div> : <p style={styles.empty}>Belum ada kelas. Buat kelas untuk dapat dipilih sebagai tujuan penugasan.</p>}
+      <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 2} style={styles.panel}>
+        <div className="module-section-heading">
+          <div>
+            <h2 style={styles.sectionTitle}>Kelas saya</h2>
+            <p className="module-section-summary">{classes.length} kelas aktif · kode gabung tersedia di setiap baris</p>
+          </div>
+        </div>
+        <details className="guru-collapsible" open={classes.length === 0}>
+          <summary>+ Buat kelas</summary>
+          <form onSubmit={createClass} style={styles.form}>
+            <input required value={className} onChange={(event) => setClassName(event.target.value)} placeholder="Nama kelas, misalnya XI DPIB" style={styles.input} />
+            <input required value={classSubject} onChange={(event) => setClassSubject(event.target.value)} placeholder="Mata pelajaran" style={styles.input} />
+            <input required value={classAcademicYear} onChange={(event) => setClassAcademicYear(event.target.value)} placeholder="Tahun ajaran, misalnya 2026/2027" style={styles.input} />
+            <button type="submit" style={styles.primaryButton}>Buat kelas</button>
+          </form>
+        </details>
+        {classes.length > 0 ? <div className="module-list">{classes.map((kelas) => <article key={kelas.id} className="resource-row"><div className="module-row-main"><strong>{kelas.name}</strong><span>{kelas.subject} · {kelas.academic_year}</span><span>Kode gabung: <strong>{kelas.join_code}</strong></span></div><span className="module-status module-status-terbit">aktif</span></article>)}</div> : <p style={styles.empty}>Belum ada kelas. Buat kelas untuk dapat dipilih sebagai tujuan penugasan.</p>}
       </section>
 
       {selectedId ? (
@@ -758,22 +766,31 @@ export default function GuruPage() {
         </section>
       ) : null}
 
-      <section className="wizard-step-panel" data-active={guruStep === 1} style={styles.panel}>
-        <h2 style={styles.sectionTitle}>LKPD</h2>
-        <form onSubmit={createWorksheet} style={styles.form}>
-          <input required value={worksheetTitle} onChange={(event) => setWorksheetTitle(event.target.value)} placeholder="Judul LKPD" style={styles.input} />
-          <textarea value={worksheetInstructions} onChange={(event) => setWorksheetInstructions(event.target.value)} placeholder="Petunjuk pengerjaan" rows={3} style={styles.textarea} />
-          <button type="submit" style={styles.primaryButton}>Buat LKPD dari modul terpilih</button>
-        </form>
+      <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 1} style={styles.panel}>
+        <div className="module-section-heading">
+          <div>
+            <h2 style={styles.sectionTitle}>LKPD</h2>
+            <p className="module-section-summary">{worksheets.length} LKPD · pilih satu untuk menambah soal</p>
+          </div>
+        </div>
+        <details className="guru-collapsible" open={worksheets.length === 0}>
+          <summary>+ Buat LKPD</summary>
+          <form onSubmit={createWorksheet} style={styles.form}>
+            <input required value={worksheetTitle} onChange={(event) => setWorksheetTitle(event.target.value)} placeholder="Judul LKPD" style={styles.input} />
+            <textarea value={worksheetInstructions} onChange={(event) => setWorksheetInstructions(event.target.value)} placeholder="Petunjuk pengerjaan" rows={3} style={styles.textarea} />
+            <button type="submit" style={styles.primaryButton}>Buat LKPD dari modul terpilih</button>
+          </form>
+        </details>
         {worksheets.length > 0 ? (
-          <div style={{ ...styles.list, marginTop: 16 }}>
+          <div className="module-list">
             {worksheets.map((worksheet) => (
-              <article key={worksheet.id} style={{ ...styles.module, borderColor: selectedWorksheetId === worksheet.id ? "#175cd3" : "#eaecf0" }}>
-                <button type="button" onClick={() => setSelectedWorksheetId(worksheet.id)} style={styles.moduleSelect}>
+              <article key={worksheet.id} className={`module-row ${selectedWorksheetId === worksheet.id ? "is-selected" : ""}`}>
+                <button type="button" onClick={() => setSelectedWorksheetId(worksheet.id)} className="module-row-main">
                   <strong>{worksheet.title}</strong>
-                  <span style={styles.muted}>{worksheet.status}</span>
+                  <span>{worksheet.status}</span>
                 </button>
-                <button type="button" onClick={() => void changeWorksheetStatus(worksheet)} style={styles.secondaryButton}>
+                <span className={`module-status module-status-${worksheet.status}`}>{worksheet.status}</span>
+                <button type="button" onClick={() => void changeWorksheetStatus(worksheet)} className="module-row-action">
                   {worksheet.status === "terbit" ? "Arsipkan" : "Terbitkan"}
                 </button>
               </article>
@@ -783,8 +800,13 @@ export default function GuruPage() {
       </section>
 
       {selectedWorksheetId ? (
-        <section className="wizard-step-panel" data-active={guruStep === 1} style={styles.panel}>
-          <h2 style={styles.sectionTitle}>Tambah soal LKPD</h2>
+        <section className="wizard-step-panel selected-resource-panel" data-active={guruStep === 1} style={styles.panel}>
+          <div className="selected-resource-heading">
+            <div>
+              <p className="module-section-summary">LKPD terpilih</p>
+              <h2 style={styles.sectionTitle}>Tambah soal LKPD</h2>
+            </div>
+          </div>
           <form onSubmit={addWorksheetItem} style={styles.form}>
             <select value={itemType} onChange={(event) => setItemType(event.target.value as typeof itemType)} style={styles.input}>
               <option value="pilihan_ganda">Pilihan ganda</option>
@@ -800,44 +822,60 @@ export default function GuruPage() {
         </section>
       ) : null}
 
-      <section className="wizard-step-panel" data-active={guruStep === 3} style={styles.panel}>
-        <h2 style={styles.sectionTitle}>Penugasan ke kelas</h2>
-        <form onSubmit={createAssignment} style={styles.form}>
-          <input required value={assignmentTitle} onChange={(event) => setAssignmentTitle(event.target.value)} placeholder="Judul penugasan" style={styles.input} />
-          <textarea value={assignmentInstructions} onChange={(event) => setAssignmentInstructions(event.target.value)} placeholder="Petunjuk penugasan" rows={3} style={styles.textarea} />
-          <label style={styles.label}>Modul
-            <select value={selectedId ?? ""} onChange={(event) => setSelectedId(Number(event.target.value))} style={styles.input}>
-              <option value="">Pilih modul</option>
-              {modules.map((module) => <option key={module.id} value={module.id}>{module.title}</option>)}
-            </select>
-          </label>
-          <label style={styles.label}>LKPD
-            <select value={selectedWorksheetId ?? ""} onChange={(event) => setSelectedWorksheetId(Number(event.target.value))} style={styles.input}>
-              <option value="">Pilih LKPD</option>
-              {worksheets.map((worksheet) => <option key={worksheet.id} value={worksheet.id}>{worksheet.title}</option>)}
-            </select>
-          </label>
-          <div style={styles.checkboxList}>
-            <span style={styles.label}>Kelas tujuan</span>
-            {classes.map((kelas) => <label key={kelas.id} style={styles.checkbox}><input type="checkbox" checked={assignmentClassIds.includes(kelas.id)} onChange={(event) => setAssignmentClassIds((current) => event.target.checked ? [...current, kelas.id] : current.filter((id) => id !== kelas.id))} />{kelas.name} · {kelas.subject}</label>)}
+      <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 3} style={styles.panel}>
+        <div className="module-section-heading">
+          <div>
+            <h2 style={styles.sectionTitle}>Penugasan ke kelas</h2>
+            <p className="module-section-summary">{assignments.length} penugasan · pilih aksi dari daftar</p>
           </div>
-          <label style={styles.label}>Dibuka pada<input type="datetime-local" value={assignmentOpensAt} onChange={(event) => setAssignmentOpensAt(event.target.value)} style={styles.input} /></label>
-          <label style={styles.label}>Batas pengumpulan<input type="datetime-local" value={assignmentDueAt} onChange={(event) => setAssignmentDueAt(event.target.value)} style={styles.input} /></label>
-          <input type="url" value={assignmentRuasUrl} onChange={(event) => setAssignmentRuasUrl(event.target.value)} placeholder="Tautan kuis RUAS (opsional)" style={styles.input} />
-          <button type="submit" style={styles.primaryButton}>Buat draf penugasan</button>
-        </form>
-        {assignments.length > 0 ? <div style={{ ...styles.list, marginTop: 16 }}>{assignments.map((assignment) => <article key={assignment.id} style={styles.assignmentCard}><div style={styles.assignmentInfo}><strong>{assignment.title}</strong><span style={styles.muted}>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span style={styles.muted}>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><div style={styles.actionRow}><button type="button" onClick={() => void loadSessionReport(assignment.id)} style={styles.secondaryButton}>{selectedReportAssignmentId === assignment.id ? "Segarkan rekap" : "Lihat rekap"}</button><button type="button" onClick={() => void loadAssignmentSummary(assignment.id)} style={styles.secondaryButton}>{selectedAssignmentId === assignment.id ? "Segarkan exit ticket" : "Lihat exit ticket"}</button><button type="button" onClick={() => void changeAssignmentStatus(assignment)} style={styles.secondaryButton}>{assignment.status === "terbit" ? "Tutup" : "Terbitkan"}</button></div></article>)}</div> : <p style={styles.empty}>Belum ada penugasan.</p>}
+        </div>
+        <details className="guru-collapsible">
+          <summary>+ Buat penugasan</summary>
+          <form onSubmit={createAssignment} style={styles.form}>
+            <input required value={assignmentTitle} onChange={(event) => setAssignmentTitle(event.target.value)} placeholder="Judul penugasan" style={styles.input} />
+            <textarea value={assignmentInstructions} onChange={(event) => setAssignmentInstructions(event.target.value)} placeholder="Petunjuk penugasan" rows={3} style={styles.textarea} />
+            <label style={styles.label}>Modul
+              <select value={selectedId ?? ""} onChange={(event) => setSelectedId(Number(event.target.value))} style={styles.input}>
+                <option value="">Pilih modul</option>
+                {modules.map((module) => <option key={module.id} value={module.id}>{module.title}</option>)}
+              </select>
+            </label>
+            <label style={styles.label}>LKPD
+              <select value={selectedWorksheetId ?? ""} onChange={(event) => setSelectedWorksheetId(Number(event.target.value))} style={styles.input}>
+                <option value="">Pilih LKPD</option>
+                {worksheets.map((worksheet) => <option key={worksheet.id} value={worksheet.id}>{worksheet.title}</option>)}
+              </select>
+            </label>
+            <div style={styles.checkboxList}>
+              <span style={styles.label}>Kelas tujuan</span>
+              {classes.map((kelas) => <label key={kelas.id} style={styles.checkbox}><input type="checkbox" checked={assignmentClassIds.includes(kelas.id)} onChange={(event) => setAssignmentClassIds((current) => event.target.checked ? [...current, kelas.id] : current.filter((id) => id !== kelas.id))} />{kelas.name} · {kelas.subject}</label>)}
+            </div>
+            <label style={styles.label}>Dibuka pada<input type="datetime-local" value={assignmentOpensAt} onChange={(event) => setAssignmentOpensAt(event.target.value)} style={styles.input} /></label>
+            <label style={styles.label}>Batas pengumpulan<input type="datetime-local" value={assignmentDueAt} onChange={(event) => setAssignmentDueAt(event.target.value)} style={styles.input} /></label>
+            <input type="url" value={assignmentRuasUrl} onChange={(event) => setAssignmentRuasUrl(event.target.value)} placeholder="Tautan kuis RUAS (opsional)" style={styles.input} />
+            <button type="submit" style={styles.primaryButton}>Buat draf penugasan</button>
+          </form>
+        </details>
+        {assignments.length > 0 ? <div className="module-list">{assignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><div className="resource-row-actions"><button type="button" onClick={() => void loadSessionReport(assignment.id)} style={styles.secondaryButton}>{selectedReportAssignmentId === assignment.id ? "Segarkan rekap" : "Lihat rekap"}</button><button type="button" onClick={() => void loadAssignmentSummary(assignment.id)} style={styles.secondaryButton}>{selectedAssignmentId === assignment.id ? "Segarkan exit ticket" : "Lihat exit ticket"}</button><button type="button" onClick={() => void changeAssignmentStatus(assignment)} style={styles.secondaryButton}>{assignment.status === "terbit" ? "Tutup" : "Terbitkan"}</button></div></article>)}</div> : <p style={styles.empty}>Belum ada penugasan.</p>}
       </section>
 
-      <section className="wizard-step-panel" data-active={guruStep === 4} style={styles.panel}>
-        <h2 style={styles.sectionTitle}>Rekap berdasarkan rentang tanggal</h2>
-        <form onSubmit={(event) => { event.preventDefault(); void loadRangeReport(); }} style={styles.form}>
-          <div style={styles.dateRange}>
-            <label style={styles.label}>Dari<input type="date" value={rangeFrom} onChange={(event) => setRangeFrom(event.target.value)} style={styles.input} /></label>
-            <label style={styles.label}>Sampai<input type="date" value={rangeTo} onChange={(event) => setRangeTo(event.target.value)} style={styles.input} /></label>
+      <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 4} style={styles.panel}>
+        <div className="module-section-heading">
+          <div>
+            <h2 style={styles.sectionTitle}>Rekap berdasarkan rentang tanggal</h2>
+            <p className="module-section-summary">Ringkas aktivitas kelas dalam periode tertentu</p>
           </div>
-          <button type="submit" style={styles.primaryButton}>Lihat rekap rentang</button>
-        </form>
+        </div>
+        <details className="guru-collapsible">
+          <summary>+ Atur rentang tanggal</summary>
+          <form onSubmit={(event) => { event.preventDefault(); void loadRangeReport(); }} style={styles.form}>
+            <div style={styles.dateRange}>
+              <label style={styles.label}>Dari<input type="date" value={rangeFrom} onChange={(event) => setRangeFrom(event.target.value)} style={styles.input} /></label>
+              <label style={styles.label}>Sampai<input type="date" value={rangeTo} onChange={(event) => setRangeTo(event.target.value)} style={styles.input} /></label>
+            </div>
+            <button type="submit" style={styles.primaryButton}>Lihat rekap rentang</button>
+          </form>
+        </details>
         {rangeReportLoading ? <p style={styles.muted}>Memuat rekap rentang...</p> : null}
         {!rangeReportLoading && rangeReport ? (
           <>
@@ -873,20 +911,28 @@ export default function GuruPage() {
         ) : null}
       </section>
 
-      <section className="wizard-step-panel" data-active={guruStep === 4} style={styles.panel}>
-        <h2 style={styles.sectionTitle}>Impor nilai RUAS</h2>
-        <p style={styles.muted}>Format CSV sederhana: <code>NIS,nilai,nama</code>. Kolom nama bersifat opsional. Username murid juga boleh dipakai sebagai identifier.</p>
-        <form onSubmit={importRuasScores} style={styles.form}>
-          <label style={styles.label}>Penugasan
-            <select value={ruasImportAssignmentId ?? ""} onChange={(event) => setRuasImportAssignmentId(Number(event.target.value) || null)} style={styles.input}>
-              <option value="">Pilih penugasan</option>
-              {assignments.map((assignment) => <option key={assignment.id} value={assignment.id}>{assignment.title}</option>)}
-            </select>
-          </label>
-          <input type="file" accept=".csv,text/csv" onChange={(event) => { const file = event.target.files?.[0]; if (file) void file.text().then(setRuasImportText); }} style={styles.input} />
-          <textarea required value={ruasImportText} onChange={(event) => setRuasImportText(event.target.value)} placeholder="NIS,nilai,nama\n12345,85,Siti" rows={6} style={styles.textarea} />
-          <button type="submit" disabled={ruasImportLoading} style={styles.primaryButton}>{ruasImportLoading ? "Mengimpor..." : "Impor nilai RUAS"}</button>
-        </form>
+      <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 4} style={styles.panel}>
+        <div className="module-section-heading">
+          <div>
+            <h2 style={styles.sectionTitle}>Impor nilai RUAS</h2>
+            <p className="module-section-summary">Masukkan nilai dari CSV ke penugasan terpilih</p>
+          </div>
+        </div>
+        <details className="guru-collapsible">
+          <summary>+ Buka impor nilai</summary>
+          <p style={styles.muted}>Format CSV sederhana: <code>NIS,nilai,nama</code>. Kolom nama bersifat opsional. Username murid juga boleh dipakai sebagai identifier.</p>
+          <form onSubmit={importRuasScores} style={styles.form}>
+            <label style={styles.label}>Penugasan
+              <select value={ruasImportAssignmentId ?? ""} onChange={(event) => setRuasImportAssignmentId(Number(event.target.value) || null)} style={styles.input}>
+                <option value="">Pilih penugasan</option>
+                {assignments.map((assignment) => <option key={assignment.id} value={assignment.id}>{assignment.title}</option>)}
+              </select>
+            </label>
+            <input type="file" accept=".csv,text/csv" onChange={(event) => { const file = event.target.files?.[0]; if (file) void file.text().then(setRuasImportText); }} style={styles.input} />
+            <textarea required value={ruasImportText} onChange={(event) => setRuasImportText(event.target.value)} placeholder="NIS,nilai,nama\n12345,85,Siti" rows={6} style={styles.textarea} />
+            <button type="submit" disabled={ruasImportLoading} style={styles.primaryButton}>{ruasImportLoading ? "Mengimpor..." : "Impor nilai RUAS"}</button>
+          </form>
+        </details>
         {ruasImportResult ? <p style={styles.muted}>Baris: {ruasImportResult.total} · cocok: {ruasImportResult.cocok} · tidak ditemukan: {ruasImportResult.tidak_ditemukan} · duplikat: {ruasImportResult.duplikat}</p> : null}
         {ruasImportResult?.unmatched.length ? <div style={styles.warningBox}>Baris yang perlu diperiksa: {ruasImportResult.unmatched.map((row) => `${row.identifier} (${row.match_status})`).join(", ")}</div> : null}
       </section>

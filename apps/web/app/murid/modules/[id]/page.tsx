@@ -18,6 +18,7 @@ type ModuleResponse = {
   data: {
     module: { id: number; title: string; subject: string; description: string | null };
     blocks: Block[];
+    worksheets: { id: number; title: string; instructions: string | null }[];
   };
 };
 
@@ -51,6 +52,18 @@ export default function ModulePage() {
       <article style={styles.content}>
         {data.blocks.map((block) => <ModuleBlock key={block.id} block={block} moduleId={data.module.id} />)}
       </article>
+      {data.worksheets.length > 0 ? (
+        <section style={styles.worksheetSection}>
+          <h2 style={styles.subheading}>LKPD</h2>
+          {data.worksheets.map((worksheet) => (
+            <Link key={worksheet.id} href={`/murid/worksheets/${worksheet.id}`} style={styles.worksheetLink}>
+              <strong>{worksheet.title}</strong>
+              <span>{worksheet.instructions ?? "Buka dan kerjakan LKPD ini."}</span>
+              <span style={styles.fileLink}>Kerjakan LKPD →</span>
+            </Link>
+          ))}
+        </section>
+      ) : null}
     </main>
   );
 }
@@ -122,5 +135,7 @@ const styles = {
   figure: { margin: 0, display: "grid", gap: 8 },
   image: { maxWidth: "100%", borderRadius: 10 },
   fileLink: { color: "#175cd3", fontWeight: 700 },
+  worksheetSection: { marginTop: 32, display: "grid", gap: 12 },
+  worksheetLink: { display: "grid", gap: 6, border: "1px solid #d0d5dd", borderRadius: 10, padding: 16, textDecoration: "none", color: "inherit" },
   error: { color: "#b42318", background: "#fef3f2", padding: 12, borderRadius: 8 },
 };

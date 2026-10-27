@@ -2,6 +2,7 @@ export * from "./users";
 export * from "./classes";
 export * from "./modules";
 export * from "./worksheets";
+export * from "./worksheet-attempts";
 export * from "./assignments";
 export * from "./submissions";
 export * from "./activity";

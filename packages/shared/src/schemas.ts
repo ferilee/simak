@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ACTIVITY_EVENTS, CONTENT_STATUS, MODULE_BLOCK_TYPES, ROLES } from "./block-types";
+import { ACTIVITY_EVENTS, CONTENT_STATUS, MODULE_BLOCK_TYPES, ROLES, WORKSHEET_ITEM_TYPES } from "./block-types";
 
 // ---------- Autentikasi ----------
 // Kata sandi hanya diteruskan untuk diverifikasi ke sumber akun RUAS.
@@ -131,6 +131,40 @@ export const presignUploadSchema = z.object({
   filename: z.string().trim().min(1).max(255),
   contentType: z.enum(["image/jpeg", "image/png", "image/webp", "application/pdf"]),
   size: z.number().int().positive().max(10 * 1024 * 1024),
+});
+
+// ---------- LKPD ----------
+
+export const createWorksheetSchema = z.object({
+  moduleId: z.number().int().positive().optional(),
+  title: z.string().min(1).max(200),
+  instructions: z.string().max(5000).optional(),
+});
+
+export const updateWorksheetSchema = z.object({
+  title: z.string().min(1).max(200).optional(),
+  instructions: z.string().max(5000).optional(),
+  status: z.enum(CONTENT_STATUS).optional(),
+});
+
+export const createWorksheetItemSchema = z.object({
+  sortOrder: z.number().int().min(0).optional(),
+  itemType: z.enum(WORKSHEET_ITEM_TYPES),
+  prompt: z.string().min(1).max(10_000),
+  options: worksheetItemOptionsSchema.optional(),
+  answerKey: z.string().max(10_000).optional(),
+  explanation: z.string().max(10_000).optional(),
+  points: z.number().int().min(0).max(1000).default(10),
+});
+
+export const worksheetAnswerSchema = z.object({
+  itemId: z.number().int().positive(),
+  answerText: z.string().max(20_000).optional(),
+  attachmentKey: z.string().max(512).optional(),
+});
+
+export const worksheetAnswersSchema = z.object({
+  answers: z.array(worksheetAnswerSchema).max(200),
 });
 
 export const moduleBlockTypeSchema = z.enum(MODULE_BLOCK_TYPES);

@@ -14,6 +14,14 @@ type ModuleSummary = {
 };
 
 type ModulesResponse = { ok: true; data: ModuleSummary[] };
+type WorksheetSummary = {
+  id: number;
+  module_id: number | null;
+  title: string;
+  instructions: string | null;
+  status: "draf" | "terbit" | "arsip";
+};
+type WorksheetsResponse = { ok: true; data: WorksheetSummary[] };
 type MeResponse = { ok: true; user: { role: "guru" | "murid" } };
 
 export default function GuruPage() {
@@ -25,6 +33,15 @@ export default function GuruPage() {
   const [description, setDescription] = useState("");
   const [blockHtml, setBlockHtml] = useState("");
   const [attachment, setAttachment] = useState<File | null>(null);
+  const [worksheets, setWorksheets] = useState<WorksheetSummary[]>([]);
+  const [selectedWorksheetId, setSelectedWorksheetId] = useState<number | null>(null);
+  const [worksheetTitle, setWorksheetTitle] = useState("");
+  const [worksheetInstructions, setWorksheetInstructions] = useState("");
+  const [itemType, setItemType] = useState<"pilihan_ganda" | "isian_singkat" | "uraian">("pilihan_ganda");
+  const [itemPrompt, setItemPrompt] = useState("");
+  const [itemOptions, setItemOptions] = useState("");
+  const [itemAnswerKey, setItemAnswerKey] = useState("");
+  const [itemPoints, setItemPoints] = useState("10");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -35,9 +52,14 @@ export default function GuruPage() {
         setMessage("Akun ini berperan sebagai murid. Keluar dahulu lalu masuk dengan akun guru.");
         return;
       }
-      const response = await apiRequest<ModulesResponse>("/modules");
+      const [response, worksheetResponse] = await Promise.all([
+        apiRequest<ModulesResponse>("/modules"),
+        apiRequest<WorksheetsResponse>("/worksheets"),
+      ]);
       setModules(response.data);
       setSelectedId((current) => current ?? response.data[0]?.id ?? null);
+      setWorksheets(worksheetResponse.data);
+      setSelectedWorksheetId((current) => current ?? worksheetResponse.data[0]?.id ?? null);
     } catch (error) {
       if (error instanceof Error && (error.message === "Belum masuk." || error.message.includes("Peran Anda"))) {
         router.replace("/login");
@@ -152,6 +174,61 @@ export default function GuruPage() {
     }
   }
 
+  async function createWorksheet(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedId) return;
+    try {
+      const response = await apiRequest<{ ok: true; data: WorksheetSummary }>("/worksheets", {
+        method: "POST",
+        body: JSON.stringify({ moduleId: selectedId, title: worksheetTitle, instructions: worksheetInstructions }),
+      });
+      setWorksheetTitle("");
+      setWorksheetInstructions("");
+      setSelectedWorksheetId(response.data.id);
+      await loadModules();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "LKPD belum dapat dibuat.");
+    }
+  }
+
+  async function changeWorksheetStatus(worksheet: WorksheetSummary) {
+    const status = worksheet.status === "terbit" ? "arsip" : "terbit";
+    try {
+      await apiRequest(`/worksheets/${worksheet.id}`, { method: "PATCH", body: JSON.stringify({ status }) });
+      await loadModules();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Status LKPD belum dapat diubah.");
+    }
+  }
+
+  async function addWorksheetItem(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedWorksheetId) return;
+    const options = itemType === "pilihan_ganda"
+      ? { itemType, options: itemOptions.split("\n").map((option) => option.trim()).filter(Boolean) }
+      : itemType === "isian_singkat"
+        ? { itemType, tolerance: 0 }
+        : { itemType };
+    try {
+      await apiRequest(`/worksheets/${selectedWorksheetId}/items`, {
+        method: "POST",
+        body: JSON.stringify({
+          itemType,
+          prompt: itemPrompt,
+          options,
+          answerKey: itemAnswerKey || undefined,
+          points: Number(itemPoints) || 10,
+        }),
+      });
+      setItemPrompt("");
+      setItemOptions("");
+      setItemAnswerKey("");
+      setMessage("Soal LKPD ditambahkan.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Soal belum dapat ditambahkan.");
+    }
+  }
+
   if (loading) return <main style={styles.container}><p>Memuat ruang guru...</p></main>;
 
   return (
@@ -221,6 +298,48 @@ export default function GuruPage() {
             />
             <small style={styles.muted}>JPG, PNG, WebP, atau PDF. Maksimal 10 MB.</small>
             <button type="submit" style={styles.primaryButton}>Unggah lampiran</button>
+          </form>
+        </section>
+      ) : null}
+
+      <section style={styles.panel}>
+        <h2 style={styles.sectionTitle}>LKPD</h2>
+        <form onSubmit={createWorksheet} style={styles.form}>
+          <input required value={worksheetTitle} onChange={(event) => setWorksheetTitle(event.target.value)} placeholder="Judul LKPD" style={styles.input} />
+          <textarea value={worksheetInstructions} onChange={(event) => setWorksheetInstructions(event.target.value)} placeholder="Petunjuk pengerjaan" rows={3} style={styles.textarea} />
+          <button type="submit" style={styles.primaryButton}>Buat LKPD dari modul terpilih</button>
+        </form>
+        {worksheets.length > 0 ? (
+          <div style={{ ...styles.list, marginTop: 16 }}>
+            {worksheets.map((worksheet) => (
+              <article key={worksheet.id} style={{ ...styles.module, borderColor: selectedWorksheetId === worksheet.id ? "#175cd3" : "#eaecf0" }}>
+                <button type="button" onClick={() => setSelectedWorksheetId(worksheet.id)} style={styles.moduleSelect}>
+                  <strong>{worksheet.title}</strong>
+                  <span style={styles.muted}>{worksheet.status}</span>
+                </button>
+                <button type="button" onClick={() => void changeWorksheetStatus(worksheet)} style={styles.secondaryButton}>
+                  {worksheet.status === "terbit" ? "Arsipkan" : "Terbitkan"}
+                </button>
+              </article>
+            ))}
+          </div>
+        ) : <p style={styles.empty}>Belum ada LKPD.</p>}
+      </section>
+
+      {selectedWorksheetId ? (
+        <section style={styles.panel}>
+          <h2 style={styles.sectionTitle}>Tambah soal LKPD</h2>
+          <form onSubmit={addWorksheetItem} style={styles.form}>
+            <select value={itemType} onChange={(event) => setItemType(event.target.value as typeof itemType)} style={styles.input}>
+              <option value="pilihan_ganda">Pilihan ganda</option>
+              <option value="isian_singkat">Isian singkat</option>
+              <option value="uraian">Uraian</option>
+            </select>
+            <textarea required value={itemPrompt} onChange={(event) => setItemPrompt(event.target.value)} placeholder="Pertanyaan" rows={3} style={styles.textarea} />
+            {itemType === "pilihan_ganda" ? <textarea required value={itemOptions} onChange={(event) => setItemOptions(event.target.value)} placeholder="Pilihan jawaban, satu per baris" rows={4} style={styles.textarea} /> : null}
+            <input value={itemAnswerKey} onChange={(event) => setItemAnswerKey(event.target.value)} placeholder="Kunci jawaban (opsional)" style={styles.input} />
+            <input type="number" min={0} max={1000} value={itemPoints} onChange={(event) => setItemPoints(event.target.value)} placeholder="Poin" style={styles.input} />
+            <button type="submit" style={styles.primaryButton}>Tambahkan soal</button>
           </form>
         </section>
       ) : null}

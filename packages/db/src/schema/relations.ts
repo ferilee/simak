@@ -3,6 +3,7 @@ import { users } from "./users";
 import { classes, classMembers } from "./classes";
 import { modules, moduleBlocks } from "./modules";
 import { worksheets, worksheetItems } from "./worksheets";
+import { worksheetAttempts, worksheetAnswers } from "./worksheet-attempts";
 import { assignments, assignmentClasses } from "./assignments";
 import { submissions, submissionAnswers } from "./submissions";
 import { activityLogs, exitTickets } from "./activity";
@@ -12,6 +13,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   classMemberships: many(classMembers),
   modules: many(modules),
   submissions: many(submissions),
+  worksheetAttempts: many(worksheetAttempts),
   activityLogs: many(activityLogs),
 }));
 
@@ -40,10 +42,23 @@ export const worksheetsRelations = relations(worksheets, ({ one, many }) => ({
   module: one(modules, { fields: [worksheets.moduleId], references: [modules.id] }),
   teacher: one(users, { fields: [worksheets.teacherId], references: [users.id] }),
   items: many(worksheetItems),
+  attempts: many(worksheetAttempts),
 }));
 
-export const worksheetItemsRelations = relations(worksheetItems, ({ one }) => ({
+export const worksheetItemsRelations = relations(worksheetItems, ({ one, many }) => ({
   worksheet: one(worksheets, { fields: [worksheetItems.worksheetId], references: [worksheets.id] }),
+  answers: many(worksheetAnswers),
+}));
+
+export const worksheetAttemptsRelations = relations(worksheetAttempts, ({ one, many }) => ({
+  worksheet: one(worksheets, { fields: [worksheetAttempts.worksheetId], references: [worksheets.id] }),
+  student: one(users, { fields: [worksheetAttempts.studentId], references: [users.id] }),
+  answers: many(worksheetAnswers),
+}));
+
+export const worksheetAnswersRelations = relations(worksheetAnswers, ({ one }) => ({
+  attempt: one(worksheetAttempts, { fields: [worksheetAnswers.attemptId], references: [worksheetAttempts.id] }),
+  item: one(worksheetItems, { fields: [worksheetAnswers.worksheetItemId], references: [worksheetItems.id] }),
 }));
 
 export const assignmentsRelations = relations(assignments, ({ one, many }) => ({

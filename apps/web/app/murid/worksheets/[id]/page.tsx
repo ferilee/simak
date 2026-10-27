@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { apiRequest } from "../../../../lib/api";
 
@@ -32,6 +32,8 @@ type AttemptResponse = {
 export default function WorksheetPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const assignmentId = searchParams.get("assignmentId");
   const [data, setData] = useState<WorksheetResponse["data"] | null>(null);
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [status, setStatus] = useState<"draf" | "terkumpul" | "dinilai">("draf");
@@ -57,6 +59,11 @@ export default function WorksheetPage() {
       });
   }, [params.id, router]);
 
+  useEffect(() => {
+    if (!assignmentId) return;
+    void apiRequest("/activity", { method: "POST", body: JSON.stringify({ assignmentId: Number(assignmentId), event: "mulai_lkpd" }) });
+  }, [assignmentId]);
+
   function setAnswer(itemId: number, value: string) {
     setAnswers((current) => ({ ...current, [itemId]: value }));
   }
@@ -72,6 +79,7 @@ export default function WorksheetPage() {
           answers: data.items.map((item) => ({ itemId: item.id, answerText: answers[item.id] ?? "" })),
         }),
       });
+      if (assignmentId) void apiRequest("/activity", { method: "POST", body: JSON.stringify({ assignmentId: Number(assignmentId), event: "kumpul" }) });
       setStatus("draf");
       setMessage("Draf jawaban tersimpan.");
     } catch (error) {
@@ -93,6 +101,7 @@ export default function WorksheetPage() {
         }),
       });
       await apiRequest(`/murid/worksheets/${data.worksheet.id}/submit`, { method: "POST" });
+      if (assignmentId) void apiRequest("/activity", { method: "POST", body: JSON.stringify({ assignmentId: Number(assignmentId), event: "kumpul" }) });
       setStatus("terkumpul");
       setMessage("LKPD berhasil dikumpulkan.");
     } catch (error) {

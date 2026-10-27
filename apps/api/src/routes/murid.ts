@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { and, asc, eq, inArray, or } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
 import { db, schema } from "@simak/db";
-import { worksheetAnswersSchema } from "@simak/shared";
+import { exitTicketSchema, worksheetAnswersSchema } from "@simak/shared";
 import { requireRole } from "../middleware/auth";
 
 // Beranda murid + detail penugasan — halaman paling ringan adalah prioritas.
@@ -10,7 +10,63 @@ export const muridRoutes = new Hono();
 
 muridRoutes.use("*", requireRole("murid"));
 
-const { classes, classMembers, moduleBlocks, modules, worksheetAnswers, worksheetAttempts, worksheetItems, worksheets } = schema;
+const { activityLogs, assignmentClasses, assignments, classes, classMembers, exitTickets, moduleBlocks, modules, worksheetAnswers, worksheetAttempts, worksheetItems, worksheets } = schema;
+
+async function accessibleAssignment(studentId: number, assignmentId: number) {
+  const [assignment] = await db
+    .select({
+      id: assignments.id,
+      teacherId: assignments.teacherId,
+      moduleId: assignments.moduleId,
+      worksheetId: assignments.worksheetId,
+      title: assignments.title,
+      instructions: assignments.instructions,
+      ruasQuizUrl: assignments.ruasQuizUrl,
+      opensAt: assignments.opensAt,
+      dueAt: assignments.dueAt,
+      status: assignments.status,
+    })
+    .from(assignments)
+    .innerJoin(assignmentClasses, eq(assignmentClasses.assignmentId, assignments.id))
+    .innerJoin(classMembers, eq(classMembers.classId, assignmentClasses.classId))
+    .innerJoin(classes, eq(classes.id, classMembers.classId))
+    .where(and(
+      eq(assignments.id, assignmentId),
+      eq(assignments.status, "terbit"),
+      eq(classMembers.studentId, studentId),
+      eq(classes.isArchived, false),
+    ))
+    .limit(1);
+  return assignment;
+}
+
+function assignmentProgress(assignment: { opensAt: Date; dueAt: Date }, attempt?: { status: "draf" | "terkumpul" | "dinilai"; submittedAt?: Date | null } | undefined) {
+  if (attempt?.status === "dinilai") return "dinilai" as const;
+  if (attempt?.status === "terkumpul") return attempt.submittedAt && attempt.submittedAt.getTime() > assignment.dueAt.getTime() ? "terlambat" as const : "terkumpul" as const;
+  if (attempt?.status === "draf") return "draf" as const;
+  const now = Date.now();
+  if (now < assignment.opensAt.getTime()) return "belum_dibuka" as const;
+  if (now > assignment.dueAt.getTime()) return "terlambat" as const;
+  return "belum" as const;
+}
+
+function serializeAssignmentForStudent(
+  assignment: { id: number; moduleId: number | null; worksheetId: number | null; title: string; instructions: string | null; ruasQuizUrl: string | null; opensAt: Date; dueAt: Date; status: "draf" | "terbit" | "ditutup" },
+  progress: string,
+) {
+  return {
+    id: assignment.id,
+    module_id: assignment.moduleId,
+    worksheet_id: assignment.worksheetId,
+    title: assignment.title,
+    instructions: assignment.instructions,
+    ruas_quiz_url: assignment.ruasQuizUrl,
+    opens_at: assignment.opensAt,
+    due_at: assignment.dueAt,
+    status: assignment.status,
+    progress,
+  };
+}
 
 async function accessibleWorksheet(studentId: number, worksheetId: number) {
   const [worksheet] = await db
@@ -85,6 +141,22 @@ muridRoutes.get("/today", async (c) => {
         .orderBy(asc(modules.updatedAt))
     : [];
 
+  const classIds = memberships.map((membership) => membership.id);
+  const assignmentRows = classIds.length
+    ? await db
+        .select()
+        .from(assignments)
+        .innerJoin(assignmentClasses, eq(assignmentClasses.assignmentId, assignments.id))
+        .where(and(eq(assignments.status, "terbit"), inArray(assignmentClasses.classId, classIds)))
+        .orderBy(asc(assignments.opensAt))
+    : [];
+  const uniqueAssignments = [...new Map(assignmentRows.map((row) => [row.assignments.id, row.assignments])).values()];
+  const worksheetIds = uniqueAssignments.flatMap((assignment) => assignment.worksheetId === null ? [] : [assignment.worksheetId]);
+  const attempts = worksheetIds.length
+    ? await db.select({ worksheetId: worksheetAttempts.worksheetId, status: worksheetAttempts.status, submittedAt: worksheetAttempts.submittedAt }).from(worksheetAttempts).where(and(eq(worksheetAttempts.studentId, user.userId), inArray(worksheetAttempts.worksheetId, worksheetIds)))
+    : [];
+  const attemptsByWorksheet = new Map(attempts.map((attempt) => [attempt.worksheetId, attempt]));
+
   return c.json({
     ok: true,
     data: {
@@ -102,8 +174,61 @@ muridRoutes.get("/today", async (c) => {
         status: module.status,
         updated_at: module.updatedAt,
       })),
+      assignments: uniqueAssignments.map((assignment) => serializeAssignmentForStudent(
+        assignment,
+        assignmentProgress(assignment, assignment.worksheetId === null ? undefined : attemptsByWorksheet.get(assignment.worksheetId)),
+      )),
     },
   });
+});
+
+muridRoutes.get("/assignments/:id", async (c) => {
+  const user = c.get("user")!;
+  const assignmentId = Number(c.req.param("id"));
+  if (!Number.isInteger(assignmentId) || assignmentId <= 0) return c.json({ ok: false, message: "ID penugasan tidak valid." }, 400);
+  const assignment = await accessibleAssignment(user.userId, assignmentId);
+  if (!assignment) return c.json({ ok: false, message: "Penugasan belum tersedia untuk kelas Anda." }, 404);
+
+  const now = Date.now();
+  if (now < assignment.opensAt.getTime()) return c.json({ ok: false, message: "Penugasan belum dibuka." }, 403);
+  await db.insert(activityLogs).values({ studentId: user.userId, assignmentId, event: "buka_materi" });
+
+  const [attempt] = assignment.worksheetId === null
+    ? []
+    : await db.select({ status: worksheetAttempts.status, totalScore: worksheetAttempts.totalScore, submittedAt: worksheetAttempts.submittedAt }).from(worksheetAttempts).where(and(eq(worksheetAttempts.studentId, user.userId), eq(worksheetAttempts.worksheetId, assignment.worksheetId))).limit(1);
+  const [exitTicket] = await db.select({ id: exitTickets.id }).from(exitTickets).where(and(eq(exitTickets.assignmentId, assignmentId), eq(exitTickets.studentId, user.userId))).limit(1);
+  const [worksheet] = assignment.worksheetId === null
+    ? []
+    : await db.select({ id: worksheets.id, title: worksheets.title }).from(worksheets).where(eq(worksheets.id, assignment.worksheetId)).limit(1);
+
+  return c.json({
+    ok: true,
+    data: {
+      assignment: serializeAssignmentForStudent(assignment, assignmentProgress(assignment, attempt)),
+      worksheet: worksheet ? { id: worksheet.id, title: worksheet.title } : null,
+      attempt: attempt ? { status: attempt.status, total_score: attempt.totalScore === null ? null : Number(attempt.totalScore), submitted_at: attempt.submittedAt } : null,
+      exit_ticket_submitted: Boolean(exitTicket),
+    },
+  });
+});
+
+muridRoutes.post("/assignments/:id/exit-ticket", zValidator("json", exitTicketSchema), async (c) => {
+  const user = c.get("user")!;
+  const assignmentId = Number(c.req.param("id"));
+  if (!Number.isInteger(assignmentId) || assignmentId <= 0) return c.json({ ok: false, message: "ID penugasan tidak valid." }, 400);
+  const assignment = await accessibleAssignment(user.userId, assignmentId);
+  if (!assignment) return c.json({ ok: false, message: "Penugasan belum tersedia untuk kelas Anda." }, 404);
+  if (Date.now() < assignment.opensAt.getTime()) return c.json({ ok: false, message: "Penugasan belum dibuka." }, 403);
+
+  const input = c.req.valid("json");
+  const [existing] = await db.select({ id: exitTickets.id }).from(exitTickets).where(and(eq(exitTickets.assignmentId, assignmentId), eq(exitTickets.studentId, user.userId))).limit(1);
+  if (existing) {
+    await db.update(exitTickets).set({ understood3: input.understood3, examples2: input.examples2, confusing1: input.confusing1 }).where(eq(exitTickets.id, existing.id));
+  } else {
+    await db.insert(exitTickets).values({ assignmentId, studentId: user.userId, ...input });
+  }
+  await db.insert(activityLogs).values({ studentId: user.userId, assignmentId, event: "exit_ticket" });
+  return c.json({ ok: true, data: { submitted: true } });
 });
 
 muridRoutes.get("/modules/:id", async (c) => {

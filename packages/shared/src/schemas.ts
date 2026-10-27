@@ -176,4 +176,37 @@ export const gradeWorksheetSchema = z.object({
   })).max(200),
 });
 
+export const createAssignmentSchema = z.object({
+  moduleId: z.number().int().positive().optional(),
+  worksheetId: z.number().int().positive().optional(),
+  title: z.string().min(1).max(200),
+  instructions: z.string().max(5000).optional(),
+  ruasQuizUrl: z.string().url().max(1024).optional(),
+  opensAt: z.coerce.date(),
+  dueAt: z.coerce.date(),
+  classIds: z.array(z.number().int().positive()).min(1).max(50).refine((ids) => new Set(ids).size === ids.length, "Kelas tujuan tidak boleh duplikat."),
+}).refine((value) => value.moduleId !== undefined || value.worksheetId !== undefined, {
+  message: "Penugasan harus terhubung ke modul atau LKPD.",
+  path: ["moduleId"],
+}).refine((value) => value.dueAt >= value.opensAt, {
+  message: "Batas pengumpulan harus setelah waktu buka.",
+  path: ["dueAt"],
+});
+
+export const updateAssignmentSchema = z.object({
+  moduleId: z.number().int().positive().optional(),
+  worksheetId: z.number().int().positive().optional(),
+  title: z.string().min(1).max(200).optional(),
+  instructions: z.string().max(5000).optional(),
+  ruasQuizUrl: z.string().url().max(1024).optional(),
+  opensAt: z.coerce.date().optional(),
+  dueAt: z.coerce.date().optional(),
+  status: z.enum(["draf", "terbit", "ditutup"]).optional(),
+  classIds: z.array(z.number().int().positive()).min(1).max(50).refine((ids) => new Set(ids).size === ids.length, "Kelas tujuan tidak boleh duplikat.").optional(),
+}).superRefine((value, context) => {
+  if (value.opensAt && value.dueAt && value.dueAt < value.opensAt) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Batas pengumpulan harus setelah waktu buka.", path: ["dueAt"] });
+  }
+});
+
 export const moduleBlockTypeSchema = z.enum(MODULE_BLOCK_TYPES);

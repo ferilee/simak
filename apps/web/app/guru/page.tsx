@@ -22,6 +22,21 @@ type WorksheetSummary = {
   status: "draf" | "terbit" | "arsip";
 };
 type WorksheetsResponse = { ok: true; data: WorksheetSummary[] };
+type ClassSummary = { id: number; name: string; subject: string; academic_year: string; is_archived: boolean };
+type ClassesResponse = { ok: true; data: ClassSummary[] };
+type AssignmentSummary = {
+  id: number;
+  module_id: number | null;
+  worksheet_id: number | null;
+  title: string;
+  instructions: string | null;
+  ruas_quiz_url: string | null;
+  opens_at: string;
+  due_at: string;
+  status: "draf" | "terbit" | "ditutup";
+  classes: { id: number; name: string }[];
+};
+type AssignmentsResponse = { ok: true; data: AssignmentSummary[] };
 type WorksheetAttemptSummary = {
   id: number;
   student_id: number;
@@ -69,6 +84,8 @@ export default function GuruPage() {
   const [blockHtml, setBlockHtml] = useState("");
   const [attachment, setAttachment] = useState<File | null>(null);
   const [worksheets, setWorksheets] = useState<WorksheetSummary[]>([]);
+  const [classes, setClasses] = useState<ClassSummary[]>([]);
+  const [assignments, setAssignments] = useState<AssignmentSummary[]>([]);
   const [selectedWorksheetId, setSelectedWorksheetId] = useState<number | null>(null);
   const [worksheetTitle, setWorksheetTitle] = useState("");
   const [worksheetInstructions, setWorksheetInstructions] = useState("");
@@ -77,6 +94,12 @@ export default function GuruPage() {
   const [itemOptions, setItemOptions] = useState("");
   const [itemAnswerKey, setItemAnswerKey] = useState("");
   const [itemPoints, setItemPoints] = useState("10");
+  const [assignmentTitle, setAssignmentTitle] = useState("");
+  const [assignmentInstructions, setAssignmentInstructions] = useState("");
+  const [assignmentOpensAt, setAssignmentOpensAt] = useState(() => toDateTimeLocal(new Date()));
+  const [assignmentDueAt, setAssignmentDueAt] = useState(() => toDateTimeLocal(new Date(Date.now() + 24 * 60 * 60 * 1000)));
+  const [assignmentClassIds, setAssignmentClassIds] = useState<number[]>([]);
+  const [assignmentRuasUrl, setAssignmentRuasUrl] = useState("");
   const [attempts, setAttempts] = useState<WorksheetAttemptSummary[]>([]);
   const [selectedAttemptId, setSelectedAttemptId] = useState<number | null>(null);
   const [attemptDetail, setAttemptDetail] = useState<WorksheetAttemptDetail | null>(null);
@@ -94,14 +117,19 @@ export default function GuruPage() {
         setMessage("Akun ini berperan sebagai murid. Keluar dahulu lalu masuk dengan akun guru.");
         return;
       }
-      const [response, worksheetResponse] = await Promise.all([
+      const [response, worksheetResponse, classResponse, assignmentResponse] = await Promise.all([
         apiRequest<ModulesResponse>("/modules"),
         apiRequest<WorksheetsResponse>("/worksheets"),
+        apiRequest<ClassesResponse>("/classes"),
+        apiRequest<AssignmentsResponse>("/assignments"),
       ]);
       setModules(response.data);
       setSelectedId((current) => current ?? response.data[0]?.id ?? null);
       setWorksheets(worksheetResponse.data);
       setSelectedWorksheetId((current) => current ?? worksheetResponse.data[0]?.id ?? null);
+      setClasses(classResponse.data.filter((kelas) => !kelas.is_archived));
+      setAssignments(assignmentResponse.data);
+      setAssignmentClassIds((current) => current.length > 0 ? current : classResponse.data.filter((kelas) => !kelas.is_archived).map((kelas) => kelas.id));
     } catch (error) {
       if (error instanceof Error && (error.message === "Belum masuk." || error.message.includes("Peran Anda"))) {
         router.replace("/login");
@@ -349,6 +377,46 @@ export default function GuruPage() {
     }
   }
 
+  async function createAssignment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedId || !selectedWorksheetId || assignmentClassIds.length === 0) {
+      setMessage("Pilih modul, LKPD, dan minimal satu kelas tujuan.");
+      return;
+    }
+    try {
+      await apiRequest("/assignments", {
+        method: "POST",
+        body: JSON.stringify({
+          moduleId: selectedId,
+          worksheetId: selectedWorksheetId,
+          title: assignmentTitle,
+          instructions: assignmentInstructions || undefined,
+          opensAt: new Date(assignmentOpensAt).toISOString(),
+          dueAt: new Date(assignmentDueAt).toISOString(),
+          ruasQuizUrl: assignmentRuasUrl || undefined,
+          classIds: assignmentClassIds,
+        }),
+      });
+      setAssignmentTitle("");
+      setAssignmentInstructions("");
+      setAssignmentRuasUrl("");
+      setMessage("Penugasan dibuat sebagai draf.");
+      await loadModules();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Penugasan belum dapat dibuat.");
+    }
+  }
+
+  async function changeAssignmentStatus(assignment: AssignmentSummary) {
+    const status = assignment.status === "terbit" ? "ditutup" : "terbit";
+    try {
+      await apiRequest(`/assignments/${assignment.id}`, { method: "PATCH", body: JSON.stringify({ status }) });
+      await loadModules();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Status penugasan belum dapat diubah.");
+    }
+  }
+
   if (loading) return <main style={styles.container}><p>Memuat ruang guru...</p></main>;
 
   return (
@@ -464,6 +532,35 @@ export default function GuruPage() {
         </section>
       ) : null}
 
+      <section style={styles.panel}>
+        <h2 style={styles.sectionTitle}>Penugasan ke kelas</h2>
+        <form onSubmit={createAssignment} style={styles.form}>
+          <input required value={assignmentTitle} onChange={(event) => setAssignmentTitle(event.target.value)} placeholder="Judul penugasan" style={styles.input} />
+          <textarea value={assignmentInstructions} onChange={(event) => setAssignmentInstructions(event.target.value)} placeholder="Petunjuk penugasan" rows={3} style={styles.textarea} />
+          <label style={styles.label}>Modul
+            <select value={selectedId ?? ""} onChange={(event) => setSelectedId(Number(event.target.value))} style={styles.input}>
+              <option value="">Pilih modul</option>
+              {modules.map((module) => <option key={module.id} value={module.id}>{module.title}</option>)}
+            </select>
+          </label>
+          <label style={styles.label}>LKPD
+            <select value={selectedWorksheetId ?? ""} onChange={(event) => setSelectedWorksheetId(Number(event.target.value))} style={styles.input}>
+              <option value="">Pilih LKPD</option>
+              {worksheets.map((worksheet) => <option key={worksheet.id} value={worksheet.id}>{worksheet.title}</option>)}
+            </select>
+          </label>
+          <div style={styles.checkboxList}>
+            <span style={styles.label}>Kelas tujuan</span>
+            {classes.map((kelas) => <label key={kelas.id} style={styles.checkbox}><input type="checkbox" checked={assignmentClassIds.includes(kelas.id)} onChange={(event) => setAssignmentClassIds((current) => event.target.checked ? [...current, kelas.id] : current.filter((id) => id !== kelas.id))} />{kelas.name} · {kelas.subject}</label>)}
+          </div>
+          <label style={styles.label}>Dibuka pada<input type="datetime-local" value={assignmentOpensAt} onChange={(event) => setAssignmentOpensAt(event.target.value)} style={styles.input} /></label>
+          <label style={styles.label}>Batas pengumpulan<input type="datetime-local" value={assignmentDueAt} onChange={(event) => setAssignmentDueAt(event.target.value)} style={styles.input} /></label>
+          <input type="url" value={assignmentRuasUrl} onChange={(event) => setAssignmentRuasUrl(event.target.value)} placeholder="Tautan kuis RUAS (opsional)" style={styles.input} />
+          <button type="submit" style={styles.primaryButton}>Buat draf penugasan</button>
+        </form>
+        {assignments.length > 0 ? <div style={{ ...styles.list, marginTop: 16 }}>{assignments.map((assignment) => <article key={assignment.id} style={styles.assignmentCard}><div style={styles.assignmentInfo}><strong>{assignment.title}</strong><span style={styles.muted}>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span style={styles.muted}>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><button type="button" onClick={() => void changeAssignmentStatus(assignment)} style={styles.secondaryButton}>{assignment.status === "terbit" ? "Tutup" : "Terbitkan"}</button></article>)}</div> : <p style={styles.empty}>Belum ada penugasan.</p>}
+      </section>
+
       {selectedWorksheetId ? (
         <section style={styles.panel}>
           <h2 style={styles.sectionTitle}>Pengumpulan LKPD</h2>
@@ -556,4 +653,18 @@ const styles = {
   reviewTitle: { margin: 0, fontSize: 20 },
   answerCard: { display: "grid", gap: 8, border: "1px solid #eaecf0", borderRadius: 10, padding: 14 },
   answerText: { margin: 0, whiteSpace: "pre-wrap" as const, background: "#f8f9fc", borderRadius: 8, padding: 10 },
+  label: { display: "grid", gap: 6, color: "#344054", fontSize: 14 },
+  checkboxList: { display: "grid", gap: 8, border: "1px solid #eaecf0", borderRadius: 8, padding: 12 },
+  checkbox: { display: "flex", gap: 8, alignItems: "center" },
+  assignmentCard: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, border: "1px solid #eaecf0", borderRadius: 10, padding: 14 },
+  assignmentInfo: { display: "grid", gap: 4 },
 };
+
+function toDateTimeLocal(value: Date) {
+  const offset = value.getTimezoneOffset() * 60_000;
+  return new Date(value.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}

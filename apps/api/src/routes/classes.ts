@@ -43,7 +43,21 @@ classRoutes.post("/join", requireRole("murid"), zValidator("json", joinClassSche
   });
 });
 
-classRoutes.get("/", requireRole("guru"), (c) => c.json({ ok: true, data: [] }));
+classRoutes.get("/", requireRole("guru"), async (c) => {
+  const user = c.get("user")!;
+  const rows = await db.select().from(classes).where(eq(classes.teacherId, user.userId));
+  return c.json({
+    ok: true,
+    data: rows.map((kelas) => ({
+      id: kelas.id,
+      name: kelas.name,
+      subject: kelas.subject,
+      academic_year: kelas.academicYear,
+      join_code: kelas.joinCode,
+      is_archived: kelas.isArchived,
+    })),
+  });
+});
 classRoutes.post("/", requireRole("guru"), (c) => c.json({ ok: false, message: "Tahap 0." }, 501));
 classRoutes.patch("/:id", requireRole("guru"), (c) => c.json({ ok: false, message: "Tahap 0." }, 501));
 classRoutes.get("/:id/members", requireRole("guru"), (c) => c.json({ ok: true, data: [] }));

@@ -20,10 +20,21 @@ type ModuleSummary = {
   status: "terbit";
   updated_at: string;
 };
+type AssignmentSummary = {
+  id: number;
+  module_id: number | null;
+  worksheet_id: number | null;
+  title: string;
+  instructions: string | null;
+  ruas_quiz_url: string | null;
+  opens_at: string;
+  due_at: string;
+  progress: "belum_dibuka" | "belum" | "draf" | "terkumpul" | "dinilai" | "terlambat";
+};
 
 type TodayResponse = {
   ok: true;
-  data: { classes: ClassSummary[]; modules: ModuleSummary[] };
+  data: { classes: ClassSummary[]; modules: ModuleSummary[]; assignments: AssignmentSummary[] };
 };
 
 type MeResponse = {
@@ -34,7 +45,7 @@ type MeResponse = {
 export default function MuridPage() {
   const router = useRouter();
   const [user, setUser] = useState<MeResponse["user"] | null>(null);
-  const [data, setData] = useState<TodayResponse["data"]>({ classes: [], modules: [] });
+  const [data, setData] = useState<TodayResponse["data"]>({ classes: [], modules: [], assignments: [] });
   const [joinCode, setJoinCode] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
@@ -137,6 +148,24 @@ export default function MuridPage() {
       </section>
 
       <section>
+        <h2 style={styles.sectionTitle}>Penugasan</h2>
+        {data.assignments.length === 0 ? (
+          <p style={styles.empty}>Belum ada penugasan untuk kelas Anda.</p>
+        ) : (
+          <div style={styles.list}>
+            {data.assignments.map((assignment) => (
+              <Link key={assignment.id} href={`/murid/assignments/${assignment.id}`} style={styles.moduleCard}>
+                <strong>{assignment.title}</strong>
+                <span style={styles.muted}>{assignment.instructions ?? "Buka detail penugasan untuk mulai."}</span>
+                <span style={styles.assignmentMeta}>Status: {assignment.progress} · batas {formatDate(assignment.due_at)}</span>
+                <span style={styles.readLink}>Buka penugasan →</span>
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section>
         <h2 style={styles.sectionTitle}>Materi terbit</h2>
         {data.modules.length === 0 ? (
           <p style={styles.empty}>Belum ada materi terbit untuk kelas Anda.</p>
@@ -177,4 +206,9 @@ const styles = {
   moduleCard: { display: "grid", gap: 6, border: "1px solid #d0d5dd", borderRadius: 10, padding: 18, textDecoration: "none", color: "inherit" },
   moduleSubject: { color: "#175cd3", fontSize: 13, fontWeight: 700 },
   readLink: { color: "#175cd3", fontWeight: 700, marginTop: 4 },
+  assignmentMeta: { color: "#475467", fontSize: 13 },
 };
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}

@@ -391,12 +391,12 @@ a {
 
 .login-card {
   width: min(100%, 430px);
-  border-color: rgba(255, 255, 255, 0.9);
+  border: 0;
+  border-radius: 0;
   padding: clamp(26px, 5vw, 42px);
-  background: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 24px 70px rgba(66, 104, 160, 0.16);
+  background: transparent;
+  box-shadow: none;
   text-align: center;
-  backdrop-filter: blur(16px);
 }
 
 .login-emblem {

@@ -13,16 +13,18 @@ Target production: `simak.smkpasirian-lmj.sch.id`.
 ## Urutan operasi
 
 1. Pastikan release gate staging berstatus GO untuk risiko yang hendak dibawa.
-2. Push commit/tag ke GitHub; workflow `Publish SIMAK images` hanya push image
-   pada tag `v*` atau dispatch manual.
+2. Push tag versi `v*` ke GitHub; workflow `Publish SIMAK images` hanya push
+   image pada tag `v*` atau dispatch manual.
 3. Tunggu dua image GHCR selesai dan catat commit SHA yang dipakai.
 4. Di Arcane, buat stack `simak` dari `compose.production.yaml`.
 5. Isi environment secret dari `.env.production.example`; `SIMAK_IMAGE_TAG`
-   harus berupa commit SHA immutable.
+   sebaiknya berupa commit SHA immutable atau tag versi yang sudah dipastikan
+   tersedia di GHCR.
 6. Pastikan network eksternal `ferileenet`, container `mariadb`, dan container
    `rustfs` sudah ada sebelum stack dijalankan.
-7. Buat backup MariaDB sebelum migrasi.
-8. Jalankan migrasi satu kali:
+7. Tentukan apakah release mengubah schema database. Jika tidak, lanjutkan
+   pull/redeploy normal. Jika ya, buat backup MariaDB sebelum migrasi.
+8. Untuk release yang mengubah schema, jalankan migrasi satu kali:
 
    ```bash
    docker compose --env-file .env -f compose.production.yaml --profile ops run --rm migrate

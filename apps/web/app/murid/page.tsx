@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiRequest } from "../../lib/api";
+import { Toast } from "../../components/Toast";
 
 type ClassSummary = {
   id: number;
@@ -125,7 +126,7 @@ export default function MuridPage() {
         </div>
       </header>
 
-      {message ? <p className="dashboard-alert container" role="alert" aria-live="polite">{message}</p> : null}
+      {message ? <Toast message={message} onDismiss={() => setMessage("")} /> : null}
 
       <div className="container wizard-layout wizard-theme-murid">
         <aside className="wizard-sidebar" aria-label="Langkah ruang murid">

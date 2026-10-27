@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { apiRequest } from "../../../../lib/api";
+import { Toast } from "../../../../components/Toast";
 
 type Block = {
   id: number;
@@ -40,7 +41,7 @@ export default function ModulePage() {
       });
   }, [params.id, router]);
 
-  if (message) return <main style={styles.container}><p role="alert" style={styles.error}>{message}</p><Link href="/murid">← Kembali ke ruang murid</Link></main>;
+  if (message) return <main style={styles.container}><Toast message={message} onDismiss={() => setMessage("")} /><Link href="/murid">← Kembali ke ruang murid</Link></main>;
   if (!data) return <main style={styles.container}><p>Memuat materi...</p></main>;
 
   return (

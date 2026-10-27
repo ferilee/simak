@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiBase, apiRequest } from "../../lib/api";
+import { Toast } from "../../components/Toast";
 
 type ModuleSummary = {
   id: number;
@@ -636,7 +637,7 @@ export default function GuruPage() {
           <button type="button" onClick={() => void logout()} className="button button-secondary">Keluar</button>
         </div>
       </header>
-      {message ? <p className="dashboard-alert container" role="alert" aria-live="polite">{message}</p> : null}
+      {message ? <Toast message={message} onDismiss={() => setMessage("")} /> : null}
 
       <div className="container wizard-layout wizard-theme-guru">
         <aside className="wizard-sidebar" aria-label="Langkah ruang guru">

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { apiRequest } from "../../../../lib/api";
+import { Toast } from "../../../../components/Toast";
 
 type WorksheetItem = {
   id: number;
@@ -115,7 +116,7 @@ export default function WorksheetPage() {
     }
   }
 
-  if (message && !data) return <main style={styles.container}><p role="alert" style={styles.error}>{message}</p><Link href="/murid">← Kembali</Link></main>;
+  if (message && !data) return <main style={styles.container}><Toast message={message} onDismiss={() => setMessage("")} /><Link href="/murid">← Kembali</Link></main>;
   if (!data) return <main style={styles.container}><p>Memuat LKPD...</p></main>;
 
   return (
@@ -124,7 +125,7 @@ export default function WorksheetPage() {
       <p style={styles.eyebrow}>SIMAK · LKPD</p>
       <h1 style={styles.title}>{data.worksheet.title}</h1>
       {data.worksheet.instructions ? <p style={styles.instructions}>{data.worksheet.instructions}</p> : null}
-      {message ? <p role="status" style={styles.message}>{message}</p> : null}
+      {message ? <Toast message={message} onDismiss={() => setMessage("")} /> : null}
 
       <section style={styles.list}>
         {data.items.map((item, index) => (

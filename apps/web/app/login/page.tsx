@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Toast } from "../../components/Toast";
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api/v1";
 
@@ -83,13 +84,13 @@ export default function LoginPage() {
                 placeholder="Masukkan password RUAS"
               />
             </label>
-            {message ? <p className="form-alert" role="alert" aria-live="polite">{message}</p> : null}
             <button className="button" type="submit" disabled={loading}>
               {loading ? "Memverifikasi..." : "Masuk"}
             </button>
           </form>
         </section>
       </div>
+      {message ? <Toast message={message} onDismiss={() => setMessage("")} /> : null}
     </main>
   );
 }

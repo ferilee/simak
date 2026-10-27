@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { apiRequest } from "../../../../lib/api";
+import { Toast } from "../../../../components/Toast";
 
 type AssignmentDetail = {
   assignment: {
@@ -72,7 +73,7 @@ export default function AssignmentPage() {
     window.open(data.assignment.ruas_quiz_url, "_blank", "noopener,noreferrer");
   }
 
-  if (message && !data) return <main style={styles.container}><p role="alert" style={styles.error}>{message}</p><Link href="/murid">← Kembali</Link></main>;
+  if (message && !data) return <main style={styles.container}><Toast message={message} onDismiss={() => setMessage("")} /><Link href="/murid">← Kembali</Link></main>;
   if (!data) return <main style={styles.container}><p>Memuat penugasan...</p></main>;
 
   return (
@@ -82,7 +83,7 @@ export default function AssignmentPage() {
       <h1 style={styles.title}>{data.assignment.title}</h1>
       {data.assignment.instructions ? <p style={styles.instructions}>{data.assignment.instructions}</p> : null}
       <p style={styles.meta}>Status: <strong>{data.assignment.progress}</strong> · batas {formatDate(data.assignment.due_at)}</p>
-      {message ? <p role="status" style={styles.message}>{message}</p> : null}
+      {message ? <Toast message={message} onDismiss={() => setMessage("")} /> : null}
 
       <section style={styles.panel}>
         <h2 style={styles.heading}>Materi dan LKPD</h2>

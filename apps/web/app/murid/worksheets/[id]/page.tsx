@@ -24,7 +24,7 @@ type WorksheetResponse = {
 type AttemptResponse = {
   ok: true;
   data: {
-    status: "draf" | "terkumpul";
+    status: "draf" | "terkumpul" | "dinilai";
     answers: { item_id: number; answer_text: string | null }[];
   };
 };
@@ -34,7 +34,7 @@ export default function WorksheetPage() {
   const router = useRouter();
   const [data, setData] = useState<WorksheetResponse["data"] | null>(null);
   const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [status, setStatus] = useState<"draf" | "terkumpul">("draf");
+  const [status, setStatus] = useState<"draf" | "terkumpul" | "dinilai">("draf");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -62,7 +62,7 @@ export default function WorksheetPage() {
   }
 
   async function saveDraft() {
-    if (!data || status === "terkumpul") return;
+    if (!data || status !== "draf") return;
     setSaving(true);
     setMessage("");
     try {
@@ -82,7 +82,7 @@ export default function WorksheetPage() {
   }
 
   async function submitWorksheet() {
-    if (!data || status === "terkumpul") return;
+    if (!data || status !== "draf") return;
     setSaving(true);
     setMessage("");
     try {
@@ -118,14 +118,14 @@ export default function WorksheetPage() {
           <article key={item.id} style={styles.question}>
             <strong>{index + 1}. {item.prompt}</strong>
             <span style={styles.points}>{item.points} poin</span>
-            <AnswerField item={item} value={answers[item.id] ?? ""} disabled={status === "terkumpul"} onChange={(value) => setAnswer(item.id, value)} />
+            <AnswerField item={item} value={answers[item.id] ?? ""} disabled={status !== "draf"} onChange={(value) => setAnswer(item.id, value)} />
           </article>
         ))}
       </section>
 
       <div style={styles.actions}>
-        <button type="button" disabled={saving || status === "terkumpul"} onClick={() => void saveDraft()} style={styles.secondaryButton}>Simpan draf</button>
-        <button type="button" disabled={saving || status === "terkumpul"} onClick={() => void submitWorksheet()} style={styles.primaryButton}>Kumpulkan LKPD</button>
+        <button type="button" disabled={saving || status !== "draf"} onClick={() => void saveDraft()} style={styles.secondaryButton}>Simpan draf</button>
+        <button type="button" disabled={saving || status !== "draf"} onClick={() => void submitWorksheet()} style={styles.primaryButton}>Kumpulkan LKPD</button>
       </div>
     </main>
   );

@@ -224,7 +224,7 @@ muridRoutes.put("/worksheets/:id/answers", zValidator("json", worksheetAnswersSc
   if (!Number.isInteger(worksheetId) || worksheetId <= 0) return c.json({ ok: false, message: "ID LKPD tidak valid." }, 400);
   if (!(await accessibleWorksheet(user.userId, worksheetId))) return c.json({ ok: false, message: "LKPD belum tersedia untuk kelas Anda." }, 404);
   const attempt = await getOrCreateAttempt(user.userId, worksheetId);
-  if (attempt.status === "terkumpul") return c.json({ ok: false, message: "LKPD sudah dikumpulkan." }, 409);
+  if (attempt.status !== "draf") return c.json({ ok: false, message: "LKPD sudah dikumpulkan dan sedang diperiksa." }, 409);
 
   const input = c.req.valid("json");
   const items = await db.select({ id: worksheetItems.id }).from(worksheetItems).where(eq(worksheetItems.worksheetId, worksheetId));
@@ -260,6 +260,7 @@ muridRoutes.post("/worksheets/:id/submit", async (c) => {
   if (!Number.isInteger(worksheetId) || worksheetId <= 0) return c.json({ ok: false, message: "ID LKPD tidak valid." }, 400);
   if (!(await accessibleWorksheet(user.userId, worksheetId))) return c.json({ ok: false, message: "LKPD belum tersedia untuk kelas Anda." }, 404);
   const attempt = await getOrCreateAttempt(user.userId, worksheetId);
+  if (attempt.status !== "draf") return c.json({ ok: false, message: "LKPD sudah dikumpulkan." }, 409);
   await db.update(worksheetAttempts).set({ status: "terkumpul", submittedAt: new Date() }).where(eq(worksheetAttempts.id, attempt.id));
   return c.json({ ok: true, data: { status: "terkumpul" } });
 });

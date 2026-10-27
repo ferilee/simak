@@ -167,4 +167,13 @@ export const worksheetAnswersSchema = z.object({
   answers: z.array(worksheetAnswerSchema).max(200),
 });
 
+export const gradeWorksheetSchema = z.object({
+  teacherComment: z.string().max(5000).optional(),
+  answers: z.array(z.object({
+    itemId: z.number().int().positive(),
+    score: z.number().min(0).max(1000),
+    teacherNote: z.string().max(5000).optional(),
+  })).max(200),
+});
+
 export const moduleBlockTypeSchema = z.enum(MODULE_BLOCK_TYPES);

@@ -22,6 +22,41 @@ type WorksheetSummary = {
   status: "draf" | "terbit" | "arsip";
 };
 type WorksheetsResponse = { ok: true; data: WorksheetSummary[] };
+type WorksheetAttemptSummary = {
+  id: number;
+  student_id: number;
+  student_name: string;
+  username: string;
+  status: "draf" | "terkumpul" | "dinilai";
+  submitted_at: string | null;
+  total_score: number | null;
+  updated_at: string;
+};
+type WorksheetAttemptsResponse = { ok: true; data: WorksheetAttemptSummary[] };
+type WorksheetAttemptItem = {
+  id: number;
+  prompt: string;
+  item_type: string;
+  points: number;
+  answer_key: string | null;
+  answer_text: string | null;
+  attachment_key: string | null;
+  score: number | null;
+  teacher_note: string | null;
+};
+type WorksheetAttemptDetail = {
+  attempt: {
+    id: number;
+    student_name: string;
+    username: string;
+    status: "draf" | "terkumpul" | "dinilai";
+    submitted_at: string | null;
+    total_score: number | null;
+    teacher_comment: string | null;
+  };
+  items: WorksheetAttemptItem[];
+};
+type WorksheetAttemptDetailResponse = { ok: true; data: WorksheetAttemptDetail };
 type MeResponse = { ok: true; user: { role: "guru" | "murid" } };
 
 export default function GuruPage() {
@@ -42,6 +77,13 @@ export default function GuruPage() {
   const [itemOptions, setItemOptions] = useState("");
   const [itemAnswerKey, setItemAnswerKey] = useState("");
   const [itemPoints, setItemPoints] = useState("10");
+  const [attempts, setAttempts] = useState<WorksheetAttemptSummary[]>([]);
+  const [selectedAttemptId, setSelectedAttemptId] = useState<number | null>(null);
+  const [attemptDetail, setAttemptDetail] = useState<WorksheetAttemptDetail | null>(null);
+  const [scoreDrafts, setScoreDrafts] = useState<Record<number, string>>({});
+  const [noteDrafts, setNoteDrafts] = useState<Record<number, string>>({});
+  const [teacherComment, setTeacherComment] = useState("");
+  const [attemptLoading, setAttemptLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -79,6 +121,54 @@ export default function GuruPage() {
   useEffect(() => {
     void loadModules();
   }, []);
+
+  async function loadAttempts(worksheetId: number) {
+    setAttemptLoading(true);
+    try {
+      const response = await apiRequest<WorksheetAttemptsResponse>(`/worksheets/${worksheetId}/attempts`);
+      setAttempts(response.data);
+      setSelectedAttemptId((current) => current && response.data.some((attempt) => attempt.id === current)
+        ? current
+        : response.data[0]?.id ?? null);
+      if (response.data.length === 0) {
+        setSelectedAttemptId(null);
+        setAttemptDetail(null);
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Pengumpulan belum dapat dimuat.");
+    } finally {
+      setAttemptLoading(false);
+    }
+  }
+
+  async function loadAttemptDetail(worksheetId: number, attemptId: number) {
+    setAttemptLoading(true);
+    try {
+      const response = await apiRequest<WorksheetAttemptDetailResponse>(`/worksheets/${worksheetId}/attempts/${attemptId}`);
+      setAttemptDetail(response.data);
+      setScoreDrafts(Object.fromEntries(response.data.items.map((item) => [item.id, item.score === null ? "" : String(item.score)])));
+      setNoteDrafts(Object.fromEntries(response.data.items.map((item) => [item.id, item.teacher_note ?? ""])));
+      setTeacherComment(response.data.attempt.teacher_comment ?? "");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Detail pengumpulan belum dapat dimuat.");
+    } finally {
+      setAttemptLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!selectedWorksheetId) {
+      setAttempts([]);
+      setSelectedAttemptId(null);
+      setAttemptDetail(null);
+      return;
+    }
+    void loadAttempts(selectedWorksheetId);
+  }, [selectedWorksheetId]);
+
+  useEffect(() => {
+    if (selectedWorksheetId && selectedAttemptId) void loadAttemptDetail(selectedWorksheetId, selectedAttemptId);
+  }, [selectedWorksheetId, selectedAttemptId]);
 
   async function createModule(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -229,6 +319,36 @@ export default function GuruPage() {
     }
   }
 
+  async function saveGrades() {
+    if (!selectedWorksheetId || !selectedAttemptId || !attemptDetail) return;
+    const answers = attemptDetail.items
+      .filter((item) => scoreDrafts[item.id]?.trim() !== "")
+      .map((item) => ({
+        itemId: item.id,
+        score: Number(scoreDrafts[item.id]),
+        teacherNote: noteDrafts[item.id]?.trim() || undefined,
+      }));
+    if (answers.some((answer) => !Number.isFinite(answer.score) || answer.score < 0)) {
+      setMessage("Nilai harus berupa angka nol atau lebih.");
+      return;
+    }
+    if (answers.some((answer) => answer.score > (attemptDetail.items.find((item) => item.id === answer.itemId)?.points ?? 0))) {
+      setMessage("Nilai tidak boleh melebihi poin soal.");
+      return;
+    }
+    try {
+      await apiRequest(`/worksheets/${selectedWorksheetId}/attempts/${selectedAttemptId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ answers, teacherComment: teacherComment.trim() || undefined }),
+      });
+      setMessage("Penilaian disimpan.");
+      await loadAttempts(selectedWorksheetId);
+      await loadAttemptDetail(selectedWorksheetId, selectedAttemptId);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Penilaian belum dapat disimpan.");
+    }
+  }
+
   if (loading) return <main style={styles.container}><p>Memuat ruang guru...</p></main>;
 
   return (
@@ -343,6 +463,70 @@ export default function GuruPage() {
           </form>
         </section>
       ) : null}
+
+      {selectedWorksheetId ? (
+        <section style={styles.panel}>
+          <h2 style={styles.sectionTitle}>Pengumpulan LKPD</h2>
+          {attemptLoading && attempts.length === 0 ? <p style={styles.muted}>Memuat pengumpulan...</p> : null}
+          {!attemptLoading && attempts.length === 0 ? <p style={styles.empty}>Belum ada murid yang mengumpulkan LKPD ini.</p> : null}
+          {attempts.length > 0 ? (
+            <div style={styles.attemptLayout}>
+              <div style={styles.list}>
+                {attempts.map((attempt) => (
+                  <button
+                    key={attempt.id}
+                    type="button"
+                    onClick={() => setSelectedAttemptId(attempt.id)}
+                    style={{ ...styles.attempt, borderColor: selectedAttemptId === attempt.id ? "#175cd3" : "#eaecf0" }}
+                  >
+                    <strong>{attempt.student_name}</strong>
+                    <span style={styles.muted}>{attempt.username} · {attempt.status}</span>
+                    <span style={styles.muted}>{attempt.total_score === null ? "Belum dinilai" : `Nilai ${attempt.total_score}`}</span>
+                  </button>
+                ))}
+              </div>
+              {attemptDetail ? (
+                <div style={styles.review}>
+                  <h3 style={styles.reviewTitle}>{attemptDetail.attempt.student_name}</h3>
+                  <p style={styles.muted}>{attemptDetail.attempt.username} · status {attemptDetail.attempt.status}</p>
+                  {attemptDetail.items.map((item, index) => (
+                    <article key={item.id} style={styles.answerCard}>
+                      <strong>{index + 1}. {item.prompt}</strong>
+                      <p style={styles.answerText}>{item.answer_text || "Tidak ada jawaban."}</p>
+                      <small style={styles.muted}>Kunci: {item.answer_key || "Tidak ada kunci otomatis."} · Maksimal {item.points} poin</small>
+                      <input
+                        type="number"
+                        min={0}
+                        max={item.points}
+                        step="0.01"
+                        value={scoreDrafts[item.id] ?? ""}
+                        onChange={(event) => setScoreDrafts((current) => ({ ...current, [item.id]: event.target.value }))}
+                        placeholder="Nilai soal"
+                        style={styles.input}
+                      />
+                      <textarea
+                        value={noteDrafts[item.id] ?? ""}
+                        onChange={(event) => setNoteDrafts((current) => ({ ...current, [item.id]: event.target.value }))}
+                        placeholder="Catatan untuk murid (opsional)"
+                        rows={2}
+                        style={styles.textarea}
+                      />
+                    </article>
+                  ))}
+                  <textarea
+                    value={teacherComment}
+                    onChange={(event) => setTeacherComment(event.target.value)}
+                    placeholder="Komentar umum untuk murid (opsional)"
+                    rows={3}
+                    style={styles.textarea}
+                  />
+                  <button type="button" onClick={() => void saveGrades()} style={styles.primaryButton}>Simpan penilaian</button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
     </main>
   );
 }
@@ -366,4 +550,10 @@ const styles = {
   module: { display: "grid", gridTemplateColumns: "1fr auto auto", alignItems: "center", gap: 12, border: "1px solid", borderRadius: 10, padding: 14 },
   moduleSelect: { display: "grid", textAlign: "left" as const, gap: 4, border: 0, background: "transparent", padding: 0, font: "inherit" },
   status: { fontSize: 13, color: "#475467" },
+  attemptLayout: { display: "grid", gridTemplateColumns: "minmax(180px, 0.7fr) minmax(0, 1.3fr)", gap: 16, alignItems: "start" },
+  attempt: { display: "grid", textAlign: "left" as const, gap: 4, border: "1px solid", borderRadius: 10, background: "white", padding: 14, font: "inherit" },
+  review: { display: "grid", gap: 12 },
+  reviewTitle: { margin: 0, fontSize: 20 },
+  answerCard: { display: "grid", gap: 8, border: "1px solid #eaecf0", borderRadius: 10, padding: 14 },
+  answerText: { margin: 0, whiteSpace: "pre-wrap" as const, background: "#f8f9fc", borderRadius: 8, padding: 10 },
 };

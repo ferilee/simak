@@ -15,6 +15,13 @@
       "when": 1793059037358,
       "tag": "0001_classy_lethal_legion",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1793061022195,
+      "tag": "0002_brief_white_tiger",
+      "breakpoints": true
     }
   ]
 }

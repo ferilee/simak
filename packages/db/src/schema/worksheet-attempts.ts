@@ -1,4 +1,4 @@
-import { bigint, datetime, index, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
+import { bigint, datetime, decimal, index, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 import { users } from "./users";
 import { worksheets, worksheetItems } from "./worksheets";
 
@@ -12,8 +12,10 @@ export const worksheetAttempts = mysqlTable(
     studentId: bigint("student_id", { mode: "number" })
       .notNull()
       .references(() => users.id),
-    status: mysqlEnum("status", ["draf", "terkumpul"]).notNull().default("draf"),
+    status: mysqlEnum("status", ["draf", "terkumpul", "dinilai"]).notNull().default("draf"),
     submittedAt: datetime("submitted_at", { mode: "date" }),
+    totalScore: decimal("total_score", { precision: 8, scale: 2 }),
+    teacherComment: text("teacher_comment"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
   },
@@ -35,6 +37,8 @@ export const worksheetAnswers = mysqlTable(
       .references(() => worksheetItems.id),
     answerText: text("answer_text"),
     attachmentKey: varchar("attachment_key", { length: 512 }),
+    score: decimal("score", { precision: 8, scale: 2 }),
+    teacherNote: text("teacher_note"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
   },

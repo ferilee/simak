@@ -8,7 +8,7 @@ export const gradingRoutes = new Hono();
 
 gradingRoutes.use("*", requireRole("guru"));
 
-const { assignmentClasses, assignments, classMembers, classes, users, worksheetAttempts } = schema;
+const { assignmentClasses, assignments, classMembers, classes, exitTickets, users, worksheetAttempts } = schema;
 
 gradingRoutes.get("/assignments/:id", async (c) => {
   const user = c.get("user")!;
@@ -40,6 +40,19 @@ gradingRoutes.get("/assignments/:id", async (c) => {
         .from(worksheetAttempts)
         .where(and(eq(worksheetAttempts.worksheetId, assignment.worksheetId), inArray(worksheetAttempts.studentId, uniqueStudents.map((student) => student.id))));
   const attemptByStudent = new Map(attempts.map((attempt) => [attempt.studentId, attempt]));
+  const exitTicketRows = uniqueStudents.length
+    ? await db
+        .select({
+          studentId: exitTickets.studentId,
+          understood3: exitTickets.understood3,
+          examples2: exitTickets.examples2,
+          confusing1: exitTickets.confusing1,
+          createdAt: exitTickets.createdAt,
+        })
+        .from(exitTickets)
+        .where(and(eq(exitTickets.assignmentId, assignmentId), inArray(exitTickets.studentId, uniqueStudents.map((student) => student.id))))
+    : [];
+  const exitTicketByStudent = new Map(exitTicketRows.map((ticket) => [ticket.studentId, ticket]));
 
   return c.json({
     ok: true,
@@ -59,6 +72,14 @@ gradingRoutes.get("/assignments/:id", async (c) => {
           status: attempt?.status ?? "belum",
           submitted_at: attempt?.submittedAt ?? null,
           total_score: attempt?.totalScore === null || attempt?.totalScore === undefined ? null : Number(attempt.totalScore),
+          exit_ticket: exitTicketByStudent.has(student.id)
+            ? {
+                understood_3: exitTicketByStudent.get(student.id)!.understood3,
+                examples_2: exitTicketByStudent.get(student.id)!.examples2,
+                confusing_1: exitTicketByStudent.get(student.id)!.confusing1,
+                submitted_at: exitTicketByStudent.get(student.id)!.createdAt,
+              }
+            : null,
         };
       }),
     },

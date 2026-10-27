@@ -48,6 +48,26 @@ type WorksheetAttemptSummary = {
   updated_at: string;
 };
 type WorksheetAttemptsResponse = { ok: true; data: WorksheetAttemptSummary[] };
+type ExitTicketSummary = {
+  understood_3: string;
+  examples_2: string;
+  confusing_1: string;
+  submitted_at: string;
+};
+type AssignmentStudentSummary = {
+  id: number;
+  name: string;
+  username: string;
+  status: "belum" | "draf" | "terkumpul" | "dinilai";
+  submitted_at: string | null;
+  total_score: number | null;
+  exit_ticket: ExitTicketSummary | null;
+};
+type AssignmentGradingSummary = {
+  assignment: { id: number; title: string; worksheet_id: number | null; due_at: string };
+  students: AssignmentStudentSummary[];
+};
+type AssignmentGradingResponse = { ok: true; data: AssignmentGradingSummary };
 type WorksheetAttemptItem = {
   id: number;
   prompt: string;
@@ -106,6 +126,9 @@ export default function GuruPage() {
   const [attempts, setAttempts] = useState<WorksheetAttemptSummary[]>([]);
   const [selectedAttemptId, setSelectedAttemptId] = useState<number | null>(null);
   const [attemptDetail, setAttemptDetail] = useState<WorksheetAttemptDetail | null>(null);
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState<number | null>(null);
+  const [assignmentSummary, setAssignmentSummary] = useState<AssignmentGradingSummary | null>(null);
+  const [assignmentSummaryLoading, setAssignmentSummaryLoading] = useState(false);
   const [scoreDrafts, setScoreDrafts] = useState<Record<number, string>>({});
   const [noteDrafts, setNoteDrafts] = useState<Record<number, string>>({});
   const [teacherComment, setTeacherComment] = useState("");
@@ -184,6 +207,19 @@ export default function GuruPage() {
       setMessage(error instanceof Error ? error.message : "Detail pengumpulan belum dapat dimuat.");
     } finally {
       setAttemptLoading(false);
+    }
+  }
+
+  async function loadAssignmentSummary(assignmentId: number) {
+    setSelectedAssignmentId(assignmentId);
+    setAssignmentSummaryLoading(true);
+    try {
+      const response = await apiRequest<AssignmentGradingResponse>(`/grading/assignments/${assignmentId}`);
+      setAssignmentSummary(response.data);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Ringkasan penugasan belum dapat dimuat.");
+    } finally {
+      setAssignmentSummaryLoading(false);
     }
   }
 
@@ -589,8 +625,31 @@ export default function GuruPage() {
           <input type="url" value={assignmentRuasUrl} onChange={(event) => setAssignmentRuasUrl(event.target.value)} placeholder="Tautan kuis RUAS (opsional)" style={styles.input} />
           <button type="submit" style={styles.primaryButton}>Buat draf penugasan</button>
         </form>
-        {assignments.length > 0 ? <div style={{ ...styles.list, marginTop: 16 }}>{assignments.map((assignment) => <article key={assignment.id} style={styles.assignmentCard}><div style={styles.assignmentInfo}><strong>{assignment.title}</strong><span style={styles.muted}>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span style={styles.muted}>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><button type="button" onClick={() => void changeAssignmentStatus(assignment)} style={styles.secondaryButton}>{assignment.status === "terbit" ? "Tutup" : "Terbitkan"}</button></article>)}</div> : <p style={styles.empty}>Belum ada penugasan.</p>}
+        {assignments.length > 0 ? <div style={{ ...styles.list, marginTop: 16 }}>{assignments.map((assignment) => <article key={assignment.id} style={styles.assignmentCard}><div style={styles.assignmentInfo}><strong>{assignment.title}</strong><span style={styles.muted}>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span style={styles.muted}>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><div style={styles.actionRow}><button type="button" onClick={() => void loadAssignmentSummary(assignment.id)} style={styles.secondaryButton}>{selectedAssignmentId === assignment.id ? "Segarkan exit ticket" : "Lihat exit ticket"}</button><button type="button" onClick={() => void changeAssignmentStatus(assignment)} style={styles.secondaryButton}>{assignment.status === "terbit" ? "Tutup" : "Terbitkan"}</button></div></article>)}</div> : <p style={styles.empty}>Belum ada penugasan.</p>}
       </section>
+
+      {selectedAssignmentId ? (
+        <section style={styles.panel}>
+          <h2 style={styles.sectionTitle}>Ringkasan exit ticket</h2>
+          {assignmentSummaryLoading ? <p style={styles.muted}>Memuat jawaban exit ticket...</p> : null}
+          {!assignmentSummaryLoading && assignmentSummary?.students.every((student) => !student.exit_ticket) ? <p style={styles.empty}>Belum ada murid yang mengirim exit ticket untuk penugasan ini.</p> : null}
+          {!assignmentSummaryLoading && assignmentSummary ? (
+            <div style={styles.exitTicketLayout}>
+              {assignmentSummary.students.map((student) => student.exit_ticket ? (
+                <article key={student.id} style={styles.exitTicketCard}>
+                  <div style={styles.assignmentInfo}>
+                    <strong>{student.name}</strong>
+                    <span style={styles.muted}>{student.username} · dikirim {formatDate(student.exit_ticket.submitted_at)}</span>
+                  </div>
+                  <div style={styles.exitTicketField}><strong>3 hal yang dipahami</strong><p>{student.exit_ticket.understood_3}</p></div>
+                  <div style={styles.exitTicketField}><strong>2 contoh penerapan</strong><p>{student.exit_ticket.examples_2}</p></div>
+                  <div style={styles.exitTicketField}><strong>1 hal yang membingungkan</strong><p>{student.exit_ticket.confusing_1}</p></div>
+                </article>
+              ) : null)}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       {selectedWorksheetId ? (
         <section style={styles.panel}>
@@ -689,7 +748,11 @@ const styles = {
   checkbox: { display: "flex", gap: 8, alignItems: "center" },
   assignmentCard: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, border: "1px solid #eaecf0", borderRadius: 10, padding: 14 },
   assignmentInfo: { display: "grid", gap: 4 },
+  actionRow: { display: "flex", flexWrap: "wrap" as const, justifyContent: "flex-end", gap: 8 },
   classCard: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, border: "1px solid #eaecf0", borderRadius: 10, padding: 14 },
+  exitTicketLayout: { display: "grid", gap: 12 },
+  exitTicketCard: { display: "grid", gap: 12, border: "1px solid #eaecf0", borderRadius: 10, padding: 14 },
+  exitTicketField: { display: "grid", gap: 6, background: "#f8f9fc", borderRadius: 8, padding: 12 },
 };
 
 function toDateTimeLocal(value: Date) {

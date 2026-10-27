@@ -51,6 +51,7 @@ export default function MuridPage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
+  const [joinOpen, setJoinOpen] = useState(false);
   const [studentStep, setStudentStep] = useState(0);
 
   const studentSteps = [
@@ -70,6 +71,7 @@ export default function MuridPage() {
       }
       const today = await apiRequest<TodayResponse>("/murid/today");
       setData(today.data);
+      setJoinOpen(today.data.classes.length === 0);
     } catch (error) {
       if (error instanceof Error && error.message === "Belum masuk.") {
         router.replace("/login");
@@ -174,28 +176,42 @@ export default function MuridPage() {
 
           {studentStep === 0 ? (
             <div className="wizard-step-content">
-              <form onSubmit={joinClass} className="join-panel wizard-join-panel">
-                <label htmlFor="join-code">Gabung kelas</label>
-                <div className="join-row">
-                  <input
-                    id="join-code"
-                    value={joinCode}
-                    onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
-                    placeholder="Masukkan kode kelas"
-                    maxLength={12}
-                    required
-                    className="dashboard-input"
-                  />
-                  <button type="submit" disabled={joining} className="button">
-                    {joining ? "..." : "Gabung"}
-                  </button>
-                </div>
-              </form>
               <section className="dashboard-section wizard-inner-section">
                 <div className="dashboard-section-heading">
-                  <h3>Kelas saya</h3>
-                  <span>{data.classes.length} kelas aktif</span>
+                  <div>
+                    <h3>Kelas saya</h3>
+                    <span>{data.classes.length} kelas aktif</span>
+                  </div>
+                  {data.classes.length > 0 && !joinOpen ? (
+                    <button type="button" className="button button-secondary join-class-trigger" onClick={() => setJoinOpen(true)}>
+                      + Gabung kelas
+                    </button>
+                  ) : null}
                 </div>
+                {joinOpen ? (
+                  <form onSubmit={joinClass} className="join-panel wizard-join-panel">
+                    <label htmlFor="join-code">Gabung kelas</label>
+                    <div className="join-row">
+                      <input
+                        id="join-code"
+                        value={joinCode}
+                        onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
+                        placeholder="Masukkan kode kelas"
+                        maxLength={12}
+                        required
+                        className="dashboard-input"
+                      />
+                      <button type="submit" disabled={joining} className="button">
+                        {joining ? "..." : "Gabung"}
+                      </button>
+                    </div>
+                    {data.classes.length > 0 ? (
+                      <button type="button" className="button button-secondary join-class-close" onClick={() => setJoinOpen(false)}>
+                        Tutup
+                      </button>
+                    ) : null}
+                  </form>
+                ) : null}
                 {data.classes.length === 0 ? (
                   <p className="empty-state">Belum ada kelas. Masukkan kode kelas dari guru untuk bergabung.</p>
                 ) : (

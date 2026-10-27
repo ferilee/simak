@@ -676,6 +676,17 @@ a {
   margin-bottom: 12px;
 }
 
+.dashboard-section-heading > div {
+  display: grid;
+  gap: 4px;
+}
+
+.join-class-trigger {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  color: var(--wizard-accent-dark);
+}
+
 .dashboard-section-heading h2 {
   margin: 0;
   font-size: 1.35rem;
@@ -1123,6 +1134,16 @@ a {
 
 .wizard-join-panel .button:hover {
   background: var(--wizard-accent-dark);
+}
+
+.wizard-join-panel .join-class-close {
+  justify-self: start;
+  background: transparent;
+  color: var(--wizard-accent-dark);
+}
+
+.wizard-join-panel .join-class-close:hover {
+  background: rgba(255, 255, 255, 0.6);
 }
 
 .wizard-footer {

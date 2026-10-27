@@ -4,7 +4,7 @@ import { db, schema } from "@simak/db";
 import { requireRole } from "../middleware/auth";
 
 // Rekap bukti = agregasi submissions + activity_logs + exit_tickets (Tahap 4).
-// Format: JSON (default) atau CSV yang dapat dibuka di Excel.
+// Format: JSON (default), CSV yang dapat dibuka di Excel, atau PDF.
 export const reportRoutes = new Hono();
 
 reportRoutes.use("*", requireRole("guru"));
@@ -139,6 +139,13 @@ reportRoutes.get("/session", async (c) => {
     return c.body(csv);
   }
 
+  if (c.req.query("format") === "pdf") {
+    const pdf = createSessionPdf(data);
+    c.header("Content-Type", "application/pdf");
+    c.header("Content-Disposition", `attachment; filename=\"simak-rekap-${assignment.id}.pdf\"`);
+    return c.body(pdf);
+  }
+
   return c.json({
     ok: true,
     data,
@@ -152,4 +159,68 @@ function csvDate(value: Date | null) {
 
 function csvEscape(value: string) {
   return /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
+}
+
+function createSessionPdf(data: {
+  assignment: { id: number; title: string; due_at: Date };
+  summary: { total_students: number; hadir: number; submitted: number; exit_ticket: number };
+  students: {
+    name: string;
+    username: string;
+    class_name: string;
+    hadir: boolean;
+    submission_status: string;
+    total_score: number | null;
+    exit_ticket_submitted: boolean;
+    ruas_opened_at: Date | null;
+  }[];
+}) {
+  const lines = [
+    `SIMAK - Rekap Sesi: ${data.assignment.title}`,
+    `Batas pengumpulan: ${data.assignment.due_at.toISOString()}`,
+    `Murid: ${data.summary.total_students} | Hadir: ${data.summary.hadir} | Kumpul LKPD: ${data.summary.submitted} | Exit ticket: ${data.summary.exit_ticket}`,
+    "",
+    "No.  Murid                         Kelas             Presensi  LKPD       Nilai  Exit  RUAS",
+    "-".repeat(96),
+    ...data.students.map((student, index) => `${String(index + 1).padEnd(4)} ${student.name} (${student.username}) | ${student.class_name} | ${student.hadir ? "Hadir" : "Belum hadir"} | ${student.submission_status} | ${student.total_score === null ? "-" : student.total_score} | ${student.exit_ticket_submitted ? "Sudah" : "Belum"} | ${student.ruas_opened_at ? "Dibuka" : "Belum"}`),
+  ];
+
+  const linesPerPage = 48;
+  const pages: string[][] = [];
+  for (let index = 0; index < lines.length; index += linesPerPage) pages.push(lines.slice(index, index + linesPerPage));
+
+  const objects: (string | null)[] = [null, "<< /Type /Catalog /Pages 2 0 R >>", null, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"];
+  const pageRefs: string[] = [];
+  for (const pageLines of pages) {
+    const content = pageLines.map((line, index) => pdfText(line, 40, 800 - index * 16, index === 0 ? 15 : 9)).join("");
+    const pageObject = objects.length;
+    const contentObject = pageObject + 1;
+    pageRefs.push(`${pageObject} 0 R`);
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentObject} 0 R >>`);
+    objects.push(`<< /Length ${content.length} >>\nstream\n${content}endstream`);
+  }
+  objects[2] = `<< /Type /Pages /Kids [${pageRefs.join(" ")}] /Count ${pages.length} >>`;
+
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  for (let index = 1; index < objects.length; index += 1) {
+    offsets[index] = pdf.length;
+    pdf += `${index} 0 obj\n${objects[index]}\nendobj\n`;
+  }
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length}\n0000000000 65535 f \n`;
+  for (let index = 1; index < objects.length; index += 1) pdf += `${String(offsets[index]).padStart(10, "0")} 00000 n \n`;
+  pdf += `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return pdf;
+}
+
+function pdfText(value: string, x: number, y: number, size: number) {
+  const safe = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E]/g, "?")
+    .replaceAll("\\", "\\\\")
+    .replaceAll("(", "\\(")
+    .replaceAll(")", "\\)");
+  return `BT /F1 ${size} Tf ${x} ${y} Td (${safe}) Tj ET\n`;
 }

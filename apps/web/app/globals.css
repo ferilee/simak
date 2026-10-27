@@ -544,6 +544,280 @@ a {
   gap: 16px;
 }
 
+.wizard-layout {
+  --wizard-accent: var(--color-brand-700);
+  --wizard-accent-dark: var(--color-brand-800);
+  --wizard-accent-soft: var(--color-brand-50);
+  --wizard-accent-ring: #b2ddff;
+  display: grid;
+  grid-template-columns: minmax(220px, 270px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+  padding-bottom: 48px;
+}
+
+.wizard-theme-guru {
+  --wizard-accent: #175cd3;
+  --wizard-accent-dark: #1849a9;
+  --wizard-accent-soft: #eff8ff;
+  --wizard-accent-ring: #b2ddff;
+}
+
+.wizard-theme-murid {
+  --wizard-accent: #0e9384;
+  --wizard-accent-dark: #087a6f;
+  --wizard-accent-soft: #ecfdf3;
+  --wizard-accent-ring: #a6f4c5;
+}
+
+.wizard-sidebar {
+  position: sticky;
+  top: 24px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  background: linear-gradient(180deg, var(--wizard-accent-soft), var(--color-surface) 55%);
+  box-shadow: var(--shadow-card);
+}
+
+.wizard-profile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid rgba(152, 162, 179, 0.28);
+}
+
+.wizard-profile > div {
+  display: grid;
+  gap: 2px;
+}
+
+.wizard-profile strong {
+  font-size: 15px;
+}
+
+.wizard-profile span:not(.wizard-avatar) {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.wizard-avatar {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--wizard-accent);
+  color: white;
+  font-weight: 800;
+}
+
+.wizard-steps {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.wizard-steps::before {
+  position: absolute;
+  top: 22px;
+  bottom: 22px;
+  left: 19px;
+  width: 2px;
+  content: "";
+  background: #d0d5dd;
+}
+
+.wizard-step {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  padding: 8px;
+  background: transparent;
+  color: var(--color-ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.wizard-step:hover {
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.wizard-step > span:last-child {
+  display: grid;
+  gap: 2px;
+}
+
+.wizard-step strong {
+  font-size: 14px;
+}
+
+.wizard-step small {
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.wizard-step-number {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 2px solid #d0d5dd;
+  border-radius: 50%;
+  background: var(--color-surface);
+  color: #98a2b3;
+  font-weight: 800;
+}
+
+.wizard-step.is-active {
+  border-color: var(--wizard-accent-ring);
+  background: var(--color-surface);
+  box-shadow: 0 5px 16px rgba(16, 24, 40, 0.08);
+}
+
+.wizard-step.is-active .wizard-step-number,
+.wizard-step.is-complete .wizard-step-number {
+  border-color: var(--wizard-accent);
+  background: var(--wizard-accent);
+  color: white;
+}
+
+.wizard-step.is-active strong,
+.wizard-step.is-complete strong {
+  color: var(--wizard-accent-dark);
+}
+
+.wizard-side-note {
+  margin: 22px 4px 0;
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.wizard-main {
+  min-width: 0;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-lg);
+  padding: clamp(18px, 3vw, 28px);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.wizard-main-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--color-border-soft);
+}
+
+.wizard-main-heading .eyebrow {
+  margin-bottom: 6px;
+  color: var(--wizard-accent);
+}
+
+.wizard-main-heading h2 {
+  margin: 0;
+  font-size: clamp(1.45rem, 3vw, 2rem);
+  letter-spacing: -0.035em;
+}
+
+.wizard-main-heading p:last-child {
+  margin: 6px 0 0;
+  color: var(--color-muted);
+}
+
+.wizard-role-chip {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: var(--wizard-accent-soft);
+  color: var(--wizard-accent-dark);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.wizard-step-content {
+  padding-top: 24px;
+}
+
+.wizard-step-panel[data-active="false"] {
+  display: none;
+}
+
+.wizard-step-panel[data-active="true"] {
+  animation: wizard-enter 180ms ease-out;
+}
+
+.wizard-inner-section {
+  margin-top: 26px;
+}
+
+.wizard-inner-section h3,
+.wizard-step-content > .dashboard-section-heading h3 {
+  margin: 0;
+  font-size: 1.2rem;
+  letter-spacing: -0.02em;
+}
+
+.wizard-join-panel {
+  width: 100%;
+  box-shadow: none;
+  background: var(--wizard-accent-soft);
+}
+
+.wizard-join-panel label {
+  color: var(--wizard-accent-dark);
+}
+
+.wizard-join-panel .button {
+  background: var(--wizard-accent);
+}
+
+.wizard-join-panel .button:hover {
+  background: var(--wizard-accent-dark);
+}
+
+.wizard-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--color-border-soft);
+}
+
+.wizard-footer .button:not(.button-secondary) {
+  background: var(--wizard-accent);
+}
+
+.wizard-footer .button:not(.button-secondary):hover {
+  background: var(--wizard-accent-dark);
+}
+
+@keyframes wizard-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @media (max-width: 760px) {
   .guru-panel-heading {
     display: grid;
@@ -591,6 +865,66 @@ a {
   .dashboard-section-heading {
     display: grid;
     gap: 4px;
+  }
+
+  .wizard-layout {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .wizard-sidebar {
+    position: static;
+    padding: 16px;
+  }
+
+  .wizard-steps {
+    display: flex;
+    overflow-x: auto;
+    gap: 8px;
+    margin-inline: -4px;
+    padding: 4px;
+  }
+
+  .wizard-steps::before {
+    display: none;
+  }
+
+  .wizard-step {
+    min-width: 176px;
+    grid-template-columns: 32px minmax(0, 1fr);
+    padding: 8px;
+  }
+
+  .wizard-step-number {
+    width: 32px;
+    height: 32px;
+  }
+
+  .wizard-side-note {
+    display: none;
+  }
+
+  .wizard-main {
+    padding: 18px 14px;
+  }
+
+  .wizard-main-heading {
+    display: grid;
+    gap: 10px;
+  }
+
+  .wizard-role-chip {
+    justify-self: start;
+  }
+
+  .wizard-footer {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .wizard-footer .button {
+    width: 100%;
+    padding-inline: 10px;
   }
 }
 

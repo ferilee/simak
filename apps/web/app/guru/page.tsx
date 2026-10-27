@@ -179,6 +179,15 @@ export default function GuruPage() {
   const [attemptLoading, setAttemptLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
+  const [guruStep, setGuruStep] = useState(0);
+
+  const guruSteps = [
+    { title: "Bangun materi", description: "Buat modul dan susun isi" },
+    { title: "Siapkan LKPD", description: "Buat lembar kerja dan soal" },
+    { title: "Atur kelas", description: "Kelola kelas tujuan" },
+    { title: "Terbitkan tugas", description: "Hubungkan materi ke kelas" },
+    { title: "Pantau hasil", description: "Nilai dan lihat rekap" },
+  ];
 
   async function loadModules() {
     try {
@@ -620,8 +629,8 @@ export default function GuruPage() {
             SIMAK
           </Link>
           <p className="eyebrow" style={{ marginTop: 28 }}>Ruang guru</p>
-          <h1 className="dashboard-title">Materi pembelajaran</h1>
-          <p className="dashboard-subtitle">Buat modul, susun blok materi, lalu terbitkan untuk murid.</p>
+          <h1 className="dashboard-title">Ruang kerja guru</h1>
+          <p className="dashboard-subtitle">Susun pembelajaran dari materi hingga rekap hasil dalam langkah yang jelas.</p>
         </div>
         <div className="dashboard-actions">
           <button type="button" onClick={() => void logout()} className="button button-secondary">Keluar</button>
@@ -629,8 +638,44 @@ export default function GuruPage() {
       </header>
       {message ? <p className="dashboard-alert container" role="alert" aria-live="polite">{message}</p> : null}
 
-      <div className="container guru-content">
-      <section style={{ ...styles.panel, marginTop: 0 }}>
+      <div className="container wizard-layout wizard-theme-guru">
+        <aside className="wizard-sidebar" aria-label="Langkah ruang guru">
+          <div className="wizard-profile">
+            <span className="wizard-avatar">G</span>
+            <div>
+              <strong>Ruang guru</strong>
+              <span>Alur pengelolaan kelas</span>
+            </div>
+          </div>
+          <nav className="wizard-steps">
+            {guruSteps.map((step, index) => (
+              <button
+                key={step.title}
+                type="button"
+                className={`wizard-step ${guruStep === index ? "is-active" : ""} ${guruStep > index ? "is-complete" : ""}`}
+                onClick={() => setGuruStep(index)}
+                aria-current={guruStep === index ? "step" : undefined}
+              >
+                <span className="wizard-step-number">{guruStep > index ? "✓" : index + 1}</span>
+                <span><strong>{step.title}</strong><small>{step.description}</small></span>
+              </button>
+            ))}
+          </nav>
+          <p className="wizard-side-note">Mulai dari materi, lanjutkan ke LKPD dan kelas, lalu pantau hasil belajar murid.</p>
+        </aside>
+
+        <section className="wizard-main" aria-label="Isi ruang guru">
+          <div className="wizard-main-heading">
+            <div>
+              <p className="eyebrow">Langkah {guruStep + 1} dari {guruSteps.length}</p>
+              <h2>{guruSteps[guruStep].title}</h2>
+              <p>{guruSteps[guruStep].description}.</p>
+            </div>
+            <span className="wizard-role-chip">Guru</span>
+          </div>
+
+          <div className="guru-content">
+      <section className="wizard-step-panel" data-active={guruStep === 0} style={{ ...styles.panel, marginTop: 0 }}>
         <h2 style={styles.sectionTitle}>Buat modul</h2>
         <form onSubmit={createModule} style={styles.form}>
           <input required value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Judul modul" style={styles.input} />
@@ -640,7 +685,7 @@ export default function GuruPage() {
         </form>
       </section>
 
-      <section>
+      <section className="wizard-step-panel" data-active={guruStep === 0}>
         <h2 style={styles.sectionTitle}>Modul saya</h2>
         {modules.length === 0 ? <p style={styles.empty}>Belum ada modul.</p> : (
           <div style={styles.list}>
@@ -660,7 +705,7 @@ export default function GuruPage() {
         )}
       </section>
 
-      <section style={styles.panel}>
+      <section className="wizard-step-panel" data-active={guruStep === 2} style={styles.panel}>
         <h2 style={styles.sectionTitle}>Kelas saya</h2>
         <form onSubmit={createClass} style={styles.form}>
           <input required value={className} onChange={(event) => setClassName(event.target.value)} placeholder="Nama kelas, misalnya XI DPIB" style={styles.input} />
@@ -672,7 +717,7 @@ export default function GuruPage() {
       </section>
 
       {selectedId ? (
-        <section style={styles.panel}>
+        <section className="wizard-step-panel" data-active={guruStep === 0} style={styles.panel}>
           <h2 style={styles.sectionTitle}>Tambah blok teks</h2>
           <form onSubmit={addTextBlock} style={styles.form}>
             <textarea
@@ -700,7 +745,7 @@ export default function GuruPage() {
         </section>
       ) : null}
 
-      <section style={styles.panel}>
+      <section className="wizard-step-panel" data-active={guruStep === 1} style={styles.panel}>
         <h2 style={styles.sectionTitle}>LKPD</h2>
         <form onSubmit={createWorksheet} style={styles.form}>
           <input required value={worksheetTitle} onChange={(event) => setWorksheetTitle(event.target.value)} placeholder="Judul LKPD" style={styles.input} />
@@ -725,7 +770,7 @@ export default function GuruPage() {
       </section>
 
       {selectedWorksheetId ? (
-        <section style={styles.panel}>
+        <section className="wizard-step-panel" data-active={guruStep === 1} style={styles.panel}>
           <h2 style={styles.sectionTitle}>Tambah soal LKPD</h2>
           <form onSubmit={addWorksheetItem} style={styles.form}>
             <select value={itemType} onChange={(event) => setItemType(event.target.value as typeof itemType)} style={styles.input}>
@@ -742,7 +787,7 @@ export default function GuruPage() {
         </section>
       ) : null}
 
-      <section style={styles.panel}>
+      <section className="wizard-step-panel" data-active={guruStep === 3} style={styles.panel}>
         <h2 style={styles.sectionTitle}>Penugasan ke kelas</h2>
         <form onSubmit={createAssignment} style={styles.form}>
           <input required value={assignmentTitle} onChange={(event) => setAssignmentTitle(event.target.value)} placeholder="Judul penugasan" style={styles.input} />
@@ -771,7 +816,7 @@ export default function GuruPage() {
         {assignments.length > 0 ? <div style={{ ...styles.list, marginTop: 16 }}>{assignments.map((assignment) => <article key={assignment.id} style={styles.assignmentCard}><div style={styles.assignmentInfo}><strong>{assignment.title}</strong><span style={styles.muted}>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span style={styles.muted}>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><div style={styles.actionRow}><button type="button" onClick={() => void loadSessionReport(assignment.id)} style={styles.secondaryButton}>{selectedReportAssignmentId === assignment.id ? "Segarkan rekap" : "Lihat rekap"}</button><button type="button" onClick={() => void loadAssignmentSummary(assignment.id)} style={styles.secondaryButton}>{selectedAssignmentId === assignment.id ? "Segarkan exit ticket" : "Lihat exit ticket"}</button><button type="button" onClick={() => void changeAssignmentStatus(assignment)} style={styles.secondaryButton}>{assignment.status === "terbit" ? "Tutup" : "Terbitkan"}</button></div></article>)}</div> : <p style={styles.empty}>Belum ada penugasan.</p>}
       </section>
 
-      <section style={styles.panel}>
+      <section className="wizard-step-panel" data-active={guruStep === 4} style={styles.panel}>
         <h2 style={styles.sectionTitle}>Rekap berdasarkan rentang tanggal</h2>
         <form onSubmit={(event) => { event.preventDefault(); void loadRangeReport(); }} style={styles.form}>
           <div style={styles.dateRange}>
@@ -815,7 +860,7 @@ export default function GuruPage() {
         ) : null}
       </section>
 
-      <section style={styles.panel}>
+      <section className="wizard-step-panel" data-active={guruStep === 4} style={styles.panel}>
         <h2 style={styles.sectionTitle}>Impor nilai RUAS</h2>
         <p style={styles.muted}>Format CSV sederhana: <code>NIS,nilai,nama</code>. Kolom nama bersifat opsional. Username murid juga boleh dipakai sebagai identifier.</p>
         <form onSubmit={importRuasScores} style={styles.form}>
@@ -834,7 +879,7 @@ export default function GuruPage() {
       </section>
 
       {selectedReportAssignmentId ? (
-        <section style={styles.panel}>
+        <section className="wizard-step-panel" data-active={guruStep === 4} style={styles.panel}>
           <h2 style={styles.sectionTitle}>Rekap sesi</h2>
           {sessionReportLoading ? <p style={styles.muted}>Memuat rekap sesi...</p> : null}
           {!sessionReportLoading && sessionReport ? (
@@ -872,7 +917,7 @@ export default function GuruPage() {
       ) : null}
 
       {selectedAssignmentId ? (
-        <section style={styles.panel}>
+        <section className="wizard-step-panel" data-active={guruStep === 4} style={styles.panel}>
           <h2 style={styles.sectionTitle}>Ringkasan exit ticket</h2>
           {assignmentSummaryLoading ? <p style={styles.muted}>Memuat jawaban exit ticket...</p> : null}
           {!assignmentSummaryLoading && assignmentSummary?.students.every((student) => !student.exit_ticket) ? <p style={styles.empty}>Belum ada murid yang mengirim exit ticket untuk penugasan ini.</p> : null}
@@ -895,7 +940,7 @@ export default function GuruPage() {
       ) : null}
 
       {selectedWorksheetId ? (
-        <section style={styles.panel}>
+        <section className="wizard-step-panel" data-active={guruStep === 4} style={styles.panel}>
           <h2 style={styles.sectionTitle}>Pengumpulan LKPD</h2>
           {attemptLoading && attempts.length === 0 ? <p style={styles.muted}>Memuat pengumpulan...</p> : null}
           {!attemptLoading && attempts.length === 0 ? <p style={styles.empty}>Belum ada murid yang mengumpulkan LKPD ini.</p> : null}
@@ -957,6 +1002,13 @@ export default function GuruPage() {
           ) : null}
         </section>
       ) : null}
+          </div>
+
+          <footer className="wizard-footer">
+            <button type="button" className="button button-secondary" onClick={() => setGuruStep((current) => Math.max(0, current - 1))} disabled={guruStep === 0}>← Sebelumnya</button>
+            <button type="button" className="button" onClick={() => setGuruStep((current) => Math.min(guruSteps.length - 1, current + 1))} disabled={guruStep === guruSteps.length - 1}>Langkah berikutnya →</button>
+          </footer>
+        </section>
       </div>
     </main>
   );

@@ -50,6 +50,13 @@ export default function MuridPage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
+  const [studentStep, setStudentStep] = useState(0);
+
+  const studentSteps = [
+    { title: "Kelas saya", description: "Gabung dan lihat kelas aktif" },
+    { title: "Penugasan", description: "Kerjakan aktivitas yang tersedia" },
+    { title: "Materi", description: "Baca materi yang diterbitkan" },
+  ];
 
   async function load() {
     try {
@@ -111,25 +118,8 @@ export default function MuridPage() {
           </Link>
           <p className="eyebrow" style={{ marginTop: 28 }}>Ruang murid</p>
           <h1 className="dashboard-title">Halo, {user?.name ?? "Murid"}</h1>
-          <p className="dashboard-subtitle">Materi dan aktivitas belajar Anda berada di satu tempat.</p>
+          <p className="dashboard-subtitle">Ikuti langkah belajar Anda dari satu ruang yang terarah.</p>
         </div>
-        <form onSubmit={joinClass} className="join-panel">
-          <label htmlFor="join-code">Gabung kelas</label>
-          <div className="join-row">
-            <input
-              id="join-code"
-              value={joinCode}
-              onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
-              placeholder="Kode kelas"
-              maxLength={12}
-              required
-              className="dashboard-input"
-            />
-            <button type="submit" disabled={joining} className="button">
-              {joining ? "..." : "Gabung"}
-            </button>
-          </div>
-        </form>
         <div className="dashboard-actions">
           <button type="button" onClick={() => void logout()} className="button button-secondary">Keluar</button>
         </div>
@@ -137,66 +127,134 @@ export default function MuridPage() {
 
       {message ? <p className="dashboard-alert container" role="alert" aria-live="polite">{message}</p> : null}
 
-      <section className="dashboard-section container">
-        <div className="dashboard-section-heading">
-          <h2>Kelas saya</h2>
-          <span>{data.classes.length} kelas aktif</span>
-        </div>
-        {data.classes.length === 0 ? (
-          <p className="empty-state">Belum ada kelas. Masukkan kode kelas dari guru untuk bergabung.</p>
-        ) : (
-          <div className="content-grid">
-            {data.classes.map((kelas) => (
-              <article key={kelas.id} className="content-card">
-                <strong>{kelas.name}</strong>
-                <span className="content-muted">{kelas.subject} · {kelas.academic_year}</span>
-              </article>
-            ))}
+      <div className="container wizard-layout wizard-theme-murid">
+        <aside className="wizard-sidebar" aria-label="Langkah ruang murid">
+          <div className="wizard-profile">
+            <span className="wizard-avatar">{(user?.name ?? "M").slice(0, 1).toUpperCase()}</span>
+            <div>
+              <strong>{user?.name ?? "Murid"}</strong>
+              <span>Ruang murid</span>
+            </div>
           </div>
-        )}
-      </section>
+          <nav className="wizard-steps">
+            {studentSteps.map((step, index) => (
+              <button
+                key={step.title}
+                type="button"
+                className={`wizard-step ${studentStep === index ? "is-active" : ""} ${studentStep > index ? "is-complete" : ""}`}
+                onClick={() => setStudentStep(index)}
+                aria-current={studentStep === index ? "step" : undefined}
+              >
+                <span className="wizard-step-number">{studentStep > index ? "✓" : index + 1}</span>
+                <span><strong>{step.title}</strong><small>{step.description}</small></span>
+              </button>
+            ))}
+          </nav>
+          <p className="wizard-side-note">Selesaikan langkah belajar sesuai kebutuhan Anda. Anda dapat berpindah langkah kapan saja.</p>
+        </aside>
 
-      <section className="dashboard-section container">
-        <div className="dashboard-section-heading">
-          <h2>Penugasan</h2>
-          <span>{data.assignments.length} penugasan</span>
-        </div>
-        {data.assignments.length === 0 ? (
-          <p className="empty-state">Belum ada penugasan untuk kelas Anda.</p>
-        ) : (
-          <div className="content-list">
-            {data.assignments.map((assignment) => (
-              <Link key={assignment.id} href={`/murid/assignments/${assignment.id}`} className="content-card content-link">
-                <strong>{assignment.title}</strong>
-                <span className="content-muted">{assignment.instructions ?? "Buka detail penugasan untuk mulai."}</span>
-                <span className="content-meta">Status: {assignment.progress} · batas {formatDate(assignment.due_at)}</span>
-                <span className="content-action">Buka penugasan →</span>
-              </Link>
-            ))}
+        <section className="wizard-main" aria-label="Isi ruang murid">
+          <div className="wizard-main-heading">
+            <div>
+              <p className="eyebrow">Langkah {studentStep + 1} dari {studentSteps.length}</p>
+              <h2>{studentSteps[studentStep].title}</h2>
+              <p>{studentSteps[studentStep].description}.</p>
+            </div>
+            <span className="wizard-role-chip">Murid</span>
           </div>
-        )}
-      </section>
 
-      <section className="dashboard-section container">
-        <div className="dashboard-section-heading">
-          <h2>Materi terbit</h2>
-          <span>{data.modules.length} materi</span>
-        </div>
-        {data.modules.length === 0 ? (
-          <p className="empty-state">Belum ada materi terbit untuk kelas Anda.</p>
-        ) : (
-          <div className="content-list">
-            {data.modules.map((module) => (
-              <Link key={module.id} href={`/murid/modules/${module.id}`} className="content-card content-link">
-                <span className="content-label">{module.subject}</span>
-                <strong>{module.title}</strong>
-                <span className="content-muted">{module.description ?? "Materi pembelajaran SIMAK."}</span>
-                <span className="content-action">Baca materi →</span>
-              </Link>
-            ))}
-          </div>
-        )}
-      </section>
+          {studentStep === 0 ? (
+            <div className="wizard-step-content">
+              <form onSubmit={joinClass} className="join-panel wizard-join-panel">
+                <label htmlFor="join-code">Gabung kelas</label>
+                <div className="join-row">
+                  <input
+                    id="join-code"
+                    value={joinCode}
+                    onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
+                    placeholder="Masukkan kode kelas"
+                    maxLength={12}
+                    required
+                    className="dashboard-input"
+                  />
+                  <button type="submit" disabled={joining} className="button">
+                    {joining ? "..." : "Gabung"}
+                  </button>
+                </div>
+              </form>
+              <section className="dashboard-section wizard-inner-section">
+                <div className="dashboard-section-heading">
+                  <h3>Kelas saya</h3>
+                  <span>{data.classes.length} kelas aktif</span>
+                </div>
+                {data.classes.length === 0 ? (
+                  <p className="empty-state">Belum ada kelas. Masukkan kode kelas dari guru untuk bergabung.</p>
+                ) : (
+                  <div className="content-grid">
+                    {data.classes.map((kelas) => (
+                      <article key={kelas.id} className="content-card">
+                        <strong>{kelas.name}</strong>
+                        <span className="content-muted">{kelas.subject} · {kelas.academic_year}</span>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
+          ) : null}
+
+          {studentStep === 1 ? (
+            <section className="wizard-step-content">
+              <div className="dashboard-section-heading">
+                <h3>Penugasan aktif</h3>
+                <span>{data.assignments.length} penugasan</span>
+              </div>
+              {data.assignments.length === 0 ? (
+                <p className="empty-state">Belum ada penugasan untuk kelas Anda.</p>
+              ) : (
+                <div className="content-list">
+                  {data.assignments.map((assignment) => (
+                    <Link key={assignment.id} href={`/murid/assignments/${assignment.id}`} className="content-card content-link">
+                      <strong>{assignment.title}</strong>
+                      <span className="content-muted">{assignment.instructions ?? "Buka detail penugasan untuk mulai."}</span>
+                      <span className="content-meta">Status: {assignment.progress} · batas {formatDate(assignment.due_at)}</span>
+                      <span className="content-action">Buka penugasan →</span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </section>
+          ) : null}
+
+          {studentStep === 2 ? (
+            <section className="wizard-step-content">
+              <div className="dashboard-section-heading">
+                <h3>Materi terbit</h3>
+                <span>{data.modules.length} materi</span>
+              </div>
+              {data.modules.length === 0 ? (
+                <p className="empty-state">Belum ada materi terbit untuk kelas Anda.</p>
+              ) : (
+                <div className="content-list">
+                  {data.modules.map((module) => (
+                    <Link key={module.id} href={`/murid/modules/${module.id}`} className="content-card content-link">
+                      <span className="content-label">{module.subject}</span>
+                      <strong>{module.title}</strong>
+                      <span className="content-muted">{module.description ?? "Materi pembelajaran SIMAK."}</span>
+                      <span className="content-action">Baca materi →</span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </section>
+          ) : null}
+
+          <footer className="wizard-footer">
+            <button type="button" className="button button-secondary" onClick={() => setStudentStep((current) => Math.max(0, current - 1))} disabled={studentStep === 0}>← Sebelumnya</button>
+            <button type="button" className="button" onClick={() => setStudentStep((current) => Math.min(studentSteps.length - 1, current + 1))} disabled={studentStep === studentSteps.length - 1}>Langkah berikutnya →</button>
+          </footer>
+        </section>
+      </div>
     </main>
   );
 }

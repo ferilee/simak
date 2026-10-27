@@ -7,6 +7,7 @@ import { worksheetAttempts, worksheetAnswers } from "./worksheet-attempts";
 import { assignments, assignmentClasses } from "./assignments";
 import { submissions, submissionAnswers } from "./submissions";
 import { activityLogs, exitTickets } from "./activity";
+import { ruasScores } from "./ruas-scores";
 
 export const usersRelations = relations(users, ({ many }) => ({
   taughtClasses: many(classes),
@@ -15,6 +16,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   submissions: many(submissions),
   worksheetAttempts: many(worksheetAttempts),
   activityLogs: many(activityLogs),
+  ruasScores: many(ruasScores),
 }));
 
 export const classesRelations = relations(classes, ({ one, many }) => ({
@@ -68,6 +70,7 @@ export const assignmentsRelations = relations(assignments, ({ one, many }) => ({
   classLinks: many(assignmentClasses),
   submissions: many(submissions),
   exitTickets: many(exitTickets),
+  ruasScores: many(ruasScores),
 }));
 
 export const assignmentClassesRelations = relations(assignmentClasses, ({ one }) => ({
@@ -94,4 +97,10 @@ export const activityLogsRelations = relations(activityLogs, ({ one }) => ({
 export const exitTicketsRelations = relations(exitTickets, ({ one }) => ({
   assignment: one(assignments, { fields: [exitTickets.assignmentId], references: [assignments.id] }),
   student: one(users, { fields: [exitTickets.studentId], references: [users.id] }),
+}));
+
+export const ruasScoresRelations = relations(ruasScores, ({ one }) => ({
+  assignment: one(assignments, { fields: [ruasScores.assignmentId], references: [assignments.id] }),
+  teacher: one(users, { fields: [ruasScores.teacherId], references: [users.id] }),
+  student: one(users, { fields: [ruasScores.studentId], references: [users.id] }),
 }));

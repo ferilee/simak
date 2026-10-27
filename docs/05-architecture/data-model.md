@@ -19,6 +19,7 @@
 | `submission_answers` | Jawaban per butir LKPD |
 | `activity_logs` | Jejak aktivitas murid |
 | `exit_tickets` | Refleksi 3-2-1 |
+| `ruas_scores` | Snapshot impor nilai RUAS dan status pencocokan |
 
 ## Aturan penyimpanan
 
@@ -29,3 +30,9 @@
 - Waktu disimpan dalam UTC.
 - Rekap dihitung dari data sumber, bukan disimpan sebagai angka turunan.
 
+## Nilai RUAS impor
+
+`ruas_scores` menyimpan snapshot nilai RUAS untuk setiap penugasan. Baris
+dicocokkan melalui NIS atau username murid di kelas tujuan. `match_status`
+bernilai `cocok`, `tidak_ditemukan`, atau `duplikat`; baris yang tidak cocok
+tetap disimpan agar dapat diaudit dan diperbaiki pada impor berikutnya.

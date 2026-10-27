@@ -82,13 +82,24 @@ type SessionReportRow = {
   exit_ticket_submitted: boolean;
   exit_ticket_submitted_at: string | null;
   ruas_opened_at: string | null;
+  ruas_score: number | null;
+  ruas_match_status: "cocok" | "tidak_ditemukan" | "duplikat" | null;
 };
 type SessionReport = {
   assignment: { id: number; title: string; opens_at: string; due_at: string };
-  summary: { total_students: number; hadir: number; submitted: number; exit_ticket: number };
+  summary: { total_students: number; hadir: number; submitted: number; exit_ticket: number; ruas_scored: number; ruas_unmatched: number };
   students: SessionReportRow[];
+  ruas_unmatched: { identifier: string; student_name: string | null; score: number; match_status: string; note: string | null }[];
 };
 type SessionReportResponse = { ok: true; data: SessionReport };
+type RangeReport = {
+  from: string;
+  to: string;
+  summary: { assignments: number; students: number; hadir: number; submitted: number; exit_ticket: number; ruas_scored: number; ruas_unmatched: number };
+  assignments: SessionReport[];
+};
+type RangeReportResponse = { ok: true; data: RangeReport };
+type RuasImportResponse = { ok: true; data: { assignment_id: number; total: number; cocok: number; tidak_ditemukan: number; duplikat: number; unmatched: { identifier: string; student_name: string | null; score: number; match_status: string; note: string | null }[] } };
 type WorksheetAttemptItem = {
   id: number;
   prompt: string;
@@ -153,6 +164,14 @@ export default function GuruPage() {
   const [selectedReportAssignmentId, setSelectedReportAssignmentId] = useState<number | null>(null);
   const [sessionReport, setSessionReport] = useState<SessionReport | null>(null);
   const [sessionReportLoading, setSessionReportLoading] = useState(false);
+  const [rangeFrom, setRangeFrom] = useState(() => toDateInputLocal(new Date()));
+  const [rangeTo, setRangeTo] = useState(() => toDateInputLocal(new Date()));
+  const [rangeReport, setRangeReport] = useState<RangeReport | null>(null);
+  const [rangeReportLoading, setRangeReportLoading] = useState(false);
+  const [ruasImportAssignmentId, setRuasImportAssignmentId] = useState<number | null>(null);
+  const [ruasImportText, setRuasImportText] = useState("");
+  const [ruasImportLoading, setRuasImportLoading] = useState(false);
+  const [ruasImportResult, setRuasImportResult] = useState<RuasImportResponse["data"] | null>(null);
   const [scoreDrafts, setScoreDrafts] = useState<Record<number, string>>({});
   const [noteDrafts, setNoteDrafts] = useState<Record<number, string>>({});
   const [teacherComment, setTeacherComment] = useState("");
@@ -179,6 +198,7 @@ export default function GuruPage() {
       setSelectedWorksheetId((current) => current ?? worksheetResponse.data[0]?.id ?? null);
       setClasses(classResponse.data.filter((kelas) => !kelas.is_archived));
       setAssignments(assignmentResponse.data);
+      setRuasImportAssignmentId((current) => current ?? assignmentResponse.data[0]?.id ?? null);
       setAssignmentClassIds((current) => current.length > 0 ? current : classResponse.data.filter((kelas) => !kelas.is_archived).map((kelas) => kelas.id));
     } catch (error) {
       if (error instanceof Error && (error.message === "Belum masuk." || error.message.includes("Peran Anda"))) {
@@ -276,6 +296,65 @@ export default function GuruPage() {
       URL.revokeObjectURL(url);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Rekap belum dapat diunduh.");
+    }
+  }
+
+  async function loadRangeReport() {
+    if (!rangeFrom || !rangeTo) return;
+    setRangeReportLoading(true);
+    try {
+      const response = await apiRequest<RangeReportResponse>(`/reports/range?from=${rangeFrom}&to=${rangeTo}`);
+      setRangeReport(response.data);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Rekap rentang belum dapat dimuat.");
+    } finally {
+      setRangeReportLoading(false);
+    }
+  }
+
+  async function downloadRangeReport(format: "csv" | "pdf") {
+    try {
+      const response = await fetch(`${apiBase}/reports/range?from=${rangeFrom}&to=${rangeTo}&format=${format}`, { credentials: "include" });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { message?: string };
+        throw new Error(body.message ?? "Rekap rentang belum dapat diunduh.");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `simak-rekap-${rangeFrom}-${rangeTo}.${format}`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Rekap rentang belum dapat diunduh.");
+    }
+  }
+
+  async function importRuasScores(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!ruasImportAssignmentId) {
+      setMessage("Pilih penugasan untuk impor nilai RUAS.");
+      return;
+    }
+    const rows = parseRuasCsv(ruasImportText);
+    if (rows.length === 0) {
+      setMessage("Isi CSV belum memiliki baris nilai yang valid.");
+      return;
+    }
+    setRuasImportLoading(true);
+    try {
+      const response = await apiRequest<RuasImportResponse>("/reports/ruas-import", {
+        method: "POST",
+        body: JSON.stringify({ assignmentId: ruasImportAssignmentId, rows }),
+      });
+      setRuasImportResult(response.data);
+      setMessage(`Impor RUAS selesai: ${response.data.cocok} cocok, ${response.data.tidak_ditemukan} tidak ditemukan, ${response.data.duplikat} duplikat.`);
+      if (selectedReportAssignmentId === ruasImportAssignmentId) await loadSessionReport(ruasImportAssignmentId);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Nilai RUAS belum dapat diimpor.");
+    } finally {
+      setRuasImportLoading(false);
     }
   }
 
@@ -684,6 +763,68 @@ export default function GuruPage() {
         {assignments.length > 0 ? <div style={{ ...styles.list, marginTop: 16 }}>{assignments.map((assignment) => <article key={assignment.id} style={styles.assignmentCard}><div style={styles.assignmentInfo}><strong>{assignment.title}</strong><span style={styles.muted}>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span style={styles.muted}>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><div style={styles.actionRow}><button type="button" onClick={() => void loadSessionReport(assignment.id)} style={styles.secondaryButton}>{selectedReportAssignmentId === assignment.id ? "Segarkan rekap" : "Lihat rekap"}</button><button type="button" onClick={() => void loadAssignmentSummary(assignment.id)} style={styles.secondaryButton}>{selectedAssignmentId === assignment.id ? "Segarkan exit ticket" : "Lihat exit ticket"}</button><button type="button" onClick={() => void changeAssignmentStatus(assignment)} style={styles.secondaryButton}>{assignment.status === "terbit" ? "Tutup" : "Terbitkan"}</button></div></article>)}</div> : <p style={styles.empty}>Belum ada penugasan.</p>}
       </section>
 
+      <section style={styles.panel}>
+        <h2 style={styles.sectionTitle}>Rekap berdasarkan rentang tanggal</h2>
+        <form onSubmit={(event) => { event.preventDefault(); void loadRangeReport(); }} style={styles.form}>
+          <div style={styles.dateRange}>
+            <label style={styles.label}>Dari<input type="date" value={rangeFrom} onChange={(event) => setRangeFrom(event.target.value)} style={styles.input} /></label>
+            <label style={styles.label}>Sampai<input type="date" value={rangeTo} onChange={(event) => setRangeTo(event.target.value)} style={styles.input} /></label>
+          </div>
+          <button type="submit" style={styles.primaryButton}>Lihat rekap rentang</button>
+        </form>
+        {rangeReportLoading ? <p style={styles.muted}>Memuat rekap rentang...</p> : null}
+        {!rangeReportLoading && rangeReport ? (
+          <>
+            <p style={styles.muted}>{rangeReport.from} s.d. {rangeReport.to}</p>
+            <div style={styles.actionRow}>
+              <button type="button" onClick={() => void downloadRangeReport("csv")} style={styles.secondaryButton}>Unduh Excel (CSV)</button>
+              <button type="button" onClick={() => void downloadRangeReport("pdf")} style={styles.secondaryButton}>Unduh PDF</button>
+            </div>
+            <div style={styles.reportSummary}>
+              <div style={styles.reportMetric}><strong>{rangeReport.summary.assignments}</strong><span>Penugasan</span></div>
+              <div style={styles.reportMetric}><strong>{rangeReport.summary.students}</strong><span>Murid</span></div>
+              <div style={styles.reportMetric}><strong>{rangeReport.summary.hadir}</strong><span>Hadir</span></div>
+              <div style={styles.reportMetric}><strong>{rangeReport.summary.submitted}</strong><span>Kumpul LKPD</span></div>
+              <div style={styles.reportMetric}><strong>{rangeReport.summary.ruas_scored}</strong><span>Nilai RUAS</span></div>
+            </div>
+            {rangeReport.assignments.length === 0 ? <p style={styles.empty}>Tidak ada penugasan terbit/ditutup pada rentang ini.</p> : (
+              <div style={styles.reportTableWrap}>
+                <table style={styles.reportTable}>
+                  <thead><tr><th style={styles.reportCell}>Penugasan</th><th style={styles.reportCell}>Dibuka</th><th style={styles.reportCell}>Murid</th><th style={styles.reportCell}>Hadir</th><th style={styles.reportCell}>Kumpul</th><th style={styles.reportCell}>Exit</th><th style={styles.reportCell}>RUAS</th></tr></thead>
+                  <tbody>{rangeReport.assignments.map((report) => <tr key={report.assignment.id}>
+                    <td style={styles.reportCell}><strong>{report.assignment.title}</strong></td>
+                    <td style={styles.reportCell}>{formatDate(report.assignment.opens_at)}</td>
+                    <td style={styles.reportCell}>{report.summary.total_students}</td>
+                    <td style={styles.reportCell}>{report.summary.hadir}</td>
+                    <td style={styles.reportCell}>{report.summary.submitted}</td>
+                    <td style={styles.reportCell}>{report.summary.exit_ticket}</td>
+                    <td style={styles.reportCell}>{report.summary.ruas_scored}</td>
+                  </tr>)}</tbody>
+                </table>
+              </div>
+            )}
+          </>
+        ) : null}
+      </section>
+
+      <section style={styles.panel}>
+        <h2 style={styles.sectionTitle}>Impor nilai RUAS</h2>
+        <p style={styles.muted}>Format CSV sederhana: <code>NIS,nilai,nama</code>. Kolom nama bersifat opsional. Username murid juga boleh dipakai sebagai identifier.</p>
+        <form onSubmit={importRuasScores} style={styles.form}>
+          <label style={styles.label}>Penugasan
+            <select value={ruasImportAssignmentId ?? ""} onChange={(event) => setRuasImportAssignmentId(Number(event.target.value) || null)} style={styles.input}>
+              <option value="">Pilih penugasan</option>
+              {assignments.map((assignment) => <option key={assignment.id} value={assignment.id}>{assignment.title}</option>)}
+            </select>
+          </label>
+          <input type="file" accept=".csv,text/csv" onChange={(event) => { const file = event.target.files?.[0]; if (file) void file.text().then(setRuasImportText); }} style={styles.input} />
+          <textarea required value={ruasImportText} onChange={(event) => setRuasImportText(event.target.value)} placeholder="NIS,nilai,nama\n12345,85,Siti" rows={6} style={styles.textarea} />
+          <button type="submit" disabled={ruasImportLoading} style={styles.primaryButton}>{ruasImportLoading ? "Mengimpor..." : "Impor nilai RUAS"}</button>
+        </form>
+        {ruasImportResult ? <p style={styles.muted}>Baris: {ruasImportResult.total} · cocok: {ruasImportResult.cocok} · tidak ditemukan: {ruasImportResult.tidak_ditemukan} · duplikat: {ruasImportResult.duplikat}</p> : null}
+        {ruasImportResult?.unmatched.length ? <div style={styles.warningBox}>Baris yang perlu diperiksa: {ruasImportResult.unmatched.map((row) => `${row.identifier} (${row.match_status})`).join(", ")}</div> : null}
+      </section>
+
       {selectedReportAssignmentId ? (
         <section style={styles.panel}>
           <h2 style={styles.sectionTitle}>Rekap sesi</h2>
@@ -704,7 +845,7 @@ export default function GuruPage() {
               {sessionReport.students.length === 0 ? <p style={styles.empty}>Belum ada murid di kelas tujuan.</p> : (
                 <div style={styles.reportTableWrap}>
                   <table style={styles.reportTable}>
-                    <thead><tr><th style={styles.reportCell}>Murid</th><th style={styles.reportCell}>Presensi</th><th style={styles.reportCell}>LKPD</th><th style={styles.reportCell}>Nilai</th><th style={styles.reportCell}>Exit ticket</th><th style={styles.reportCell}>RUAS</th></tr></thead>
+                    <thead><tr><th style={styles.reportCell}>Murid</th><th style={styles.reportCell}>Presensi</th><th style={styles.reportCell}>LKPD</th><th style={styles.reportCell}>Nilai</th><th style={styles.reportCell}>Exit ticket</th><th style={styles.reportCell}>RUAS</th><th style={styles.reportCell}>Nilai RUAS</th></tr></thead>
                     <tbody>{sessionReport.students.map((student) => <tr key={student.student_id}>
                       <td style={styles.reportCell}><strong>{student.name}</strong><br /><span style={styles.muted}>{student.username} · {student.class_name}</span></td>
                       <td style={styles.reportCell}>{student.hadir ? "Hadir" : "Belum hadir"}</td>
@@ -712,6 +853,7 @@ export default function GuruPage() {
                       <td style={styles.reportCell}>{student.total_score === null ? "—" : student.total_score}</td>
                       <td style={styles.reportCell}>{student.exit_ticket_submitted ? "Sudah" : "Belum"}</td>
                       <td style={styles.reportCell}>{student.ruas_opened_at ? "Dibuka" : "Belum"}</td>
+                      <td style={styles.reportCell}>{student.ruas_score === null ? "—" : student.ruas_score}</td>
                     </tr>)}</tbody>
                   </table>
                 </div>
@@ -851,11 +993,31 @@ const styles = {
   reportTableWrap: { overflowX: "auto" as const },
   reportTable: { width: "100%", borderCollapse: "collapse" as const, minWidth: 680 },
   reportCell: { borderBottom: "1px solid #eaecf0", padding: "10px 8px", textAlign: "left" as const, verticalAlign: "top" as const },
+  dateRange: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 },
+  warningBox: { background: "#fffaeb", color: "#b54708", borderRadius: 8, padding: 12 },
 };
 
 function toDateTimeLocal(value: Date) {
   const offset = value.getTimezoneOffset() * 60_000;
   return new Date(value.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function toDateInputLocal(value: Date) {
+  const offset = value.getTimezoneOffset() * 60_000;
+  return new Date(value.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function parseRuasCsv(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line, index) => !(index === 0 && /nis|identifier|nilai|score/i.test(line)))
+    .map((line) => {
+      const columns = line.split(",").map((column) => column.trim().replace(/^"|"$/g, ""));
+      return { identifier: columns[0] ?? "", score: columns[1] ?? "", studentName: columns.slice(2).join(",") || undefined };
+    })
+    .filter((row) => row.identifier && row.score !== "");
 }
 
 function formatDate(value: string) {

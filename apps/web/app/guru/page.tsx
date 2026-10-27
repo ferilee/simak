@@ -197,11 +197,11 @@ export default function GuruPage() {
   const [guruStep, setGuruStep] = useState(0);
 
   const guruSteps = [
-    { title: "Bangun materi", description: "Buat modul dan susun isi" },
-    { title: "Siapkan LKPD", description: "Buat lembar kerja dan soal" },
-    { title: "Atur kelas", description: "Kelola kelas tujuan" },
-    { title: "Terbitkan tugas", description: "Hubungkan materi ke kelas" },
-    { title: "Pantau hasil", description: "Nilai dan lihat rekap" },
+    { title: "Bangun materi", mobileTitle: "Materi", description: "Buat modul dan susun isi" },
+    { title: "Siapkan LKPD", mobileTitle: "LKPD", description: "Buat lembar kerja dan soal" },
+    { title: "Atur kelas", mobileTitle: "Kelas", description: "Kelola kelas tujuan" },
+    { title: "Terbitkan tugas", mobileTitle: "Terbit", description: "Hubungkan materi ke kelas" },
+    { title: "Pantau hasil", mobileTitle: "Hasil", description: "Nilai dan lihat rekap" },
   ];
 
   async function loadModules() {
@@ -684,7 +684,13 @@ export default function GuruPage() {
                 aria-current={guruStep === index ? "step" : undefined}
               >
                 <span className="wizard-step-number">{guruStep > index ? "✓" : index + 1}</span>
-                <span><strong>{step.title}</strong><small>{step.description}</small></span>
+                <span>
+                  <strong>
+                    <span className="wizard-step-title-desktop">{step.title}</span>
+                    <span className="wizard-step-title-mobile">{step.mobileTitle}</span>
+                  </strong>
+                  <small>{step.description}</small>
+                </span>
               </button>
             ))}
           </nav>

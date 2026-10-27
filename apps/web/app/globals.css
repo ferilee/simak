@@ -1440,6 +1440,10 @@ a {
   font-size: 14px;
 }
 
+.wizard-step-title-mobile {
+  display: none;
+}
+
 .wizard-step small {
   color: var(--color-muted);
   font-size: 12px;
@@ -1839,7 +1843,7 @@ a {
   }
 
   .wizard-layout.wizard-theme-guru {
-    padding-bottom: 96px;
+    padding-bottom: calc(104px + env(safe-area-inset-bottom));
   }
 
   .wizard-theme-guru .wizard-sidebar {
@@ -1877,8 +1881,7 @@ a {
   }
 
   .wizard-theme-guru .wizard-step,
-  .wizard-theme-guru .wizard-step:hover,
-  .wizard-theme-guru .wizard-step.is-active {
+  .wizard-theme-guru .wizard-step:hover {
     display: grid;
     grid-template-columns: 1fr;
     justify-items: center;
@@ -1889,6 +1892,20 @@ a {
     padding: 6px 2px;
     background: transparent;
     box-shadow: none;
+    text-align: center;
+  }
+
+  .wizard-theme-guru .wizard-step.is-active {
+    display: grid;
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 4px;
+    min-width: 0;
+    border: 0;
+    border-radius: 14px;
+    padding: 6px 2px;
+    background: var(--wizard-accent-soft);
+    box-shadow: inset 0 0 0 1px var(--wizard-accent-ring);
     text-align: center;
   }
 
@@ -1904,6 +1921,14 @@ a {
     font-size: 10px;
     line-height: 1.15;
     overflow-wrap: anywhere;
+  }
+
+  .wizard-theme-guru .wizard-step-title-desktop {
+    display: none;
+  }
+
+  .wizard-theme-guru .wizard-step-title-mobile {
+    display: inline;
   }
 
   .wizard-theme-guru .wizard-step small {

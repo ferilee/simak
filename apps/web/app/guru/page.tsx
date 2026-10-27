@@ -22,7 +22,7 @@ type WorksheetSummary = {
   status: "draf" | "terbit" | "arsip";
 };
 type WorksheetsResponse = { ok: true; data: WorksheetSummary[] };
-type ClassSummary = { id: number; name: string; subject: string; academic_year: string; is_archived: boolean };
+type ClassSummary = { id: number; name: string; subject: string; academic_year: string; join_code: string; is_archived: boolean };
 type ClassesResponse = { ok: true; data: ClassSummary[] };
 type AssignmentSummary = {
   id: number;
@@ -85,6 +85,9 @@ export default function GuruPage() {
   const [attachment, setAttachment] = useState<File | null>(null);
   const [worksheets, setWorksheets] = useState<WorksheetSummary[]>([]);
   const [classes, setClasses] = useState<ClassSummary[]>([]);
+  const [className, setClassName] = useState("");
+  const [classSubject, setClassSubject] = useState("");
+  const [classAcademicYear, setClassAcademicYear] = useState("2026/2027");
   const [assignments, setAssignments] = useState<AssignmentSummary[]>([]);
   const [selectedWorksheetId, setSelectedWorksheetId] = useState<number | null>(null);
   const [worksheetTitle, setWorksheetTitle] = useState("");
@@ -213,6 +216,23 @@ export default function GuruPage() {
       await loadModules();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Modul belum dapat dibuat.");
+    }
+  }
+
+  async function createClass(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    try {
+      const response = await apiRequest<{ ok: true; data: ClassSummary }>("/classes", {
+        method: "POST",
+        body: JSON.stringify({ name: className, subject: classSubject, academicYear: classAcademicYear }),
+      });
+      setClassName("");
+      setClassSubject("");
+      setAssignmentClassIds((current) => [...current, response.data.id]);
+      setMessage(`Kelas dibuat. Kode gabung: ${response.data.join_code}`);
+      await loadModules();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Kelas belum dapat dibuat.");
     }
   }
 
@@ -461,6 +481,17 @@ export default function GuruPage() {
         )}
       </section>
 
+      <section style={styles.panel}>
+        <h2 style={styles.sectionTitle}>Kelas saya</h2>
+        <form onSubmit={createClass} style={styles.form}>
+          <input required value={className} onChange={(event) => setClassName(event.target.value)} placeholder="Nama kelas, misalnya XI DPIB" style={styles.input} />
+          <input required value={classSubject} onChange={(event) => setClassSubject(event.target.value)} placeholder="Mata pelajaran" style={styles.input} />
+          <input required value={classAcademicYear} onChange={(event) => setClassAcademicYear(event.target.value)} placeholder="Tahun ajaran, misalnya 2026/2027" style={styles.input} />
+          <button type="submit" style={styles.primaryButton}>Buat kelas</button>
+        </form>
+        {classes.length > 0 ? <div style={{ ...styles.list, marginTop: 16 }}>{classes.map((kelas) => <article key={kelas.id} style={styles.classCard}><div style={styles.assignmentInfo}><strong>{kelas.name}</strong><span style={styles.muted}>{kelas.subject} · {kelas.academic_year}</span><span style={styles.muted}>Kode gabung: <strong>{kelas.join_code}</strong></span></div></article>)}</div> : <p style={styles.empty}>Belum ada kelas. Buat kelas untuk dapat dipilih sebagai tujuan penugasan.</p>}
+      </section>
+
       {selectedId ? (
         <section style={styles.panel}>
           <h2 style={styles.sectionTitle}>Tambah blok teks</h2>
@@ -658,6 +689,7 @@ const styles = {
   checkbox: { display: "flex", gap: 8, alignItems: "center" },
   assignmentCard: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, border: "1px solid #eaecf0", borderRadius: 10, padding: 14 },
   assignmentInfo: { display: "grid", gap: 4 },
+  classCard: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, border: "1px solid #eaecf0", borderRadius: 10, padding: 14 },
 };
 
 function toDateTimeLocal(value: Date) {

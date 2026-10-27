@@ -79,7 +79,6 @@ export default function WorksheetPage() {
           answers: data.items.map((item) => ({ itemId: item.id, answerText: answers[item.id] ?? "" })),
         }),
       });
-      if (assignmentId) void apiRequest("/activity", { method: "POST", body: JSON.stringify({ assignmentId: Number(assignmentId), event: "kumpul" }) });
       setStatus("draf");
       setMessage("Draf jawaban tersimpan.");
     } catch (error) {
@@ -101,7 +100,12 @@ export default function WorksheetPage() {
         }),
       });
       await apiRequest(`/murid/worksheets/${data.worksheet.id}/submit`, { method: "POST" });
-      if (assignmentId) void apiRequest("/activity", { method: "POST", body: JSON.stringify({ assignmentId: Number(assignmentId), event: "kumpul" }) });
+      if (assignmentId) {
+        await apiRequest("/activity", {
+          method: "POST",
+          body: JSON.stringify({ assignmentId: Number(assignmentId), event: "kumpul" }),
+        });
+      }
       setStatus("terkumpul");
       setMessage("LKPD berhasil dikumpulkan.");
     } catch (error) {

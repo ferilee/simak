@@ -500,6 +500,47 @@ export default function GuruPage() {
     }
   }
 
+  async function addSubBabBlock(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedId || !subBabTitle.trim()) return;
+    try {
+      await apiRequest(`/modules/${selectedId}/blocks`, {
+        method: "POST",
+        body: JSON.stringify({
+          content: { type: "sub_bab", title: subBabTitle.trim() },
+          sortOrder: 0,
+        }),
+      });
+      setSubBabTitle("");
+      setMessage("Blok materi ditambahkan.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Blok belum dapat ditambahkan.");
+    }
+  }
+
+  async function addVideoBlock(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedId || !videoUrl.trim()) return;
+    try {
+      await apiRequest(`/modules/${selectedId}/blocks`, {
+        method: "POST",
+        body: JSON.stringify({
+          content: {
+            type: "video",
+            youtubeUrl: videoUrl.trim(),
+            ...(videoCaption.trim() ? { caption: videoCaption.trim() } : {}),
+          },
+          sortOrder: 0,
+        }),
+      });
+      setVideoUrl("");
+      setVideoCaption("");
+      setMessage("Blok materi ditambahkan.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Blok belum dapat ditambahkan.");
+    }
+  }
+
   async function addAttachmentBlock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedId || !attachment) return;
@@ -862,6 +903,35 @@ export default function GuruPage() {
             />
             <small style={styles.muted}>JPG, PNG, WebP, atau PDF. Maksimal 10 MB.</small>
             <button type="submit" style={styles.primaryButton}>Unggah lampiran</button>
+          </form>
+          <h2 style={styles.sectionTitle}>Tambah sub-bab</h2>
+          <form onSubmit={addSubBabBlock} style={styles.form}>
+            <input
+              required
+              value={subBabTitle}
+              onChange={(event) => setSubBabTitle(event.target.value)}
+              placeholder="Judul sub-bab"
+              style={styles.input}
+            />
+            <button type="submit" style={styles.primaryButton}>Tambahkan sub-bab</button>
+          </form>
+          <h2 style={styles.sectionTitle}>Tambah video</h2>
+          <form onSubmit={addVideoBlock} style={styles.form}>
+            <input
+              required
+              type="url"
+              value={videoUrl}
+              onChange={(event) => setVideoUrl(event.target.value)}
+              placeholder="URL video YouTube"
+              style={styles.input}
+            />
+            <input
+              value={videoCaption}
+              onChange={(event) => setVideoCaption(event.target.value)}
+              placeholder="Keterangan video (opsional)"
+              style={styles.input}
+            />
+            <button type="submit" style={styles.primaryButton}>Tambahkan video</button>
           </form>
         </section>
       ) : null}

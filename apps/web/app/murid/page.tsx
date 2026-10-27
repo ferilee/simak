@@ -99,19 +99,23 @@ export default function MuridPage() {
     }
   }
 
-  if (loading) return <main style={styles.container}><p>Memuat ruang murid...</p></main>;
+  if (loading) return <main className="dashboard-shell container"><p>Memuat ruang murid...</p></main>;
 
   return (
-    <main style={styles.container}>
-      <header style={styles.header}>
+    <main className="dashboard-shell">
+      <header className="dashboard-header container">
         <div>
-          <p style={styles.eyebrow}>SIMAK · MURID</p>
-          <h1 style={styles.title}>Halo, {user?.name ?? "Murid"}</h1>
-          <p style={styles.muted}>Materi dan aktivitas belajar Anda berada di satu tempat.</p>
+          <Link className="brand" href="/" aria-label="SIMAK beranda">
+            <span className="brand-mark" aria-hidden="true">S</span>
+            SIMAK
+          </Link>
+          <p className="eyebrow" style={{ marginTop: 28 }}>Ruang murid</p>
+          <h1 className="dashboard-title">Halo, {user?.name ?? "Murid"}</h1>
+          <p className="dashboard-subtitle">Materi dan aktivitas belajar Anda berada di satu tempat.</p>
         </div>
-        <form onSubmit={joinClass} style={styles.joinForm}>
+        <form onSubmit={joinClass} className="join-panel">
           <label htmlFor="join-code">Gabung kelas</label>
-          <div style={styles.joinRow}>
+          <div className="join-row">
             <input
               id="join-code"
               value={joinCode}
@@ -119,64 +123,75 @@ export default function MuridPage() {
               placeholder="Kode kelas"
               maxLength={12}
               required
-              style={styles.input}
+              className="dashboard-input"
             />
-            <button type="submit" disabled={joining} style={styles.button}>
+            <button type="submit" disabled={joining} className="button">
               {joining ? "..." : "Gabung"}
             </button>
           </div>
         </form>
-        <button type="button" onClick={() => void logout()} style={styles.logoutButton}>Keluar</button>
+        <div className="dashboard-actions">
+          <button type="button" onClick={() => void logout()} className="button button-secondary">Keluar</button>
+        </div>
       </header>
 
-      {message ? <p role="alert" style={styles.error}>{message}</p> : null}
+      {message ? <p className="dashboard-alert container" role="alert" aria-live="polite">{message}</p> : null}
 
-      <section>
-        <h2 style={styles.sectionTitle}>Kelas saya</h2>
+      <section className="dashboard-section container">
+        <div className="dashboard-section-heading">
+          <h2>Kelas saya</h2>
+          <span>{data.classes.length} kelas aktif</span>
+        </div>
         {data.classes.length === 0 ? (
-          <p style={styles.empty}>Belum ada kelas. Masukkan kode kelas dari guru untuk bergabung.</p>
+          <p className="empty-state">Belum ada kelas. Masukkan kode kelas dari guru untuk bergabung.</p>
         ) : (
-          <div style={styles.grid}>
+          <div className="content-grid">
             {data.classes.map((kelas) => (
-              <article key={kelas.id} style={styles.card}>
+              <article key={kelas.id} className="content-card">
                 <strong>{kelas.name}</strong>
-                <span>{kelas.subject} · {kelas.academic_year}</span>
+                <span className="content-muted">{kelas.subject} · {kelas.academic_year}</span>
               </article>
             ))}
           </div>
         )}
       </section>
 
-      <section>
-        <h2 style={styles.sectionTitle}>Penugasan</h2>
+      <section className="dashboard-section container">
+        <div className="dashboard-section-heading">
+          <h2>Penugasan</h2>
+          <span>{data.assignments.length} penugasan</span>
+        </div>
         {data.assignments.length === 0 ? (
-          <p style={styles.empty}>Belum ada penugasan untuk kelas Anda.</p>
+          <p className="empty-state">Belum ada penugasan untuk kelas Anda.</p>
         ) : (
-          <div style={styles.list}>
+          <div className="content-list">
             {data.assignments.map((assignment) => (
-              <Link key={assignment.id} href={`/murid/assignments/${assignment.id}`} style={styles.moduleCard}>
+              <Link key={assignment.id} href={`/murid/assignments/${assignment.id}`} className="content-card content-link">
                 <strong>{assignment.title}</strong>
-                <span style={styles.muted}>{assignment.instructions ?? "Buka detail penugasan untuk mulai."}</span>
-                <span style={styles.assignmentMeta}>Status: {assignment.progress} · batas {formatDate(assignment.due_at)}</span>
-                <span style={styles.readLink}>Buka penugasan →</span>
+                <span className="content-muted">{assignment.instructions ?? "Buka detail penugasan untuk mulai."}</span>
+                <span className="content-meta">Status: {assignment.progress} · batas {formatDate(assignment.due_at)}</span>
+                <span className="content-action">Buka penugasan →</span>
               </Link>
             ))}
           </div>
         )}
       </section>
 
-      <section>
-        <h2 style={styles.sectionTitle}>Materi terbit</h2>
+      <section className="dashboard-section container">
+        <div className="dashboard-section-heading">
+          <h2>Materi terbit</h2>
+          <span>{data.modules.length} materi</span>
+        </div>
         {data.modules.length === 0 ? (
-          <p style={styles.empty}>Belum ada materi terbit untuk kelas Anda.</p>
+          <p className="empty-state">Belum ada materi terbit untuk kelas Anda.</p>
         ) : (
-          <div style={styles.list}>
+          <div className="content-list">
             {data.modules.map((module) => (
-              <Link key={module.id} href={`/murid/modules/${module.id}`} style={styles.moduleCard}>
-                <span style={styles.moduleSubject}>{module.subject}</span>
+              <Link key={module.id} href={`/murid/modules/${module.id}`} className="content-card content-link">
+                <span className="content-label">{module.subject}</span>
                 <strong>{module.title}</strong>
-                <span style={styles.muted}>{module.description ?? "Materi pembelajaran SIMAK."}</span>
-                <span style={styles.readLink}>Baca materi →</span>
+                <span className="content-muted">{module.description ?? "Materi pembelajaran SIMAK."}</span>
+                <span className="content-action">Baca materi →</span>
               </Link>
             ))}
           </div>
@@ -185,29 +200,6 @@ export default function MuridPage() {
     </main>
   );
 }
-
-const styles = {
-  container: { maxWidth: 860, margin: "0 auto", padding: "32px 20px 64px" },
-  header: { display: "flex", justifyContent: "space-between", gap: 24, alignItems: "flex-start", marginBottom: 32 },
-  eyebrow: { color: "#475467", fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", margin: "0 0 8px" },
-  title: { fontSize: 32, margin: 0 },
-  muted: { color: "#667085", lineHeight: 1.5 },
-  joinForm: { minWidth: 260, display: "grid", gap: 8 },
-  joinRow: { display: "flex", gap: 8 },
-  input: { border: "1px solid #d0d5dd", borderRadius: 8, padding: "10px 12px", minWidth: 0 },
-  button: { border: 0, borderRadius: 8, background: "#175cd3", color: "white", padding: "10px 14px", fontWeight: 700 },
-  logoutButton: { border: "1px solid #d0d5dd", borderRadius: 8, background: "white", padding: "10px 14px", whiteSpace: "nowrap" as const },
-  error: { background: "#fef3f2", color: "#b42318", borderRadius: 8, padding: 12 },
-  sectionTitle: { fontSize: 20, margin: "32px 0 12px" },
-  empty: { color: "#667085", background: "#f8f9fc", borderRadius: 10, padding: 16 },
-  grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 },
-  card: { display: "grid", gap: 6, border: "1px solid #eaecf0", borderRadius: 10, padding: 16 },
-  list: { display: "grid", gap: 12 },
-  moduleCard: { display: "grid", gap: 6, border: "1px solid #d0d5dd", borderRadius: 10, padding: 18, textDecoration: "none", color: "inherit" },
-  moduleSubject: { color: "#175cd3", fontSize: 13, fontWeight: 700 },
-  readLink: { color: "#175cd3", fontWeight: 700, marginTop: 4 },
-  assignmentMeta: { color: "#475467", fontSize: 13 },
-};
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));

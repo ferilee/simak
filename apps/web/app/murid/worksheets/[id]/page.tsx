@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiRequest } from "../../../../lib/api";
 import { Toast } from "../../../../components/Toast";
 
@@ -29,6 +29,7 @@ type AttemptResponse = {
     answers: { item_id: number; answer_text: string | null }[];
   };
 };
+type IntegrityEvent = "visibility_hidden" | "window_blur" | "copy_attempt" | "paste_attempt" | "context_menu";
 
 export default function WorksheetPage() {
   const params = useParams<{ id: string }>();
@@ -40,6 +41,7 @@ export default function WorksheetPage() {
   const [status, setStatus] = useState<"draf" | "terkumpul" | "dinilai">("draf");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const lastIntegrityEventRef = useRef<Record<string, number>>({});
 
   useEffect(() => {
     void Promise.all([
@@ -64,6 +66,44 @@ export default function WorksheetPage() {
     if (!assignmentId) return;
     void apiRequest("/activity", { method: "POST", body: JSON.stringify({ assignmentId: Number(assignmentId), event: "mulai_lkpd" }) });
   }, [assignmentId]);
+
+  useEffect(() => {
+    const numericAssignmentId = Number(assignmentId);
+    if (!assignmentId || !Number.isInteger(numericAssignmentId) || status !== "draf") return;
+
+    function reportIntegrityEvent(event: IntegrityEvent) {
+      const now = Date.now();
+      const lastReportedAt = lastIntegrityEventRef.current[event] ?? 0;
+      if (now - lastReportedAt < 10_000) return;
+      lastIntegrityEventRef.current[event] = now;
+      void apiRequest("/integrity", {
+        method: "POST",
+        body: JSON.stringify({ assignmentId: numericAssignmentId, event }),
+      }).catch(() => undefined);
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "hidden") reportIntegrityEvent("visibility_hidden");
+    }
+
+    function handleBlur() { reportIntegrityEvent("window_blur"); }
+    function handleCopy() { reportIntegrityEvent("copy_attempt"); }
+    function handlePaste() { reportIntegrityEvent("paste_attempt"); }
+    function handleContextMenu() { reportIntegrityEvent("context_menu"); }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("blur", handleBlur);
+    document.addEventListener("copy", handleCopy);
+    document.addEventListener("paste", handlePaste);
+    document.addEventListener("contextmenu", handleContextMenu);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("blur", handleBlur);
+      document.removeEventListener("copy", handleCopy);
+      document.removeEventListener("paste", handlePaste);
+      document.removeEventListener("contextmenu", handleContextMenu);
+    };
+  }, [assignmentId, status]);
 
   function setAnswer(itemId: number, value: string) {
     setAnswers((current) => ({ ...current, [itemId]: value }));
@@ -125,6 +165,7 @@ export default function WorksheetPage() {
       <p style={styles.eyebrow}>SIMAK · LKPD</p>
       <h1 style={styles.title}>{data.worksheet.title}</h1>
       {data.worksheet.instructions ? <p style={styles.instructions}>{data.worksheet.instructions}</p> : null}
+      {assignmentId ? <p style={styles.integrityNotice}>Untuk membantu guru meninjau proses belajar, SIMAK mencatat indikasi seperti berpindah halaman dan aktivitas clipboard. Ini bukan penilaian otomatis bahwa Anda melakukan kecurangan.</p> : null}
       {message ? <Toast message={message} onDismiss={() => setMessage("")} /> : null}
 
       <section style={styles.list}>
@@ -167,6 +208,7 @@ const styles = {
   eyebrow: { color: "#475467", fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", margin: "32px 0 8px" },
   title: { fontSize: 34, margin: 0 },
   instructions: { color: "#667085", lineHeight: 1.6 },
+  integrityNotice: { color: "#475467", background: "#f8f9fc", border: "1px solid #eaecf0", padding: 12, borderRadius: 8, fontSize: 13, lineHeight: 1.5 },
   message: { color: "#175cd3", background: "#eff8ff", padding: 12, borderRadius: 8 },
   error: { color: "#b42318", background: "#fef3f2", padding: 12, borderRadius: 8 },
   list: { display: "grid", gap: 16, marginTop: 28 },

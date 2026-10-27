@@ -102,6 +102,18 @@ type RangeReport = {
 };
 type RangeReportResponse = { ok: true; data: RangeReport };
 type RuasImportResponse = { ok: true; data: { assignment_id: number; total: number; cocok: number; tidak_ditemukan: number; duplikat: number; unmatched: { identifier: string; student_name: string | null; score: number; match_status: string; note: string | null }[] } };
+type IntegrityAlert = {
+  assignment_id: number;
+  assignment_title: string;
+  student_id: number;
+  student_name: string;
+  username: string;
+  total_events: number;
+  risk: "info" | "perlu_ditinjau" | "peringatan";
+  last_event: string;
+  events: { event: string; count: number }[];
+};
+type IntegrityAlertsResponse = { ok: true; data: IntegrityAlert[] };
 type WorksheetAttemptItem = {
   id: number;
   prompt: string;
@@ -175,6 +187,7 @@ export default function GuruPage() {
   const [ruasImportText, setRuasImportText] = useState("");
   const [ruasImportLoading, setRuasImportLoading] = useState(false);
   const [ruasImportResult, setRuasImportResult] = useState<RuasImportResponse["data"] | null>(null);
+  const [integrityAlerts, setIntegrityAlerts] = useState<IntegrityAlert[]>([]);
   const [scoreDrafts, setScoreDrafts] = useState<Record<number, string>>({});
   const [noteDrafts, setNoteDrafts] = useState<Record<number, string>>({});
   const [teacherComment, setTeacherComment] = useState("");
@@ -198,11 +211,12 @@ export default function GuruPage() {
         setMessage("Akun ini berperan sebagai murid. Keluar dahulu lalu masuk dengan akun guru.");
         return;
       }
-      const [response, worksheetResponse, classResponse, assignmentResponse] = await Promise.all([
+      const [response, worksheetResponse, classResponse, assignmentResponse, integrityResponse] = await Promise.all([
         apiRequest<ModulesResponse>("/modules"),
         apiRequest<WorksheetsResponse>("/worksheets"),
         apiRequest<ClassesResponse>("/classes"),
         apiRequest<AssignmentsResponse>("/assignments"),
+        apiRequest<IntegrityAlertsResponse>("/integrity/alerts"),
       ]);
       setModules(response.data);
       setSelectedId((current) => current ?? response.data[0]?.id ?? null);
@@ -210,6 +224,7 @@ export default function GuruPage() {
       setSelectedWorksheetId((current) => current ?? worksheetResponse.data[0]?.id ?? null);
       setClasses(classResponse.data.filter((kelas) => !kelas.is_archived));
       setAssignments(assignmentResponse.data);
+      setIntegrityAlerts(integrityResponse.data);
       setRuasImportAssignmentId((current) => current ?? assignmentResponse.data[0]?.id ?? null);
       setAssignmentClassIds((current) => current.length > 0 ? current : classResponse.data.filter((kelas) => !kelas.is_archived).map((kelas) => kelas.id));
     } catch (error) {
@@ -230,6 +245,15 @@ export default function GuruPage() {
 
   useEffect(() => {
     void loadModules();
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void apiRequest<IntegrityAlertsResponse>("/integrity/alerts")
+        .then((response) => setIntegrityAlerts(response.data))
+        .catch(() => undefined);
+    }, 30_000);
+    return () => window.clearInterval(timer);
   }, []);
 
   async function loadAttempts(worksheetId: number) {
@@ -674,7 +698,10 @@ export default function GuruPage() {
               <h2>{guruSteps[guruStep].title}</h2>
               <p>{guruSteps[guruStep].description}.</p>
             </div>
-            <span className="wizard-role-chip">Guru</span>
+            <div className="guru-heading-indicators">
+              {integrityAlerts.length > 0 ? <span className="guru-integrity-badge">{integrityAlerts.length} perlu ditinjau</span> : null}
+              <span className="wizard-role-chip">Guru</span>
+            </div>
           </div>
 
           <div className="guru-content">
@@ -857,6 +884,30 @@ export default function GuruPage() {
           </form>
         </details>
         {assignments.length > 0 ? <div className="module-list">{assignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><div className="resource-row-actions"><button type="button" onClick={() => void loadSessionReport(assignment.id)} style={styles.secondaryButton}>{selectedReportAssignmentId === assignment.id ? "Segarkan rekap" : "Lihat rekap"}</button><button type="button" onClick={() => void loadAssignmentSummary(assignment.id)} style={styles.secondaryButton}>{selectedAssignmentId === assignment.id ? "Segarkan exit ticket" : "Lihat exit ticket"}</button><button type="button" onClick={() => void changeAssignmentStatus(assignment)} style={styles.secondaryButton}>{assignment.status === "terbit" ? "Tutup" : "Terbitkan"}</button></div></article>)}</div> : <p style={styles.empty}>Belum ada penugasan.</p>}
+      </section>
+
+      <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 4} style={styles.panel}>
+        <div className="module-section-heading">
+          <div>
+            <h2 style={styles.sectionTitle}>Indikasi integritas</h2>
+            <p className="module-section-summary">Sinyal aktivitas untuk ditinjau, bukan bukti otomatis kecurangan</p>
+          </div>
+          <span className="module-section-count">{integrityAlerts.length} siswa</span>
+        </div>
+        {integrityAlerts.length === 0 ? <p style={styles.empty}>Belum ada indikasi integritas yang perlu ditinjau.</p> : (
+          <div className="module-list">
+            {integrityAlerts.map((alert) => (
+              <article key={`${alert.assignment_id}:${alert.student_id}`} className="resource-row integrity-alert-row">
+                <div className="module-row-main">
+                  <strong>{alert.student_name} <span className="integrity-username">({alert.username})</span></strong>
+                  <span>{alert.assignment_title} · {alert.total_events} kejadian · terakhir {formatDate(alert.last_event)}</span>
+                  <span>{alert.events.map((event) => `${integrityEventLabel(event.event)} ${event.count}×`).join(" · ")}</span>
+                </div>
+                <span className={`integrity-risk integrity-risk-${alert.risk}`}>{integrityRiskLabel(alert.risk)}</span>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 4} style={styles.panel}>
@@ -1142,4 +1193,19 @@ function parseRuasCsv(value: string) {
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function integrityEventLabel(event: string) {
+  const labels: Record<string, string> = {
+    visibility_hidden: "pindah halaman",
+    window_blur: "kehilangan fokus",
+    copy_attempt: "copy",
+    paste_attempt: "paste",
+    context_menu: "menu konteks",
+  };
+  return labels[event] ?? event;
+}
+
+function integrityRiskLabel(risk: IntegrityAlert["risk"]) {
+  return risk === "peringatan" ? "Peringatan" : risk === "perlu_ditinjau" ? "Perlu ditinjau" : "Info";
 }

@@ -42,3 +42,12 @@ export const ACTIVITY_EVENTS = [
   "exit_ticket",
 ] as const;
 export type ActivityEvent = (typeof ACTIVITY_EVENTS)[number];
+
+export const INTEGRITY_EVENTS = [
+  "visibility_hidden",
+  "window_blur",
+  "copy_attempt",
+  "paste_attempt",
+  "context_menu",
+] as const;
+export type IntegrityEvent = (typeof INTEGRITY_EVENTS)[number];

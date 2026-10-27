@@ -18,6 +18,7 @@
 | `submissions` | Status dan ringkasan pengumpulan murid |
 | `submission_answers` | Jawaban per butir LKPD |
 | `activity_logs` | Jejak aktivitas murid |
+| `integrity_events` | Sinyal proses pengerjaan untuk membantu peninjauan guru |
 | `exit_tickets` | Refleksi 3-2-1 |
 | `ruas_scores` | Snapshot impor nilai RUAS dan status pencocokan |
 
@@ -29,6 +30,14 @@
 - JSON divalidasi Zod sebelum disimpan.
 - Waktu disimpan dalam UTC.
 - Rekap dihitung dari data sumber, bukan disimpan sebagai angka turunan.
+
+## Indikasi integritas
+
+`integrity_events` menyimpan `student_id`, `assignment_id`, jenis sinyal, dan
+waktu UTC. Jenis sinyal MVP meliputi perpindahan visibilitas halaman,
+kehilangan fokus jendela, percobaan copy/paste, dan menu konteks. Data ini
+digunakan sebagai agregat peninjauan guru dan tidak menyimpan isi clipboard,
+isi jawaban, rekaman layar, kamera, mikrofon, atau ketikan murid.
 
 ## Nilai RUAS impor
 

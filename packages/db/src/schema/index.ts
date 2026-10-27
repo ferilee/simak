@@ -6,5 +6,6 @@ export * from "./worksheet-attempts";
 export * from "./assignments";
 export * from "./submissions";
 export * from "./activity";
+export * from "./integrity";
 export * from "./ruas-scores";
 export * from "./relations";

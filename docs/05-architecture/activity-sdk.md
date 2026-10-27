@@ -27,3 +27,18 @@ diambil dari sesi server, bukan dari body yang dikirim browser.
 - Menampilkan kegagalan jaringan tanpa mengklaim event sudah tercatat.
 - Menjaga agar event tidak menghambat murid membaca atau mengerjakan.
 
+## Indikasi integritas
+
+Selain activity log, SIMAK dapat mencatat sinyal proses pengerjaan melalui
+`POST /api/v1/integrity`. Sinyal MVP adalah `visibility_hidden`, `window_blur`,
+`copy_attempt`, `paste_attempt`, dan `context_menu`.
+
+Sinyal ini bukan bukti otomatis bahwa murid melakukan kecurangan. Browser dapat
+memicu sinyal karena perpindahan aplikasi yang sah, keterbatasan perangkat,
+atau perilaku pengguna yang tidak terkait kecurangan. SIMAK hanya memakai
+sinyal tersebut untuk membantu guru menentukan pekerjaan yang perlu ditinjau.
+
+Pengiriman dideduplikasi di client dan server dalam jendela 10 detik untuk
+menghindari pencatatan berulang. SIMAK tidak memakai kamera, mikrofon,
+keylogger, pembacaan isi clipboard, atau detektor AI pada MVP.
+

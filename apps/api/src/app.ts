@@ -12,6 +12,7 @@ import { gradingRoutes } from "./routes/grading";
 import { reportRoutes } from "./routes/reports";
 import { uploadRoutes } from "./routes/uploads";
 import { activityRoutes } from "./routes/activity";
+import { integrityRoutes } from "./routes/integrity";
 import { env } from "./lib/env";
 import { loadSession } from "./middleware/auth";
 
@@ -42,6 +43,7 @@ export function createApp() {
   v1.route("/reports", reportRoutes);
   v1.route("/uploads", uploadRoutes);
   v1.route("/activity", activityRoutes);
+  v1.route("/integrity", integrityRoutes);
 
   app.route("/api/v1", v1);
 

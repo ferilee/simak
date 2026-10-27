@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ACTIVITY_EVENTS, CONTENT_STATUS, MODULE_BLOCK_TYPES, ROLES, WORKSHEET_ITEM_TYPES } from "./block-types";
+import { ACTIVITY_EVENTS, CONTENT_STATUS, INTEGRITY_EVENTS, MODULE_BLOCK_TYPES, ROLES, WORKSHEET_ITEM_TYPES } from "./block-types";
 
 // ---------- Autentikasi ----------
 // Kata sandi hanya diteruskan untuk diverifikasi ke sumber akun RUAS.
@@ -92,6 +92,11 @@ export type ExitTicketInput = z.infer<typeof exitTicketSchema>;
 export const activitySchema = z.object({
   assignmentId: z.number().int().positive(),
   event: z.enum(ACTIVITY_EVENTS),
+});
+
+export const integrityEventSchema = z.object({
+  assignmentId: z.number().int().positive(),
+  event: z.enum(INTEGRITY_EVENTS),
 });
 
 // ---------- Kelas ----------

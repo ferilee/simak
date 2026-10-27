@@ -7,6 +7,7 @@ import { worksheetAttempts, worksheetAnswers } from "./worksheet-attempts";
 import { assignments, assignmentClasses } from "./assignments";
 import { submissions, submissionAnswers } from "./submissions";
 import { activityLogs, exitTickets } from "./activity";
+import { integrityEvents } from "./integrity";
 import { ruasScores } from "./ruas-scores";
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -16,6 +17,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   submissions: many(submissions),
   worksheetAttempts: many(worksheetAttempts),
   activityLogs: many(activityLogs),
+  integrityEvents: many(integrityEvents),
   ruasScores: many(ruasScores),
 }));
 
@@ -70,6 +72,7 @@ export const assignmentsRelations = relations(assignments, ({ one, many }) => ({
   classLinks: many(assignmentClasses),
   submissions: many(submissions),
   exitTickets: many(exitTickets),
+  integrityEvents: many(integrityEvents),
   ruasScores: many(ruasScores),
 }));
 
@@ -97,6 +100,11 @@ export const activityLogsRelations = relations(activityLogs, ({ one }) => ({
 export const exitTicketsRelations = relations(exitTickets, ({ one }) => ({
   assignment: one(assignments, { fields: [exitTickets.assignmentId], references: [assignments.id] }),
   student: one(users, { fields: [exitTickets.studentId], references: [users.id] }),
+}));
+
+export const integrityEventsRelations = relations(integrityEvents, ({ one }) => ({
+  assignment: one(assignments, { fields: [integrityEvents.assignmentId], references: [assignments.id] }),
+  student: one(users, { fields: [integrityEvents.studentId], references: [users.id] }),
 }));
 
 export const ruasScoresRelations = relations(ruasScores, ({ one }) => ({

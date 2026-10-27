@@ -17,6 +17,7 @@ Semua endpoint menggunakan JSON dan berada di bawah `/api/v1`.
 | Refleksi | `POST /assignments/:id/exit-ticket` |
 | Penilaian | `GET/PATCH /grading/assignments/:id` |
 | Aktivitas | `POST /activity` |
+| Integritas | `POST /integrity`, `GET /integrity/alerts` |
 | Laporan | `GET /reports/session?assignmentId=:id[&format=csv|pdf]`, `GET /reports/range?from=YYYY-MM-DD&to=YYYY-MM-DD[&format=csv|pdf]`, `POST /reports/ruas-import` |
 
 ## Aturan kontrak
@@ -31,4 +32,10 @@ Semua endpoint menggunakan JSON dan berada di bawah `/api/v1`.
 - `POST /reports/ruas-import` menerima `{ assignmentId, rows }` dengan setiap
   baris berisi `identifier`, `score`, dan `studentName` opsional. `identifier`
   dicocokkan ke NIS atau username murid di kelas tujuan.
+- `POST /integrity` hanya menerima `{ assignmentId, event }` dari sesi murid;
+  identitas murid diambil dari sesi server. Event yang sama untuk murid dan
+  penugasan yang sama dideduplikasi dalam 10 detik.
+- `GET /integrity/alerts` hanya dapat diakses guru dan mengembalikan agregat
+  indikasi per murid dan penugasan yang dimiliki guru. Level `info`,
+  `perlu_ditinjau`, dan `peringatan` adalah prioritas peninjauan, bukan vonis.
 

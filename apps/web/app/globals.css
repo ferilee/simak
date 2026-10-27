@@ -1087,6 +1087,29 @@ a {
   font-size: 13px;
 }
 
+.module-section-count {
+  color: var(--color-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.guru-heading-indicators {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.guru-integrity-badge {
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: #fffaeb;
+  color: #b54708;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .module-create-trigger,
 .module-row-action {
   border: 1px solid var(--wizard-accent-ring);
@@ -1247,6 +1270,38 @@ a {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.integrity-alert-row {
+  align-items: start;
+}
+
+.integrity-username {
+  color: var(--color-muted);
+  font-weight: 500;
+}
+
+.integrity-risk {
+  border-radius: 999px;
+  padding: 5px 9px;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.integrity-risk-info {
+  background: #eff8ff;
+  color: #175cd3;
+}
+
+.integrity-risk-perlu_ditinjau {
+  background: #fffaeb;
+  color: #b54708;
+}
+
+.integrity-risk-peringatan {
+  background: #fef3f2;
+  color: #b42318;
 }
 
 .selected-resource-panel {
@@ -1710,6 +1765,14 @@ a {
 
   .resource-row-actions {
     justify-content: flex-start;
+  }
+
+  .integrity-alert-row {
+    gap: 8px;
+  }
+
+  .integrity-risk {
+    justify-self: start;
   }
 
   .wizard-layout {

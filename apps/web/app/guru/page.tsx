@@ -159,11 +159,24 @@ export default function GuruPage() {
   const [selectedWorksheetId, setSelectedWorksheetId] = useState<number | null>(null);
   const [worksheetTitle, setWorksheetTitle] = useState("");
   const [worksheetInstructions, setWorksheetInstructions] = useState("");
-  const [itemType, setItemType] = useState<"pilihan_ganda" | "isian_singkat" | "uraian">("pilihan_ganda");
+  const [itemType, setItemType] = useState<"pilihan_ganda" | "isian_singkat" | "uraian" | "unggah_foto" | "langkah_berurutan" | "refleksi" | "tautan_ruas">("pilihan_ganda");
   const [itemPrompt, setItemPrompt] = useState("");
   const [itemOptions, setItemOptions] = useState("");
   const [itemAnswerKey, setItemAnswerKey] = useState("");
+  const [itemExplanation, setItemExplanation] = useState("");
   const [itemPoints, setItemPoints] = useState("10");
+  const [itemTolerance, setItemTolerance] = useState("0");
+  const [itemUnit, setItemUnit] = useState("");
+  const [itemPlaceholder, setItemPlaceholder] = useState("");
+  const [itemMaxFiles, setItemMaxFiles] = useState("1");
+  const [itemPhotoInstruction, setItemPhotoInstruction] = useState("");
+  const [itemSteps, setItemSteps] = useState("");
+  const [itemCorrectOrder, setItemCorrectOrder] = useState("");
+  const [itemUrl, setItemUrl] = useState("");
+  const [itemUrlLabel, setItemUrlLabel] = useState("Buka Kuis di RUAS");
+  const [subBabTitle, setSubBabTitle] = useState("");
+  const [videoUrl, setVideoUrl] = useState("");
+  const [videoCaption, setVideoCaption] = useState("");
   const [assignmentTitle, setAssignmentTitle] = useState("");
   const [assignmentInstructions, setAssignmentInstructions] = useState("");
   const [assignmentOpensAt, setAssignmentOpensAt] = useState(() => toDateTimeLocal(new Date()));
@@ -287,6 +300,18 @@ export default function GuruPage() {
       setMessage(error instanceof Error ? error.message : "Detail pengumpulan belum dapat dimuat.");
     } finally {
       setAttemptLoading(false);
+    }
+  }
+
+  async function openAnswerPhoto(attachmentKey: string) {
+    if (!selectedWorksheetId) return;
+    try {
+      const response = await apiRequest<{ ok: true; data: { download_url: string } }>(
+        `/uploads/download-answer?key=${encodeURIComponent(attachmentKey)}&worksheetId=${selectedWorksheetId}`,
+      );
+      window.open(response.data.download_url, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Foto jawaban belum dapat dibuka.");
     }
   }
 
@@ -550,11 +575,42 @@ export default function GuruPage() {
   async function addWorksheetItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedWorksheetId) return;
-    const options = itemType === "pilihan_ganda"
-      ? { itemType, options: itemOptions.split("\n").map((option) => option.trim()).filter(Boolean) }
-      : itemType === "isian_singkat"
-        ? { itemType, tolerance: 0 }
-        : { itemType };
+    const lines = (value: string) => value.split("\n").map((line) => line.trim()).filter(Boolean);
+    let options: Record<string, unknown>;
+    let answerKey: string | undefined = itemAnswerKey.trim() || undefined;
+    if (itemType === "pilihan_ganda") {
+      options = { itemType, options: lines(itemOptions) };
+    } else if (itemType === "isian_singkat") {
+      options = {
+        itemType,
+        tolerance: Number(itemTolerance) || 0,
+        caseSensitive: false,
+        ...(itemUnit.trim() ? { unit: itemUnit.trim() } : {}),
+      };
+    } else if (itemType === "uraian") {
+      options = { itemType, ...(itemPlaceholder.trim() ? { placeholder: itemPlaceholder.trim() } : {}) };
+    } else if (itemType === "unggah_foto") {
+      const maxFiles = Math.min(5, Math.max(1, Number(itemMaxFiles) || 1));
+      options = {
+        itemType,
+        maxFiles,
+        ...(itemPhotoInstruction.trim() ? { instruction: itemPhotoInstruction.trim() } : {}),
+      };
+    } else if (itemType === "langkah_berurutan") {
+      options = { itemType, steps: lines(itemSteps) };
+      answerKey = lines(itemCorrectOrder).join("\n") || undefined;
+    } else if (itemType === "refleksi") {
+      options = { itemType };
+      answerKey = undefined;
+    } else {
+      const url = itemUrl.trim();
+      if (!/^https?:\/\//i.test(url)) {
+        setMessage("URL tautan RUAS harus diawali http:// atau https://.");
+        return;
+      }
+      options = { itemType, url, label: itemUrlLabel.trim() || "Buka Kuis di RUAS" };
+      answerKey = undefined;
+    }
     try {
       await apiRequest(`/worksheets/${selectedWorksheetId}/items`, {
         method: "POST",
@@ -562,13 +618,24 @@ export default function GuruPage() {
           itemType,
           prompt: itemPrompt,
           options,
-          answerKey: itemAnswerKey || undefined,
+          answerKey,
+          explanation: itemExplanation.trim() || undefined,
           points: Number(itemPoints) || 10,
         }),
       });
       setItemPrompt("");
       setItemOptions("");
       setItemAnswerKey("");
+      setItemExplanation("");
+      setItemTolerance("0");
+      setItemUnit("");
+      setItemPlaceholder("");
+      setItemMaxFiles("1");
+      setItemPhotoInstruction("");
+      setItemSteps("");
+      setItemCorrectOrder("");
+      setItemUrl("");
+      setItemUrlLabel("Buka Kuis di RUAS");
       setMessage("Soal LKPD ditambahkan.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Soal belum dapat ditambahkan.");
@@ -845,11 +912,52 @@ export default function GuruPage() {
               <option value="pilihan_ganda">Pilihan ganda</option>
               <option value="isian_singkat">Isian singkat</option>
               <option value="uraian">Uraian</option>
+              <option value="unggah_foto">Unggah foto</option>
+              <option value="langkah_berurutan">Langkah berurutan</option>
+              <option value="refleksi">Refleksi</option>
+              <option value="tautan_ruas">Tautan RUAS</option>
             </select>
             <textarea required value={itemPrompt} onChange={(event) => setItemPrompt(event.target.value)} placeholder="Pertanyaan" rows={3} style={styles.textarea} />
             {itemType === "pilihan_ganda" ? <textarea required value={itemOptions} onChange={(event) => setItemOptions(event.target.value)} placeholder="Pilihan jawaban, satu per baris" rows={4} style={styles.textarea} /> : null}
-            <input value={itemAnswerKey} onChange={(event) => setItemAnswerKey(event.target.value)} placeholder="Kunci jawaban (opsional)" style={styles.input} />
-            <input type="number" min={0} max={1000} value={itemPoints} onChange={(event) => setItemPoints(event.target.value)} placeholder="Poin" style={styles.input} />
+            {itemType === "isian_singkat" ? (
+              <>
+                <label style={styles.label}>Toleransi angka
+                  <input type="number" min={0} step="any" value={itemTolerance} onChange={(event) => setItemTolerance(event.target.value)} placeholder="0" style={styles.input} />
+                </label>
+                <input value={itemUnit} onChange={(event) => setItemUnit(event.target.value)} placeholder="Satuan/unit (opsional), misalnya cm" style={styles.input} />
+              </>
+            ) : null}
+            {itemType === "uraian" ? <input value={itemPlaceholder} onChange={(event) => setItemPlaceholder(event.target.value)} placeholder="Petunjuk jawaban (opsional)" style={styles.input} /> : null}
+            {itemType === "unggah_foto" ? (
+              <>
+                <label style={styles.label}>Jumlah file maksimum (1–5)
+                  <input type="number" min={1} max={5} value={itemMaxFiles} onChange={(event) => setItemMaxFiles(event.target.value)} style={styles.input} />
+                </label>
+                <input value={itemPhotoInstruction} onChange={(event) => setItemPhotoInstruction(event.target.value)} placeholder="Instruksi foto (opsional)" style={styles.input} />
+              </>
+            ) : null}
+            {itemType === "langkah_berurutan" ? (
+              <>
+                <textarea required value={itemSteps} onChange={(event) => setItemSteps(event.target.value)} placeholder="Langkah (satu per baris, urutan tampil)" rows={4} style={styles.textarea} />
+                <textarea required value={itemCorrectOrder} onChange={(event) => setItemCorrectOrder(event.target.value)} placeholder="Urutan benar (satu langkah per baris, sesuai teks langkahnya)" rows={4} style={styles.textarea} />
+              </>
+            ) : null}
+            {itemType === "tautan_ruas" ? (
+              <>
+                <input required type="url" value={itemUrl} onChange={(event) => setItemUrl(event.target.value)} placeholder="URL kuis RUAS, diawali https://" style={styles.input} />
+                <input value={itemUrlLabel} onChange={(event) => setItemUrlLabel(event.target.value)} placeholder="Label tombol" style={styles.input} />
+              </>
+            ) : null}
+            {itemType !== "refleksi" && itemType !== "tautan_ruas" && itemType !== "langkah_berurutan" ? (
+              <input
+                value={itemAnswerKey}
+                onChange={(event) => setItemAnswerKey(event.target.value)}
+                placeholder={itemType === "uraian" || itemType === "unggah_foto" ? "Kunci jawaban / Rubrik penilaian (opsional)" : "Kunci jawaban (opsional)"}
+                style={styles.input}
+              />
+            ) : null}
+            <textarea value={itemExplanation} onChange={(event) => setItemExplanation(event.target.value)} placeholder="Pembahasan (opsional, tampil untuk murid setelah mengumpulkan)" rows={3} style={styles.textarea} />
+            <input type="number" min={0} max={1000} value={itemPoints} onChange={(event) => setItemPoints(event.target.value)} placeholder={itemType === "refleksi" ? "Poin (refleksi biasanya 0)" : "Poin"} style={styles.input} />
             <button type="submit" style={styles.primaryButton}>Tambahkan soal</button>
           </form>
         </section>
@@ -1084,6 +1192,15 @@ export default function GuruPage() {
                     <article key={item.id} style={styles.answerCard}>
                       <strong>{index + 1}. {item.prompt}</strong>
                       <p style={styles.answerText}>{item.answer_text || "Tidak ada jawaban."}</p>
+                      {item.attachment_key ? (
+                        <button
+                          type="button"
+                          onClick={() => { if (item.attachment_key) void openAnswerPhoto(item.attachment_key); }}
+                          style={styles.secondaryButton}
+                        >
+                          Lihat foto jawaban
+                        </button>
+                      ) : null}
                       <small style={styles.muted}>Kunci: {item.answer_key || "Tidak ada kunci otomatis."} · Maksimal {item.points} poin</small>
                       <input
                         type="number"

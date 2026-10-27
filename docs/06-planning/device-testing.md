@@ -37,3 +37,7 @@ layout sentuh, jaringan lambat, autosave, unggah foto, atau 36 pengumpulan
 authenticated; skenario tersebut tetap harus dijalankan dari HP/DevTools dan
 akun murid staging.
 
+Smoke request dengan User-Agent iPhone Safari juga berhasil untuk `/`, `/login`,
+dan `/guru`. Ini bukan pengganti Safari fisik: perangkat iOS memerlukan URL
+yang dapat dijangkau melalui LAN serta sertifikat HTTPS yang dipercaya iOS.
+

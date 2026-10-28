@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
+import { CSSProperties, FormEvent, useEffect, useState } from "react";
 import { apiRequest } from "../../../../lib/api";
 import { submissionStatusLabel } from "../../../lib/labels";
 import { Toast } from "../../../../components/Toast";
@@ -93,6 +93,10 @@ export default function AssignmentPage() {
   ];
   const currentStepIndex = Math.min(stepIndex, steps.length - 1);
   const currentStep = steps[currentStepIndex];
+  // Ordinal tiap langkah di antara langkah yang selesai (0, 1, 2, …),
+  // dipakai menjenjangkan animasi centang lewat --step-check-delay.
+  let completedSeen = 0;
+  const stepCheckOrdinals = steps.map((step) => (step.complete ? completedSeen++ : -1));
 
   return (
     <main style={styles.container}>
@@ -109,10 +113,19 @@ export default function AssignmentPage() {
             key={step.id}
             type="button"
             className={`assignment-step ${index === currentStepIndex ? "is-active" : ""} ${step.complete ? "is-complete" : ""}`}
+            style={step.complete ? ({ "--step-check-delay": `${stepCheckOrdinals[index] * 120}ms` } as CSSProperties) : undefined}
             onClick={() => setStepIndex(index)}
             aria-current={index === currentStepIndex ? "step" : undefined}
           >
-            <span className="assignment-step-number">{step.complete ? "✓" : index + 1}</span>
+            <span className="assignment-step-number">
+              {step.complete ? (
+                <svg className="assignment-step-check" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M5 12.5l4.5 4.5L19 7.5" pathLength={20} fill="none" stroke="#fff" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              ) : (
+                index + 1
+              )}
+            </span>
             <span className="assignment-step-copy"><strong>{step.label}</strong>{step.complete ? <span className="visually-hidden">(sudah selesai)</span> : null}<small>{step.description}</small></span>
           </button>
         ))}

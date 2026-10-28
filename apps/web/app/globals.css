@@ -835,6 +835,60 @@ a {
   color: var(--color-brand-700);
 }
 
+/* Animasi centang langkah selesai: garis centang menggambar dirinya dan
+   lingkaran muncul halus, berjenjang antar langkah selesai lewat
+   --step-check-delay dari komponen. Keadaan dasar sudah utuh (garis
+   tergambar penuh pada dashoffset 0, lingkaran skala normal); animasi
+   berjalan dari keadaan awal dengan fill-mode backwards, jadi tampilan
+   akhir tetap utuh juga bila animasi tidak berjalan. */
+.assignment-step-check {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.assignment-step.is-complete .assignment-step-number {
+  animation: assignment-step-number-pop 0.35s ease backwards;
+  animation-delay: var(--step-check-delay, 0ms);
+}
+
+.assignment-step.is-complete .assignment-step-check path {
+  stroke-dasharray: 20;
+  stroke-dashoffset: 0;
+  animation: assignment-step-check-draw 0.4s ease backwards;
+  animation-delay: var(--step-check-delay, 0ms);
+}
+
+@keyframes assignment-step-number-pop {
+  from {
+    opacity: 0.4;
+    transform: scale(0.8);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes assignment-step-check-draw {
+  from {
+    stroke-dashoffset: 20;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Hormati pengurangan gerak: centang langsung tampil utuh tanpa animasi. */
+@media (prefers-reduced-motion: reduce) {
+  .assignment-step.is-complete .assignment-step-number,
+  .assignment-step.is-complete .assignment-step-check path {
+    animation: none;
+  }
+}
+
 .assignment-step-copy {
   display: grid;
   min-width: 0;

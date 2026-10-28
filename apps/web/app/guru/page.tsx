@@ -17,6 +17,7 @@ type ModuleSummary = {
   viewer_count: number;
   view_count: number;
   last_viewed_at: string | null;
+  updated_at: string;
 };
 
 type ModulesResponse = { ok: true; data: ModuleSummary[] };
@@ -155,6 +156,10 @@ type MeResponse = { ok: true; user: { role: "guru" | "murid" } };
 export default function GuruPage() {
   const router = useRouter();
   const [modules, setModules] = useState<ModuleSummary[]>([]);
+  const [moduleQuery, setModuleQuery] = useState("");
+  const [moduleStatusFilter, setModuleStatusFilter] = useState<"semua" | "draf" | "terbit" | "arsip">("semua");
+  const [moduleSubjectFilter, setModuleSubjectFilter] = useState("semua");
+  const [moduleSort, setModuleSort] = useState<"terbaru" | "judul" | "penonton">("terbaru");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [showCreateModule, setShowCreateModule] = useState(false);
   const [title, setTitle] = useState("");
@@ -234,6 +239,29 @@ export default function GuruPage() {
     { title: "Terbitkan tugas", mobileTitle: "Terbit", description: "Hubungkan materi ke kelas" },
     { title: "Pantau hasil", mobileTitle: "Hasil", description: "Nilai dan lihat rekap" },
   ];
+
+  const moduleSubjects = [...new Set(modules.map((module) => module.subject))].sort((a, b) => a.localeCompare(b, "id"));
+  const normalizedModuleQuery = moduleQuery.trim().toLowerCase();
+  const visibleModules = modules
+    .filter((module) => moduleStatusFilter === "semua" || module.status === moduleStatusFilter)
+    .filter((module) => moduleSubjectFilter === "semua" || module.subject === moduleSubjectFilter)
+    .filter((module) => normalizedModuleQuery === ""
+      || module.title.toLowerCase().includes(normalizedModuleQuery)
+      || module.subject.toLowerCase().includes(normalizedModuleQuery)
+      || (module.description ?? "").toLowerCase().includes(normalizedModuleQuery))
+    .slice()
+    .sort((a, b) => {
+      if (moduleSort === "judul") return a.title.localeCompare(b.title, "id");
+      if (moduleSort === "penonton") return b.viewer_count - a.viewer_count || a.title.localeCompare(b.title, "id");
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    });
+
+  function resetModuleFilters() {
+    setModuleQuery("");
+    setModuleStatusFilter("semua");
+    setModuleSubjectFilter("semua");
+    setModuleSort("terbaru");
+  }
 
   async function loadModules() {
     try {
@@ -896,7 +924,7 @@ export default function GuruPage() {
         <div className="module-section-heading">
           <div>
             <h2 style={styles.sectionTitle}>Materi saya</h2>
-            <p className="module-section-summary">{modules.length} modul · pilih satu untuk mengelola isinya</p>
+            <p className="module-section-summary">{visibleModules.length === modules.length ? `${modules.length} modul · pilih satu untuk mengelola isinya` : `Menampilkan ${visibleModules.length} dari ${modules.length} materi`}</p>
           </div>
           {modules.length > 0 ? (
             <button type="button" className="module-create-trigger" onClick={() => setShowCreateModule((current) => !current)}>
@@ -904,6 +932,51 @@ export default function GuruPage() {
             </button>
           ) : <span className="module-create-hint">Mulai dari modul pertama</span>}
         </div>
+
+        {modules.length > 0 ? (
+          <div style={styles.moduleToolbar}>
+            <input
+              type="search"
+              value={moduleQuery}
+              onChange={(event) => setModuleQuery(event.target.value)}
+              placeholder="Cari materi…"
+              aria-label="Cari materi"
+              style={{ ...styles.input, ...styles.moduleSearchInput }}
+            />
+            <select
+              value={moduleStatusFilter}
+              onChange={(event) => setModuleStatusFilter(event.target.value as "semua" | "draf" | "terbit" | "arsip")}
+              aria-label="Saring status materi"
+              style={{ ...styles.input, ...styles.moduleFilterSelect }}
+            >
+              <option value="semua">Semua status</option>
+              <option value="draf">Draf</option>
+              <option value="terbit">Terbit</option>
+              <option value="arsip">Arsip</option>
+            </select>
+            <select
+              value={moduleSubjectFilter}
+              onChange={(event) => setModuleSubjectFilter(event.target.value)}
+              aria-label="Saring mata pelajaran"
+              style={{ ...styles.input, ...styles.moduleFilterSelect }}
+            >
+              <option value="semua">Semua mata pelajaran</option>
+              {moduleSubjects.map((subjectName) => (
+                <option key={subjectName} value={subjectName}>{subjectName}</option>
+              ))}
+            </select>
+            <select
+              value={moduleSort}
+              onChange={(event) => setModuleSort(event.target.value as "terbaru" | "judul" | "penonton")}
+              aria-label="Urutkan materi"
+              style={{ ...styles.input, ...styles.moduleFilterSelect }}
+            >
+              <option value="terbaru">Terakhir diubah</option>
+              <option value="judul">Judul A–Z</option>
+              <option value="penonton">Paling banyak dilihat</option>
+            </select>
+          </div>
+        ) : null}
 
         {showCreateModule || modules.length === 0 ? (
           <form onSubmit={createModule} className="module-create-panel" style={styles.form}>
@@ -914,9 +987,14 @@ export default function GuruPage() {
           </form>
         ) : null}
 
-        {modules.length === 0 ? <p style={styles.empty}>Belum ada modul. Buat modul pertama untuk mulai menyusun materi.</p> : (
+        {modules.length === 0 ? <p style={styles.empty}>Belum ada modul. Buat modul pertama untuk mulai menyusun materi.</p> : visibleModules.length === 0 ? (
+          <div style={styles.empty}>
+            <p style={{ margin: "0 0 10px" }}>Tidak ada materi yang cocok dengan pencarian/saringan ini.</p>
+            <button type="button" onClick={resetModuleFilters} style={styles.secondaryButton}>Atur ulang saringan</button>
+          </div>
+        ) : (
           <div className="module-list">
-            {modules.map((module) => (
+            {visibleModules.map((module) => (
               <article key={module.id} className={`module-row ${selectedId === module.id ? "is-selected" : ""}`}>
                 <button type="button" onClick={() => setSelectedId(module.id)} className="module-row-main">
                   <strong>{module.title}</strong>
@@ -1570,6 +1648,9 @@ const styles = {
   primaryButton: { border: 0, borderRadius: 8, background: "#175cd3", color: "white", padding: "11px 14px", fontWeight: 700 },
   secondaryButton: { border: "1px solid #d0d5dd", borderRadius: 8, background: "white", padding: "9px 12px" },
   blockTypeRow: { display: "flex", flexWrap: "wrap" as const, gap: 8, marginBottom: 14 },
+  moduleToolbar: { display: "flex", flexWrap: "wrap" as const, gap: 10, margin: "4px 0 14px" },
+  moduleSearchInput: { flex: "1 1 200px" },
+  moduleFilterSelect: { flex: "1 1 150px" },
   blockTypeButton: { border: "1px solid #d0d5dd", borderRadius: 8, background: "white", padding: "9px 14px", fontWeight: 600, cursor: "pointer" },
   blockTypeButtonActive: { border: "1px solid #175cd3", borderRadius: 8, background: "#175cd3", color: "white", padding: "9px 14px", fontWeight: 700, cursor: "pointer" },
   filePickerRow: { display: "flex", alignItems: "center", flexWrap: "wrap" as const, gap: 10 },

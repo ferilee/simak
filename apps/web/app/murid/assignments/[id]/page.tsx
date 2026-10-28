@@ -21,10 +21,11 @@ type AssignmentDetail = {
   worksheet: { id: number; title: string } | null;
   attempt: { status: string; total_score: number | null; submitted_at: string | null } | null;
   exit_ticket_submitted: boolean;
+  ruas_quiz_completed: boolean;
 };
 type AssignmentResponse = { ok: true; data: AssignmentDetail };
 type AssignmentStepId = "worksheet" | "quiz" | "exit";
-type AssignmentStep = { id: AssignmentStepId; label: string; title: string; description: string };
+type AssignmentStep = { id: AssignmentStepId; label: string; title: string; description: string; complete: boolean };
 
 export default function AssignmentPage() {
   const params = useParams<{ id: string }>();
@@ -81,10 +82,14 @@ export default function AssignmentPage() {
   if (message && !data) return <main style={styles.container}><Toast message={message} onDismiss={() => setMessage("")} /><Link href="/murid">← Kembali</Link></main>;
   if (!data) return <main style={styles.container}><p>Memuat penugasan...</p></main>;
 
+  // Tanda selesai per langkah hanya dari bukti nyata: LKPD dari status
+  // attempt (terkumpul/dinilai), Kuis RUAS dari status "completed" di RUAS
+  // yang dicek API lewat endpoint internal RUAS, exit ticket dari kiriman
+  // exit ticket murid itu sendiri.
   const steps: AssignmentStep[] = [
-    ...(data.worksheet ? [{ id: "worksheet" as const, label: "LKPD", title: "Kerjakan LKPD", description: "Selesaikan latihan sebelum mengikuti kuis." }] : []),
-    ...(data.assignment.ruas_quiz_url ? [{ id: "quiz" as const, label: "Kuis RUAS", title: "Ikuti kuis RUAS", description: "Buka asesmen melalui RUAS setelah menyelesaikan LKPD." }] : []),
-    { id: "exit", label: "Exit ticket", title: "Refleksi 3-2-1", description: "Tuliskan hal yang sudah dipahami dan yang masih membingungkan." },
+    ...(data.worksheet ? [{ id: "worksheet" as const, label: "LKPD", title: "Kerjakan LKPD", description: "Selesaikan latihan sebelum mengikuti kuis.", complete: data.attempt !== null && (data.attempt.status === "terkumpul" || data.attempt.status === "dinilai") }] : []),
+    ...(data.assignment.ruas_quiz_url ? [{ id: "quiz" as const, label: "Kuis RUAS", title: "Ikuti kuis RUAS", description: "Buka asesmen melalui RUAS setelah menyelesaikan LKPD.", complete: data.ruas_quiz_completed }] : []),
+    { id: "exit", label: "Exit ticket", title: "Refleksi 3-2-1", description: "Tuliskan hal yang sudah dipahami dan yang masih membingungkan.", complete: data.exit_ticket_submitted },
   ];
   const currentStepIndex = Math.min(stepIndex, steps.length - 1);
   const currentStep = steps[currentStepIndex];
@@ -103,12 +108,12 @@ export default function AssignmentPage() {
           <button
             key={step.id}
             type="button"
-            className={`assignment-step ${index === currentStepIndex ? "is-active" : ""}`}
+            className={`assignment-step ${index === currentStepIndex ? "is-active" : ""} ${step.complete ? "is-complete" : ""}`}
             onClick={() => setStepIndex(index)}
             aria-current={index === currentStepIndex ? "step" : undefined}
           >
-            <span className="assignment-step-number">{index + 1}</span>
-            <span className="assignment-step-copy"><strong>{step.label}</strong><small>{step.description}</small></span>
+            <span className="assignment-step-number">{step.complete ? "✓" : index + 1}</span>
+            <span className="assignment-step-copy"><strong>{step.label}</strong>{step.complete ? <span className="visually-hidden">(sudah selesai)</span> : null}<small>{step.description}</small></span>
           </button>
         ))}
       </nav>

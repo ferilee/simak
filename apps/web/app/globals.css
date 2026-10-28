@@ -758,6 +758,18 @@ a {
   padding: 14px;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .assignment-stepper {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -801,6 +813,26 @@ a {
 .assignment-step.is-active .assignment-step-number {
   background: var(--color-brand-700);
   color: #fff;
+}
+
+/* Langkah selesai: hijau yang sama dengan langkah selesai wizard ruang
+   murid (.wizard-theme-murid: aksen #0e9384, rona #ecfdf3, garis #a6f4c5). */
+.assignment-step.is-complete {
+  border-color: #a6f4c5;
+  background: #ecfdf3;
+  color: #087a6f;
+}
+
+.assignment-step.is-complete .assignment-step-number {
+  background: #0e9384;
+  color: #fff;
+}
+
+/* Sekaligus aktif dan selesai: garis aktif dipertahankan, centang tetap hijau. */
+.assignment-step.is-complete.is-active {
+  border-color: var(--color-brand-300);
+  background: #eff6ff;
+  color: var(--color-brand-700);
 }
 
 .assignment-step-copy {

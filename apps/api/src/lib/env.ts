@@ -6,6 +6,10 @@ const envSchema = z.object({
   RUAS_AUTH_MODE: z.enum(["shared-db", "internal-endpoint"]).default("internal-endpoint"),
   RUAS_DATABASE_URL: z.string().optional(),
   RUAS_AUTH_ENDPOINT: z.string().optional(),
+  // Endpoint internal RUAS untuk cek status selesai kuis (server-ke-server).
+  // Keduanya opsional: bila salah satu kosong, cek status tidak dilakukan.
+  RUAS_STATUS_ENDPOINT: z.string().optional(),
+  RUAS_INTERNAL_SECRET: z.string().optional(),
   SESSION_SECRET: z.string().min(16),
   RUSTFS_ENDPOINT: z.string().url(),
   RUSTFS_PUBLIC_ENDPOINT: z.preprocess(

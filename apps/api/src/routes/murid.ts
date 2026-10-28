@@ -4,6 +4,7 @@ import { zValidator } from "@hono/zod-validator";
 import { db, schema } from "@simak/db";
 import { exitTicketSchema, worksheetAnswersSchema } from "@simak/shared";
 import { requireRole } from "../middleware/auth";
+import { fetchRuasQuizCompleted, parseRuasQuizUrl } from "../lib/ruas-status";
 
 // Beranda murid + detail penugasan — halaman paling ringan adalah prioritas.
 export const muridRoutes = new Hono();
@@ -219,6 +220,14 @@ muridRoutes.get("/assignments/:id", async (c) => {
     ? []
     : await db.select({ id: worksheets.id, title: worksheets.title }).from(worksheets).where(eq(worksheets.id, assignment.worksheetId)).limit(1);
 
+  // Sinyal langkah "Kuis RUAS": ditanyakan langsung ke RUAS lewat endpoint
+  // internalnya — apakah murid ini punya attempt "completed" pada topik
+  // dari tautan kuis penugasan. Hanya dicek bila tautannya terurai menjadi
+  // id topik; helper-nya fail-soft (konfigurasi kosong/kegagalan apa pun →
+  // false) agar rincian penugasan tidak pernah gagal karenanya.
+  const quizTarget = parseRuasQuizUrl(assignment.ruasQuizUrl);
+  const ruasQuizCompleted = quizTarget ? await fetchRuasQuizCompleted(user.username, quizTarget) : false;
+
   return c.json({
     ok: true,
     data: {
@@ -226,6 +235,7 @@ muridRoutes.get("/assignments/:id", async (c) => {
       worksheet: worksheet ? { id: worksheet.id, title: worksheet.title } : null,
       attempt: attempt ? { status: attempt.status, total_score: attempt.totalScore === null ? null : Number(attempt.totalScore), submitted_at: attempt.submittedAt } : null,
       exit_ticket_submitted: Boolean(exitTicket),
+      ruas_quiz_completed: ruasQuizCompleted,
     },
   });
 });

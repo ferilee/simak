@@ -293,6 +293,21 @@ muridRoutes.get("/modules/:id", async (c) => {
     // Abaikan — materi tetap dilayani.
   }
 
+  // Apakah murid ini sudah pernah mencatat tuntas membaca modul ini?
+  // Sama seperti pencatatan di atas: kegagalan query dianggap belum tuntas
+  // dan tidak pernah menggagalkan pembacaan materi.
+  let materialCompleted = false;
+  try {
+    const [completed] = await db
+      .select({ id: activityLogs.id })
+      .from(activityLogs)
+      .where(and(eq(activityLogs.studentId, user.userId), eq(activityLogs.moduleId, moduleId), eq(activityLogs.event, "baca_materi_tuntas")))
+      .limit(1);
+    materialCompleted = Boolean(completed);
+  } catch {
+    materialCompleted = false;
+  }
+
   const blocks = await db
     .select()
     .from(moduleBlocks)
@@ -324,6 +339,7 @@ muridRoutes.get("/modules/:id", async (c) => {
         title: worksheet.title,
         instructions: worksheet.instructions,
       })),
+      material_completed: materialCompleted,
     },
   });
 });

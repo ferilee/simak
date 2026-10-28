@@ -19,6 +19,7 @@ export const activityLogs = mysqlTable(
     moduleId: bigint("module_id", { mode: "number" }).references(() => modules.id, { onDelete: "set null" }),
     event: mysqlEnum("event", [
       "buka_materi",
+      "baca_materi_tuntas",
       "mulai_lkpd",
       "kumpul",
       "buka_kuis_ruas",

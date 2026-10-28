@@ -889,6 +889,81 @@ a {
   }
 }
 
+/* Indikator kemajuan membaca materi: lencana lingkaran melayang di pojok
+   kanan bawah halaman materi. Cakram ungu pekat berisi persen, busur cincin
+   terisi mengikuti guliran; saat tuntas cakram dan busur berubah hijau
+   selesai yang sama dengan langkah penugasan dan persen berganti centang
+   yang menggambar dirinya dengan keyframes yang sama
+   (assignment-step-check-draw). z-index di bawah lapisan modal (50). */
+.reading-progress {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 40;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.22);
+}
+
+.reading-progress-ring {
+  position: absolute;
+  inset: 0;
+  transform: rotate(-90deg);
+}
+
+.reading-progress-track {
+  stroke: #e4defc;
+}
+
+.reading-progress-arc {
+  stroke: #8b5cf6;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.15s linear, stroke 0.3s ease;
+}
+
+.reading-progress.is-complete .reading-progress-arc {
+  stroke: #0e9384;
+}
+
+.reading-progress-disc {
+  position: absolute;
+  inset: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #6d28d9;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 800;
+  transition: background 0.3s ease;
+}
+
+.reading-progress.is-complete .reading-progress-disc {
+  background: #0e9384;
+  animation: assignment-step-number-pop 0.35s ease backwards;
+}
+
+.reading-progress-check {
+  display: block;
+}
+
+.reading-progress-check path {
+  stroke-dasharray: 20;
+  stroke-dashoffset: 0;
+  animation: assignment-step-check-draw 0.4s ease backwards;
+}
+
+/* Hormati pengurangan gerak: centang langsung tampil utuh tanpa animasi. */
+@media (prefers-reduced-motion: reduce) {
+  .reading-progress.is-complete .reading-progress-disc,
+  .reading-progress-check path {
+    animation: none;
+  }
+}
+
 .assignment-step-copy {
   display: grid;
   min-width: 0;

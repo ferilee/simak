@@ -36,6 +36,7 @@ export type SubmissionStatus = (typeof SUBMISSION_STATUS)[number];
 
 export const ACTIVITY_EVENTS = [
   "buka_materi",
+  "baca_materi_tuntas",
   "mulai_lkpd",
   "kumpul",
   "buka_kuis_ruas",

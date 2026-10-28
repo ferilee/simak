@@ -89,10 +89,23 @@ export type ExitTicketInput = z.infer<typeof exitTicketSchema>;
 
 // ---------- Aktivitas / presensi ----------
 
-export const activitySchema = z.object({
-  assignmentId: z.number().int().positive(),
-  event: z.enum(ACTIVITY_EVENTS),
-});
+// Peristiwa berbasis penugasan wajib membawa assignmentId; peristiwa
+// tuntas membaca berbasis modul membawa moduleId sebagai gantinya.
+export const activitySchema = z
+  .object({
+    assignmentId: z.number().int().positive().optional(),
+    moduleId: z.number().int().positive().optional(),
+    event: z.enum(ACTIVITY_EVENTS),
+  })
+  .superRefine((value, ctx) => {
+    if (value.event === "baca_materi_tuntas") {
+      if (value.moduleId === undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["moduleId"], message: "moduleId wajib untuk peristiwa baca_materi_tuntas." });
+      }
+    } else if (value.assignmentId === undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["assignmentId"], message: "assignmentId wajib untuk peristiwa berbasis penugasan." });
+    }
+  });
 
 export const integrityEventSchema = z.object({
   assignmentId: z.number().int().positive(),

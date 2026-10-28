@@ -1,0 +1,1 @@
+ALTER TABLE `activity_logs` MODIFY COLUMN `event` enum('buka_materi','baca_materi_tuntas','mulai_lkpd','kumpul','buka_kuis_ruas','exit_ticket') NOT NULL;

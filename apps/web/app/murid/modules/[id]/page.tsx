@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { apiRequest } from "../../../../lib/api";
+import { ReadingProgress } from "../../../../components/ReadingProgress";
 import { Toast } from "../../../../components/Toast";
 import { MarkdownHtml, MathHtml, MathText } from "../../../../components/MathContent";
 
@@ -21,6 +22,7 @@ type ModuleResponse = {
     module: { id: number; title: string; subject: string; description: string | null };
     blocks: Block[];
     worksheets: { id: number; title: string; instructions: string | null }[];
+    material_completed: boolean;
   };
 };
 
@@ -66,6 +68,7 @@ export default function ModulePage() {
           ))}
         </section>
       ) : null}
+      <ReadingProgress moduleId={data.module.id} alreadyCompleted={data.material_completed} />
     </main>
   );
 }
@@ -153,7 +156,9 @@ function AttachmentBlock({ block, moduleId }: { block: Block; moduleId: number }
 }
 
 const styles = {
-  container: { maxWidth: 720, margin: "0 auto", padding: "32px 20px 64px" },
+  // Padding bawah longgar agar isi terakhir bisa digulir bebas dari
+  // lencana indikator kemajuan membaca yang melayang di pojok kanan bawah.
+  container: { maxWidth: 720, margin: "0 auto", padding: "32px 20px 128px" },
   back: { color: "#175cd3", textDecoration: "none" },
   subject: { color: "#175cd3", fontWeight: 700, margin: "32px 0 8px" },
   title: { fontSize: 34, margin: 0 },

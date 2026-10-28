@@ -1479,8 +1479,11 @@ a {
 }
 
 .math-rich-content p {
+  hyphens: auto;
   line-height: 1.7;
   margin: 0 0 0.9em;
+  text-align: justify;
+  text-align-last: left;
 }
 
 .math-rich-content h1,
@@ -1519,7 +1522,10 @@ a {
 }
 
 .math-rich-content li {
+  hyphens: auto;
   margin: 0.25em 0;
+  text-align: justify;
+  text-align-last: left;
 }
 
 .math-rich-content a {

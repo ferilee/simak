@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiBase, apiRequest } from "../../lib/api";
+import { submissionStatusLabel } from "../lib/labels";
 import { Toast } from "../../components/Toast";
 import { MathHtml, MathText } from "../../components/MathContent";
 
@@ -261,6 +262,18 @@ export default function GuruPage() {
     { title: "Atur kelas", mobileTitle: "Kelas", description: "Kelola kelas tujuan" },
     { title: "Terbitkan tugas", mobileTitle: "Terbit", description: "Hubungkan materi ke kelas" },
     { title: "Pantau hasil", mobileTitle: "Hasil", description: "Nilai dan lihat rekap" },
+  ];
+
+  // Tanda selesai langkah hanya dari syarat nyata, bukan posisi wizard:
+  // Materi = ada modul, LKPD = ada lembar kerja, Kelas = ada kelas,
+  // Penugasan = ada penugasan. Langkah Hasil tidak punya sinyal global
+  // yang andal, jadi tidak pernah diberi tanda selesai otomatis.
+  const guruStepComplete = [
+    modules.length > 0,
+    worksheets.length > 0,
+    classes.length > 0,
+    assignments.length > 0,
+    false,
   ];
 
   const moduleSubjects = [...new Set(modules.map((module) => module.subject))].sort((a, b) => a.localeCompare(b, "id"));
@@ -549,6 +562,10 @@ export default function GuruPage() {
       setSelectedId(response.data.id);
       setShowCreateModule(false);
       await loadModules();
+      setMessage("Draf modul dibuat. Sekarang tambahkan isinya di panel di bawah.");
+      setTimeout(() => {
+        document.getElementById("panel-isi-materi")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 150);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Modul belum dapat dibuat.");
     }
@@ -573,11 +590,23 @@ export default function GuruPage() {
 
   async function changeStatus(module: ModuleSummary) {
     const status = module.status === "terbit" ? "arsip" : "terbit";
+    if (status === "arsip") {
+      if (!window.confirm("Arsipkan modul ini? Murid tidak lagi dapat membukanya dari daftar materi.")) return;
+    } else {
+      // Penjaga isi kosong: jangan blokir penerbitan bila pemeriksaannya gagal.
+      try {
+        const blocks = await apiRequest<ModuleBlocksResponse>(`/modules/${module.id}/blocks`);
+        if (blocks.data.length === 0 && !window.confirm("Materi ini belum punya isi sama sekali. Terbitkan tetap?")) return;
+      } catch {
+        // Pemeriksaan gagal — lanjutkan penerbitan tanpa penjaga.
+      }
+    }
     try {
       await apiRequest(`/modules/${module.id}`, {
         method: "PATCH",
         body: JSON.stringify({ status }),
       });
+      setMessage(status === "terbit" ? "Modul diterbitkan — sekarang terlihat oleh murid." : "Modul diarsipkan.");
       await loadModules();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Status modul belum dapat diubah.");
@@ -775,8 +804,20 @@ export default function GuruPage() {
 
   async function changeWorksheetStatus(worksheet: WorksheetSummary) {
     const status = worksheet.status === "terbit" ? "arsip" : "terbit";
+    if (status === "arsip") {
+      if (!window.confirm("Arsipkan LKPD ini? Murid tidak lagi dapat membukanya.")) return;
+    } else {
+      // Penjaga isi kosong: jangan blokir penerbitan bila pemeriksaannya gagal.
+      try {
+        const items = await apiRequest<WorksheetItemsResponse>(`/worksheets/${worksheet.id}/items`);
+        if (items.data.length === 0 && !window.confirm("LKPD ini belum punya soal sama sekali. Terbitkan tetap?")) return;
+      } catch {
+        // Pemeriksaan gagal — lanjutkan penerbitan tanpa penjaga.
+      }
+    }
     try {
       await apiRequest(`/worksheets/${worksheet.id}`, { method: "PATCH", body: JSON.stringify({ status }) });
+      setMessage(status === "terbit" ? "LKPD diterbitkan — sekarang terlihat oleh murid." : "LKPD diarsipkan.");
       await loadModules();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Status LKPD belum dapat diubah.");
@@ -915,8 +956,10 @@ export default function GuruPage() {
 
   async function changeAssignmentStatus(assignment: AssignmentSummary) {
     const status = assignment.status === "terbit" ? "ditutup" : "terbit";
+    if (status === "ditutup" && !window.confirm("Tutup penugasan ini? Murid tidak dapat lagi membukanya atau mengumpulkan.")) return;
     try {
       await apiRequest(`/assignments/${assignment.id}`, { method: "PATCH", body: JSON.stringify({ status }) });
+      setMessage(status === "terbit" ? "Penugasan dibuka." : "Penugasan ditutup.");
       await loadModules();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Status penugasan belum dapat diubah.");
@@ -957,11 +1000,11 @@ export default function GuruPage() {
               <button
                 key={step.title}
                 type="button"
-                className={`wizard-step ${guruStep === index ? "is-active" : ""} ${guruStep > index ? "is-complete" : ""}`}
+                className={`wizard-step ${guruStep === index ? "is-active" : ""} ${guruStepComplete[index] ? "is-complete" : ""}`}
                 onClick={() => setGuruStep(index)}
                 aria-current={guruStep === index ? "step" : undefined}
               >
-                <span className="wizard-step-number">{guruStep > index ? "✓" : index + 1}</span>
+                <span className="wizard-step-number">{guruStepComplete[index] ? "✓" : index + 1}</span>
                 <span>
                   <strong>
                     <span className="wizard-step-title-desktop">{step.title}</span>
@@ -1103,7 +1146,7 @@ export default function GuruPage() {
       </section>
 
       {selectedId ? (
-        <section className="wizard-step-panel" data-active={guruStep === 0} style={styles.panel}>
+        <section id="panel-isi-materi" className="wizard-step-panel" data-active={guruStep === 0} style={styles.panel}>
           <h2 style={styles.sectionTitle}>Tambah isi materi</h2>
           <div style={styles.blockTypeRow} role="group" aria-label="Jenis blok">
             {([
@@ -1507,7 +1550,7 @@ export default function GuruPage() {
                     <tbody>{sessionReport.students.map((student) => <tr key={student.student_id}>
                       <td style={styles.reportCell}><strong>{student.name}</strong><br /><span style={styles.muted}>{student.username} · {student.class_name}</span></td>
                       <td style={styles.reportCell}>{student.hadir ? "Hadir" : "Belum hadir"}</td>
-                      <td style={styles.reportCell}>{student.submission_status}</td>
+                      <td style={styles.reportCell}>{submissionStatusLabel(student.submission_status)}</td>
                       <td style={styles.reportCell}>{student.total_score === null ? "—" : student.total_score}</td>
                       <td style={styles.reportCell}>{student.exit_ticket_submitted ? "Sudah" : "Belum"}</td>
                       <td style={styles.reportCell}>{student.ruas_opened_at ? "Dibuka" : "Belum"}</td>

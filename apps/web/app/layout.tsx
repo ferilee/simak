@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import "katex/dist/katex.min.css";
 import { PwaRegistrar } from "./PwaRegistrar";
+import { ConfirmProvider } from "../components/ConfirmDialog";
 import "./globals.css";
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
@@ -51,7 +52,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="id">
-      <body><PwaRegistrar />{children}</body>
+      <body><PwaRegistrar /><ConfirmProvider>{children}</ConfirmProvider></body>
     </html>
   );
 }

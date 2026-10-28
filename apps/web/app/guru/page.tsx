@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { apiBase, apiRequest } from "../../lib/api";
 import { submissionStatusLabel } from "../lib/labels";
 import { Toast } from "../../components/Toast";
+import { useConfirm } from "../../components/ConfirmDialog";
 import { MarkdownHtml, MathHtml, MathText } from "../../components/MathContent";
 import { markdownToHtml } from "../../components/markdown";
 
@@ -172,6 +173,7 @@ type MeResponse = { ok: true; user: { role: "guru" | "murid" } };
 
 export default function GuruPage() {
   const router = useRouter();
+  const confirmDialog = useConfirm();
   const [modules, setModules] = useState<ModuleSummary[]>([]);
   const [moduleQuery, setModuleQuery] = useState("");
   const [moduleStatusFilter, setModuleStatusFilter] = useState<"semua" | "draf" | "terbit" | "arsip">("semua");
@@ -684,12 +686,12 @@ export default function GuruPage() {
   async function changeStatus(module: ModuleSummary) {
     const status = module.status === "terbit" ? "arsip" : "terbit";
     if (status === "arsip") {
-      if (!window.confirm("Arsipkan modul ini? Murid tidak lagi dapat membukanya dari daftar materi.")) return;
+      if (!(await confirmDialog("Arsipkan modul ini? Murid tidak lagi dapat membukanya dari daftar materi.", { confirmLabel: "Arsipkan" }))) return;
     } else {
       // Penjaga isi kosong: jangan blokir penerbitan bila pemeriksaannya gagal.
       try {
         const blocks = await apiRequest<ModuleBlocksResponse>(`/modules/${module.id}/blocks`);
-        if (blocks.data.length === 0 && !window.confirm("Materi ini belum punya isi sama sekali. Terbitkan tetap?")) return;
+        if (blocks.data.length === 0 && !(await confirmDialog("Materi ini belum punya isi sama sekali. Terbitkan tetap?", { confirmLabel: "Terbitkan tetap" }))) return;
       } catch {
         // Pemeriksaan gagal — lanjutkan penerbitan tanpa penjaga.
       }
@@ -900,12 +902,12 @@ export default function GuruPage() {
   async function changeWorksheetStatus(worksheet: WorksheetSummary) {
     const status = worksheet.status === "terbit" ? "arsip" : "terbit";
     if (status === "arsip") {
-      if (!window.confirm("Arsipkan LKPD ini? Murid tidak lagi dapat membukanya.")) return;
+      if (!(await confirmDialog("Arsipkan LKPD ini? Murid tidak lagi dapat membukanya.", { confirmLabel: "Arsipkan" }))) return;
     } else {
       // Penjaga isi kosong: jangan blokir penerbitan bila pemeriksaannya gagal.
       try {
         const items = await apiRequest<WorksheetItemsResponse>(`/worksheets/${worksheet.id}/items`);
-        if (items.data.length === 0 && !window.confirm("LKPD ini belum punya soal sama sekali. Terbitkan tetap?")) return;
+        if (items.data.length === 0 && !(await confirmDialog("LKPD ini belum punya soal sama sekali. Terbitkan tetap?", { confirmLabel: "Terbitkan tetap" }))) return;
       } catch {
         // Pemeriksaan gagal — lanjutkan penerbitan tanpa penjaga.
       }
@@ -1051,7 +1053,7 @@ export default function GuruPage() {
 
   async function changeAssignmentStatus(assignment: AssignmentSummary) {
     const status = assignment.status === "terbit" ? "ditutup" : "terbit";
-    if (status === "ditutup" && !window.confirm("Tutup penugasan ini? Murid tidak dapat lagi membukanya atau mengumpulkan.")) return;
+    if (status === "ditutup" && !(await confirmDialog("Tutup penugasan ini? Murid tidak dapat lagi membukanya atau mengumpulkan.", { confirmLabel: "Tutup penugasan" }))) return;
     try {
       await apiRequest(`/assignments/${assignment.id}`, { method: "PATCH", body: JSON.stringify({ status }) });
       setMessage(status === "terbit" ? "Penugasan dibuka." : "Penugasan ditutup.");

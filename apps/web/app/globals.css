@@ -1057,6 +1057,43 @@ a {
   }
 }
 
+/* Dialog konfirmasi bersama (components/ConfirmDialog.tsx) — lapisan dan
+   panel meniru modal Pratinjau: overlay rgba(16, 24, 40, 0.55), panel
+   putih dengan radius 14px dan padding 20px 22px, z-index 50. */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 4vh 16px;
+  overflow-y: auto;
+  background: rgba(16, 24, 40, 0.55);
+}
+
+.confirm-panel {
+  width: min(420px, 92vw);
+  padding: 20px 22px;
+  border-radius: 14px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.confirm-message {
+  margin: 0;
+  color: var(--color-ink);
+  line-height: 1.6;
+}
+
+.confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
 .guru-content {
   padding-bottom: 48px;
 }

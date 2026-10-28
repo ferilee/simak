@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { apiRequest } from "../../../../lib/api";
 import { Toast } from "../../../../components/Toast";
+import { useConfirm } from "../../../../components/ConfirmDialog";
 import { MathText } from "../../../../components/MathContent";
 
 type WorksheetItem = {
@@ -46,6 +47,7 @@ const ITEM_TYPE_LABELS: Record<string, string> = {
 };
 
 export default function WorksheetPage() {
+  const confirmDialog = useConfirm();
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -344,7 +346,7 @@ export default function WorksheetPage() {
       : answered < total
         ? `Baru ${answered} dari ${total} soal terjawab. Soal yang belum dijawab akan terkumpul kosong, dan setelah terkumpul jawaban tidak dapat diubah. Kumpulkan sekarang?`
         : `Semua ${total} soal sudah terjawab. Kumpulkan sekarang? Setelah terkumpul, jawaban tidak dapat diubah.`;
-    if (!window.confirm(confirmText)) return;
+    if (!(await confirmDialog(confirmText, { confirmLabel: "Kumpulkan sekarang" }))) return;
     setSaving(true);
     setMessage("");
     try {

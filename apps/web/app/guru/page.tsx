@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import { apiBase, apiRequest } from "../../lib/api";
 import { submissionStatusLabel } from "../lib/labels";
 import { Toast } from "../../components/Toast";
-import { MathHtml, MathText } from "../../components/MathContent";
+import { MarkdownHtml, MathHtml, MathText } from "../../components/MathContent";
+import { markdownToHtml } from "../../components/markdown";
 
 type ModuleSummary = {
   id: number;
@@ -680,7 +681,9 @@ export default function GuruPage() {
       await apiRequest(`/modules/${selectedId}/blocks`, {
         method: "POST",
         body: JSON.stringify({
-          content: { type: "teks", html: blockHtml },
+          // Skema API blok teks berbentuk tetap {type, html} dan field lain dibuang
+          // validator, jadi Markdown dikonversi ke HTML di sini sebelum disimpan.
+          content: { type: "teks", html: markdownToHtml(blockHtml) },
           sortOrder: 0,
         }),
       });
@@ -1174,11 +1177,11 @@ export default function GuruPage() {
                   required
                   value={blockHtml}
                   onChange={(event) => setBlockHtml(event.target.value)}
-                  placeholder="Tulis isi materi. HTML dasar seperti <strong>tebal</strong> boleh digunakan."
+                  placeholder="Tulis isi materi… (Markdown)"
                   rows={6}
                   style={styles.textarea}
                 />
-                <small style={styles.muted}>Rumus LaTeX didukung: gunakan <code>\(...\)</code> untuk rumus sebaris atau <code>\[...\]</code> untuk rumus terpisah.</small>
+                <small style={styles.muted}>Markdown: ## Judul sub-bab · **tebal** · $$ rumus $$ di baris sendiri = rumus besar di tengah · awali baris dengan &gt; untuk kotak rumus (baris pertama jadi labelnya).</small>
               </>
             ) : null}
             {blockType === "sub_bab" ? (
@@ -1780,6 +1783,9 @@ function PreviewBlock({ block, moduleId }: { block: ModuleBlock; moduleId: numbe
     return <h3 style={styles.previewSubheading}><MathText text={String(block.content.title ?? "Sub-bab")} /></h3>;
   }
   if (block.type === "teks") {
+    if (block.content.format === "markdown" || typeof block.content.markdown === "string") {
+      return <MarkdownHtml markdown={String(block.content.markdown ?? "")} className="math-rich-content" />;
+    }
     return <MathHtml html={String(block.content.html ?? "")} className="math-rich-content" />;
   }
   if (block.type === "video") {

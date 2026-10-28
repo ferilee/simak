@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { apiRequest } from "../../../../lib/api";
 import { Toast } from "../../../../components/Toast";
-import { MathHtml, MathText } from "../../../../components/MathContent";
+import { MarkdownHtml, MathHtml, MathText } from "../../../../components/MathContent";
 
 type Block = {
   id: number;
@@ -75,6 +75,9 @@ function ModuleBlock({ block, moduleId }: { block: Block; moduleId: number }) {
     return <h2 style={styles.subheading}>{String(block.content.title ?? "Sub-bab")}</h2>;
   }
   if (block.type === "teks") {
+    if (block.content.format === "markdown" || typeof block.content.markdown === "string") {
+      return <MarkdownHtml markdown={String(block.content.markdown ?? "")} className="math-rich-content" />;
+    }
     return <MathHtml html={String(block.content.html ?? "")} className="math-rich-content" />;
   }
   if (block.type === "video") {

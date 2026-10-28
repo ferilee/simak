@@ -1478,6 +1478,92 @@ a {
   margin-bottom: 0;
 }
 
+.math-rich-content p {
+  line-height: 1.7;
+  margin: 0 0 0.9em;
+}
+
+.math-rich-content h1,
+.math-rich-content h2,
+.math-rich-content h3,
+.math-rich-content h4 {
+  color: #1e4fa3;
+  font-weight: 700;
+  line-height: 1.35;
+  margin: 1.1em 0 0.45em;
+}
+
+.math-rich-content h1 {
+  font-size: 1.45rem;
+}
+
+.math-rich-content h2 {
+  font-size: 1.3rem;
+}
+
+.math-rich-content h3 {
+  color: #2456a6;
+  font-size: 1.12rem;
+}
+
+.math-rich-content h4 {
+  color: #2456a6;
+  font-size: 1rem;
+}
+
+.math-rich-content ul,
+.math-rich-content ol {
+  line-height: 1.6;
+  margin: 0 0 0.9em;
+  padding-left: 1.4em;
+}
+
+.math-rich-content li {
+  margin: 0.25em 0;
+}
+
+.math-rich-content a {
+  color: #1e4fa3;
+}
+
+.math-rich-content code {
+  background: #f2f4f7;
+  border-radius: 4px;
+  font-size: 0.92em;
+  padding: 0.1em 0.35em;
+}
+
+.math-rich-content hr {
+  border: none;
+  border-top: 1px solid #d0d5dd;
+  margin: 1.2em 0;
+}
+
+.math-rich-content .katex-display {
+  margin: 1em 0;
+}
+
+/* Kutipan dipakai sebagai kotak rumus: label tebal di kiri atas, rumus di tengah. */
+.math-rich-content blockquote {
+  background: #eef3fb;
+  border: 1px solid #d7e3f5;
+  border-radius: 10px;
+  margin: 1em 0;
+  padding: 14px 16px;
+}
+
+.math-rich-content blockquote > p:first-child {
+  font-weight: 700;
+}
+
+.math-rich-content blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.math-rich-content blockquote .katex-display {
+  margin: 0.4em 0;
+}
+
 .wizard-step small {
   color: var(--color-muted);
   font-size: 12px;

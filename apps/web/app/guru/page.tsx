@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiBase, apiRequest } from "../../lib/api";
@@ -161,7 +161,9 @@ export default function GuruPage() {
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
   const [blockHtml, setBlockHtml] = useState("");
+  const [blockType, setBlockType] = useState<"teks" | "sub_bab" | "video" | "lampiran">("teks");
   const [attachment, setAttachment] = useState<File | null>(null);
+  const blockFirstFieldRef = useRef<HTMLElement | null>(null);
   const [worksheets, setWorksheets] = useState<WorksheetSummary[]>([]);
   const [classes, setClasses] = useState<ClassSummary[]>([]);
   const [className, setClassName] = useState("");
@@ -529,9 +531,25 @@ export default function GuruPage() {
     setPreviewLoading(false);
   }
 
+  function setBlockFirstField(element: HTMLElement | null) {
+    blockFirstFieldRef.current = element;
+  }
+
+  async function addBlock(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const added = blockType === "teks"
+      ? await addTextBlock(event)
+      : blockType === "sub_bab"
+        ? await addSubBabBlock(event)
+        : blockType === "video"
+          ? await addVideoBlock(event)
+          : await addAttachmentBlock(event);
+    if (added) blockFirstFieldRef.current?.focus();
+  }
+
   async function addTextBlock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedId || !blockHtml.trim()) return;
+    if (!selectedId || !blockHtml.trim()) return false;
     try {
       await apiRequest(`/modules/${selectedId}/blocks`, {
         method: "POST",
@@ -542,14 +560,16 @@ export default function GuruPage() {
       });
       setBlockHtml("");
       setMessage("Blok materi ditambahkan.");
+      return true;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Blok belum dapat ditambahkan.");
+      return false;
     }
   }
 
   async function addSubBabBlock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedId || !subBabTitle.trim()) return;
+    if (!selectedId || !subBabTitle.trim()) return false;
     try {
       await apiRequest(`/modules/${selectedId}/blocks`, {
         method: "POST",
@@ -560,14 +580,16 @@ export default function GuruPage() {
       });
       setSubBabTitle("");
       setMessage("Blok materi ditambahkan.");
+      return true;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Blok belum dapat ditambahkan.");
+      return false;
     }
   }
 
   async function addVideoBlock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedId || !videoUrl.trim()) return;
+    if (!selectedId || !videoUrl.trim()) return false;
     try {
       await apiRequest(`/modules/${selectedId}/blocks`, {
         method: "POST",
@@ -583,14 +605,16 @@ export default function GuruPage() {
       setVideoUrl("");
       setVideoCaption("");
       setMessage("Blok materi ditambahkan.");
+      return true;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Blok belum dapat ditambahkan.");
+      return false;
     }
   }
 
   async function addAttachmentBlock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedId || !attachment) return;
+    if (!selectedId || !attachment) return false;
     const form = event.currentTarget;
     setMessage("");
     try {
@@ -628,8 +652,10 @@ export default function GuruPage() {
       setAttachment(null);
       form.reset();
       setMessage("Lampiran ditambahkan.");
+      return true;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Lampiran belum dapat ditambahkan.");
+      return false;
     }
   }
 
@@ -931,59 +957,91 @@ export default function GuruPage() {
 
       {selectedId ? (
         <section className="wizard-step-panel" data-active={guruStep === 0} style={styles.panel}>
-          <h2 style={styles.sectionTitle}>Tambah blok teks</h2>
-          <form onSubmit={addTextBlock} style={styles.form}>
-            <textarea
-              required
-              value={blockHtml}
-              onChange={(event) => setBlockHtml(event.target.value)}
-              placeholder="Tulis isi materi. HTML dasar seperti <strong>tebal</strong> boleh digunakan."
-              rows={6}
-              style={styles.textarea}
-            />
-            <small style={styles.muted}>Rumus LaTeX didukung: gunakan <code>\(...\)</code> untuk rumus sebaris atau <code>\[...\]</code> untuk rumus terpisah.</small>
-            <button type="submit" style={styles.primaryButton}>Tambahkan blok</button>
-          </form>
-          <h2 style={styles.sectionTitle}>Tambah lampiran</h2>
-          <form onSubmit={addAttachmentBlock} style={styles.form}>
-            <input
-              required
-              type="file"
-              accept="image/jpeg,image/png,image/webp,application/pdf"
-              onChange={(event) => setAttachment(event.target.files?.[0] ?? null)}
-              style={styles.input}
-            />
-            <small style={styles.muted}>JPG, PNG, WebP, atau PDF. Maksimal 10 MB.</small>
-            <button type="submit" style={styles.primaryButton}>Unggah lampiran</button>
-          </form>
-          <h2 style={styles.sectionTitle}>Tambah sub-bab</h2>
-          <form onSubmit={addSubBabBlock} style={styles.form}>
-            <input
-              required
-              value={subBabTitle}
-              onChange={(event) => setSubBabTitle(event.target.value)}
-              placeholder="Judul sub-bab"
-              style={styles.input}
-            />
-            <button type="submit" style={styles.primaryButton}>Tambahkan sub-bab</button>
-          </form>
-          <h2 style={styles.sectionTitle}>Tambah video</h2>
-          <form onSubmit={addVideoBlock} style={styles.form}>
-            <input
-              required
-              type="url"
-              value={videoUrl}
-              onChange={(event) => setVideoUrl(event.target.value)}
-              placeholder="URL video YouTube"
-              style={styles.input}
-            />
-            <input
-              value={videoCaption}
-              onChange={(event) => setVideoCaption(event.target.value)}
-              placeholder="Keterangan video (opsional)"
-              style={styles.input}
-            />
-            <button type="submit" style={styles.primaryButton}>Tambahkan video</button>
+          <h2 style={styles.sectionTitle}>Tambah isi materi</h2>
+          <div style={styles.blockTypeRow} role="group" aria-label="Jenis blok">
+            {([
+              { value: "teks", label: "Teks" },
+              { value: "sub_bab", label: "Sub-bab" },
+              { value: "video", label: "Video" },
+              { value: "lampiran", label: "Lampiran" },
+            ] as const).map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={blockType === option.value}
+                onClick={() => setBlockType(option.value)}
+                style={blockType === option.value ? styles.blockTypeButtonActive : styles.blockTypeButton}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <form onSubmit={addBlock} style={styles.form}>
+            {blockType === "teks" ? (
+              <>
+                <textarea
+                  ref={setBlockFirstField}
+                  required
+                  value={blockHtml}
+                  onChange={(event) => setBlockHtml(event.target.value)}
+                  placeholder="Tulis isi materi. HTML dasar seperti <strong>tebal</strong> boleh digunakan."
+                  rows={6}
+                  style={styles.textarea}
+                />
+                <small style={styles.muted}>Rumus LaTeX didukung: gunakan <code>\(...\)</code> untuk rumus sebaris atau <code>\[...\]</code> untuk rumus terpisah.</small>
+              </>
+            ) : null}
+            {blockType === "sub_bab" ? (
+              <input
+                ref={setBlockFirstField}
+                required
+                value={subBabTitle}
+                onChange={(event) => setSubBabTitle(event.target.value)}
+                placeholder="Judul sub-bab"
+                style={styles.input}
+              />
+            ) : null}
+            {blockType === "video" ? (
+              <>
+                <input
+                  ref={setBlockFirstField}
+                  required
+                  type="url"
+                  value={videoUrl}
+                  onChange={(event) => setVideoUrl(event.target.value)}
+                  placeholder="URL video YouTube"
+                  style={styles.input}
+                />
+                <input
+                  value={videoCaption}
+                  onChange={(event) => setVideoCaption(event.target.value)}
+                  placeholder="Keterangan video (opsional)"
+                  style={styles.input}
+                />
+              </>
+            ) : null}
+            {blockType === "lampiran" ? (
+              <>
+                <div style={styles.filePickerRow}>
+                  <label ref={setBlockFirstField} htmlFor="module-attachment-file" tabIndex={-1} style={styles.filePickerButton}>
+                    Pilih gambar/PDF
+                  </label>
+                  <span style={styles.fileName}>{attachment ? attachment.name : "Belum ada berkas dipilih"}</span>
+                  <input
+                    id="module-attachment-file"
+                    required
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,application/pdf"
+                    onChange={(event) => setAttachment(event.target.files?.[0] ?? null)}
+                    style={styles.hiddenFileInput}
+                  />
+                </div>
+                <small style={styles.muted}>JPG, PNG, WebP, atau PDF. Maksimal 10 MB.</small>
+              </>
+            ) : null}
+            <button type="submit" style={styles.primaryButton}>
+              {blockType === "teks" ? "Tambahkan blok" : blockType === "sub_bab" ? "Tambahkan sub-bab" : blockType === "video" ? "Tambahkan video" : "Unggah lampiran"}
+            </button>
           </form>
         </section>
       ) : null}
@@ -1511,6 +1569,13 @@ const styles = {
   textarea: { border: "1px solid #d0d5dd", borderRadius: 8, padding: 11, fontFamily: "inherit", resize: "vertical" as const },
   primaryButton: { border: 0, borderRadius: 8, background: "#175cd3", color: "white", padding: "11px 14px", fontWeight: 700 },
   secondaryButton: { border: "1px solid #d0d5dd", borderRadius: 8, background: "white", padding: "9px 12px" },
+  blockTypeRow: { display: "flex", flexWrap: "wrap" as const, gap: 8, marginBottom: 14 },
+  blockTypeButton: { border: "1px solid #d0d5dd", borderRadius: 8, background: "white", padding: "9px 14px", fontWeight: 600, cursor: "pointer" },
+  blockTypeButtonActive: { border: "1px solid #175cd3", borderRadius: 8, background: "#175cd3", color: "white", padding: "9px 14px", fontWeight: 700, cursor: "pointer" },
+  filePickerRow: { display: "flex", alignItems: "center", flexWrap: "wrap" as const, gap: 10 },
+  filePickerButton: { display: "inline-block", border: "1px solid #d0d5dd", borderRadius: 8, background: "white", padding: "9px 12px", fontWeight: 600, cursor: "pointer" },
+  fileName: { color: "#344054", wordBreak: "break-all" as const },
+  hiddenFileInput: { position: "absolute" as const, width: 1, height: 1, opacity: 0, overflow: "hidden" as const },
   empty: { color: "#667085", background: "#f8f9fc", padding: 16, borderRadius: 8 },
   list: { display: "grid", gap: 10 },
   module: { display: "grid", gridTemplateColumns: "1fr auto auto", alignItems: "center", gap: 12, border: "1px solid", borderRadius: 10, padding: 14 },

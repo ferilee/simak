@@ -181,6 +181,13 @@ export default function GuruPage() {
   const [worksheetStatusFilter, setWorksheetStatusFilter] = useState<"semua" | "draf" | "terbit" | "arsip">("semua");
   const [worksheetModuleFilter, setWorksheetModuleFilter] = useState("semua");
   const [worksheetSort, setWorksheetSort] = useState<"terbaru" | "judul" | "dikerjakan">("terbaru");
+  // Grup arsip yang bisa dilipat pada daftar modul/LKPD (saringan "semua"):
+  // keadaan buka manual per daftar, plus teks pencarian saat grup ditutup
+  // manual supaya pencarian baru bisa membukanya lagi secara otomatis.
+  const [moduleArchiveOpen, setModuleArchiveOpen] = useState(false);
+  const [moduleArchiveClosedAtQuery, setModuleArchiveClosedAtQuery] = useState<string | null>(null);
+  const [worksheetArchiveOpen, setWorksheetArchiveOpen] = useState(false);
+  const [worksheetArchiveClosedAtQuery, setWorksheetArchiveClosedAtQuery] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [showCreateModule, setShowCreateModule] = useState(false);
   const [title, setTitle] = useState("");
@@ -298,6 +305,50 @@ export default function GuruPage() {
     setModuleStatusFilter("semua");
     setModuleSubjectFilter("semua");
     setModuleSort("terbaru");
+    setModuleArchiveOpen(false);
+    setModuleArchiveClosedAtQuery(null);
+  }
+
+  // Partisi daftar modul: aktif (draf/terbit) dan arsip. Partisi hanya
+  // dipakai saat saringan status "semua"; saringan "arsip" eksplisit
+  // menampilkan baris arsip langsung tanpa grup.
+  const activeModules = visibleModules.filter((module) => module.status !== "arsip");
+  const archivedModules = visibleModules.filter((module) => module.status === "arsip");
+  // Grup terbuka otomatis bila ada teks pencarian yang cocok dengan arsip,
+  // kecuali pengguna menutupnya manual pada teks pencarian yang sama.
+  const moduleArchiveAutoOpen = moduleStatusFilter === "semua"
+    && normalizedModuleQuery !== ""
+    && archivedModules.length > 0
+    && moduleArchiveClosedAtQuery !== moduleQuery;
+  const moduleArchiveGroupOpen = moduleArchiveOpen || moduleArchiveAutoOpen;
+
+  function toggleModuleArchiveGroup() {
+    if (moduleArchiveGroupOpen) {
+      setModuleArchiveOpen(false);
+      setModuleArchiveClosedAtQuery(moduleQuery);
+    } else {
+      setModuleArchiveOpen(true);
+      setModuleArchiveClosedAtQuery(null);
+    }
+  }
+
+  function renderModuleRow(module: ModuleSummary, dimmed = false) {
+    return (
+      <article key={module.id} className={`module-row ${dimmed ? "module-row-archived" : ""} ${selectedId === module.id ? "is-selected" : ""}`}>
+        <button type="button" onClick={() => setSelectedId(module.id)} className="module-row-main">
+          <strong>{module.title}</strong>
+          <span>{module.subject} · versi {module.version}</span>
+          <span>{module.viewer_count > 0 ? `Dilihat ${module.viewer_count} murid` : "Belum ada murid yang melihat"}</span>
+        </button>
+        <span className={`module-status module-status-${module.status}`}>{module.status}</span>
+        <button type="button" onClick={() => void openPreview(module)} className="module-row-action">
+          Pratinjau
+        </button>
+        <button type="button" onClick={() => void changeStatus(module)} className="module-row-action">
+          {module.status === "terbit" ? "Arsipkan" : "Terbitkan"}
+        </button>
+      </article>
+    );
   }
 
   const normalizedWorksheetQuery = worksheetQuery.trim().toLowerCase();
@@ -319,6 +370,47 @@ export default function GuruPage() {
     setWorksheetStatusFilter("semua");
     setWorksheetModuleFilter("semua");
     setWorksheetSort("terbaru");
+    setWorksheetArchiveOpen(false);
+    setWorksheetArchiveClosedAtQuery(null);
+  }
+
+  // Partisi daftar LKPD: sama seperti modul — aktif dan arsip, hanya
+  // dipakai saat saringan status "semua".
+  const activeWorksheets = visibleWorksheets.filter((worksheet) => worksheet.status !== "arsip");
+  const archivedWorksheets = visibleWorksheets.filter((worksheet) => worksheet.status === "arsip");
+  const worksheetArchiveAutoOpen = worksheetStatusFilter === "semua"
+    && normalizedWorksheetQuery !== ""
+    && archivedWorksheets.length > 0
+    && worksheetArchiveClosedAtQuery !== worksheetQuery;
+  const worksheetArchiveGroupOpen = worksheetArchiveOpen || worksheetArchiveAutoOpen;
+
+  function toggleWorksheetArchiveGroup() {
+    if (worksheetArchiveGroupOpen) {
+      setWorksheetArchiveOpen(false);
+      setWorksheetArchiveClosedAtQuery(worksheetQuery);
+    } else {
+      setWorksheetArchiveOpen(true);
+      setWorksheetArchiveClosedAtQuery(null);
+    }
+  }
+
+  function renderWorksheetRow(worksheet: WorksheetSummary, dimmed = false) {
+    return (
+      <article key={worksheet.id} className={`module-row ${dimmed ? "module-row-archived" : ""} ${selectedWorksheetId === worksheet.id ? "is-selected" : ""}`}>
+        <button type="button" onClick={() => setSelectedWorksheetId(worksheet.id)} className="module-row-main">
+          <strong>{worksheet.title}</strong>
+          <span>{worksheet.status}</span>
+          <span>{worksheet.started_count > 0 ? `${worksheet.started_count} murid mengerjakan · ${worksheet.submitted_count} mengumpulkan` : "Belum ada murid yang mengerjakan"}</span>
+        </button>
+        <span className={`module-status module-status-${worksheet.status}`}>{worksheet.status}</span>
+        <button type="button" onClick={() => void openWorksheetPreview(worksheet)} className="module-row-action">
+          Pratinjau
+        </button>
+        <button type="button" onClick={() => void changeWorksheetStatus(worksheet)} className="module-row-action">
+          {worksheet.status === "terbit" ? "Arsipkan" : "Terbitkan"}
+        </button>
+      </article>
+    );
   }
 
   async function loadModules() {
@@ -1107,25 +1199,31 @@ export default function GuruPage() {
             <p style={{ margin: "0 0 10px" }}>Tidak ada materi yang cocok dengan pencarian/saringan ini.</p>
             <button type="button" onClick={resetModuleFilters} style={styles.secondaryButton}>Atur ulang saringan</button>
           </div>
-        ) : (
+        ) : moduleStatusFilter === "arsip" ? (
           <div className="module-list">
-            {visibleModules.map((module) => (
-              <article key={module.id} className={`module-row ${selectedId === module.id ? "is-selected" : ""}`}>
-                <button type="button" onClick={() => setSelectedId(module.id)} className="module-row-main">
-                  <strong>{module.title}</strong>
-                  <span>{module.subject} · versi {module.version}</span>
-                  <span>{module.viewer_count > 0 ? `Dilihat ${module.viewer_count} murid` : "Belum ada murid yang melihat"}</span>
-                </button>
-                <span className={`module-status module-status-${module.status}`}>{module.status}</span>
-                <button type="button" onClick={() => void openPreview(module)} className="module-row-action">
-                  Pratinjau
-                </button>
-                <button type="button" onClick={() => void changeStatus(module)} className="module-row-action">
-                  {module.status === "terbit" ? "Arsipkan" : "Terbitkan"}
-                </button>
-              </article>
-            ))}
+            {visibleModules.map((module) => renderModuleRow(module))}
           </div>
+        ) : (
+          <>
+            {activeModules.length > 0 ? (
+              <div className="module-list">
+                {activeModules.map((module) => renderModuleRow(module))}
+              </div>
+            ) : null}
+            {archivedModules.length > 0 ? (
+              <div className="archive-group">
+                <button type="button" className="archive-group-toggle" aria-expanded={moduleArchiveGroupOpen} onClick={toggleModuleArchiveGroup}>
+                  <span>Arsip ({archivedModules.length})</span>
+                  <span aria-hidden="true">{moduleArchiveGroupOpen ? "▾" : "▸"}</span>
+                </button>
+                {moduleArchiveGroupOpen ? (
+                  <div className="module-list">
+                    {archivedModules.map((module) => renderModuleRow(module, true))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </>
         )}
       </section>
 
@@ -1303,25 +1401,31 @@ export default function GuruPage() {
             <p style={{ margin: "0 0 10px" }}>Tidak ada LKPD yang cocok dengan pencarian/saringan ini.</p>
             <button type="button" onClick={resetWorksheetFilters} style={styles.secondaryButton}>Atur ulang saringan</button>
           </div>
-        ) : (
+        ) : worksheetStatusFilter === "arsip" ? (
           <div className="module-list">
-            {visibleWorksheets.map((worksheet) => (
-              <article key={worksheet.id} className={`module-row ${selectedWorksheetId === worksheet.id ? "is-selected" : ""}`}>
-                <button type="button" onClick={() => setSelectedWorksheetId(worksheet.id)} className="module-row-main">
-                  <strong>{worksheet.title}</strong>
-                  <span>{worksheet.status}</span>
-                  <span>{worksheet.started_count > 0 ? `${worksheet.started_count} murid mengerjakan · ${worksheet.submitted_count} mengumpulkan` : "Belum ada murid yang mengerjakan"}</span>
-                </button>
-                <span className={`module-status module-status-${worksheet.status}`}>{worksheet.status}</span>
-                <button type="button" onClick={() => void openWorksheetPreview(worksheet)} className="module-row-action">
-                  Pratinjau
-                </button>
-                <button type="button" onClick={() => void changeWorksheetStatus(worksheet)} className="module-row-action">
-                  {worksheet.status === "terbit" ? "Arsipkan" : "Terbitkan"}
-                </button>
-              </article>
-            ))}
+            {visibleWorksheets.map((worksheet) => renderWorksheetRow(worksheet))}
           </div>
+        ) : (
+          <>
+            {activeWorksheets.length > 0 ? (
+              <div className="module-list">
+                {activeWorksheets.map((worksheet) => renderWorksheetRow(worksheet))}
+              </div>
+            ) : null}
+            {archivedWorksheets.length > 0 ? (
+              <div className="archive-group">
+                <button type="button" className="archive-group-toggle" aria-expanded={worksheetArchiveGroupOpen} onClick={toggleWorksheetArchiveGroup}>
+                  <span>Arsip ({archivedWorksheets.length})</span>
+                  <span aria-hidden="true">{worksheetArchiveGroupOpen ? "▾" : "▸"}</span>
+                </button>
+                {worksheetArchiveGroupOpen ? (
+                  <div className="module-list">
+                    {archivedWorksheets.map((worksheet) => renderWorksheetRow(worksheet, true))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </>
         )}
       </section>
 

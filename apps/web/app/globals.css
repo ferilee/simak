@@ -1223,6 +1223,42 @@ a {
   color: #667085;
 }
 
+.module-list + .archive-group {
+  margin-top: 8px;
+}
+
+.archive-group {
+  display: grid;
+  gap: 8px;
+}
+
+.archive-group-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  background: var(--color-surface-subtle);
+  color: var(--color-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  text-align: left;
+}
+
+.archive-group-toggle:hover {
+  background: var(--wizard-accent-soft);
+  color: var(--wizard-accent-dark);
+}
+
+.module-row-archived {
+  opacity: 0.75;
+}
+
 .guru-collapsible {
   border: 1px solid var(--color-border-soft);
   border-radius: var(--radius-md);

@@ -36,7 +36,7 @@ type AssignmentSummary = {
 
 type TodayResponse = {
   ok: true;
-  data: { classes: ClassSummary[]; modules: ModuleSummary[]; assignments: AssignmentSummary[] };
+  data: { classes: ClassSummary[]; modules: ModuleSummary[]; assignments: AssignmentSummary[]; has_viewed_material: boolean };
 };
 
 type MeResponse = {
@@ -47,7 +47,7 @@ type MeResponse = {
 export default function MuridPage() {
   const router = useRouter();
   const [user, setUser] = useState<MeResponse["user"] | null>(null);
-  const [data, setData] = useState<TodayResponse["data"]>({ classes: [], modules: [], assignments: [] });
+  const [data, setData] = useState<TodayResponse["data"]>({ classes: [], modules: [], assignments: [], has_viewed_material: false });
   const [joinCode, setJoinCode] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
@@ -61,12 +61,13 @@ export default function MuridPage() {
     { title: "Penugasan", description: "Kerjakan aktivitas yang tersedia" },
   ];
   // Tanda selesai langkah hanya dari syarat nyata, bukan posisi wizard:
-  // Kelas saya = sudah tergabung minimal satu kelas; Penugasan = ada
-  // penugasan. Langkah Materi tidak punya sinyal penyelesaian yang andal
-  // (materi tersedia bukan berarti sudah dibaca), jadi tanpa tanda selesai.
+  // Kelas saya = sudah tergabung minimal satu kelas; Materi = sudah pernah
+  // membuka minimal satu materi (has_viewed_material dari catatan
+  // activity_logs event "buka_materi" — sinyal yang sama dengan statistik
+  // penonton guru); Penugasan = ada penugasan.
   const studentStepComplete = [
     data.classes.length > 0,
-    false,
+    data.has_viewed_material,
     data.assignments.length > 0,
   ];
   const displayName = user?.display_name ?? user?.name ?? "Murid";

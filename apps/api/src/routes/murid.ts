@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, asc, eq, inArray, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
 import { db, schema } from "@simak/db";
 import { exitTicketSchema, worksheetAnswersSchema } from "@simak/shared";
@@ -157,6 +157,23 @@ muridRoutes.get("/today", async (c) => {
     : [];
   const attemptsByWorksheet = new Map(attempts.map((attempt) => [attempt.worksheetId, attempt]));
 
+  // Sinyal langkah "Materi" di beranda: murid sudah pernah membuka minimal
+  // satu materi. Predikat sama dengan agregasi penonton guru di
+  // routes/modules.ts — baris activity_logs event "buka_materi" yang
+  // module_id-nya terisi. Kegagalan query ini tidak boleh menggagalkan
+  // ringkasan beranda, jadi kegagalan dianggap belum pernah membuka.
+  let hasViewedMaterial = false;
+  try {
+    const [viewed] = await db
+      .select({ id: activityLogs.id })
+      .from(activityLogs)
+      .where(and(eq(activityLogs.studentId, user.userId), eq(activityLogs.event, "buka_materi"), isNotNull(activityLogs.moduleId)))
+      .limit(1);
+    hasViewedMaterial = Boolean(viewed);
+  } catch {
+    // Abaikan — langkah Materi tampil sebagai belum selesai.
+  }
+
   return c.json({
     ok: true,
     data: {
@@ -178,6 +195,7 @@ muridRoutes.get("/today", async (c) => {
         assignment,
         assignmentProgress(assignment, assignment.worksheetId === null ? undefined : attemptsByWorksheet.get(assignment.worksheetId)),
       )),
+      has_viewed_material: hasViewedMaterial,
     },
   });
 });

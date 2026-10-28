@@ -40,6 +40,7 @@ export default function WorksheetPage() {
   const assignmentId = searchParams.get("assignmentId");
   const [data, setData] = useState<WorksheetResponse["data"] | null>(null);
   const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [touchedSequences, setTouchedSequences] = useState<Set<number>>(new Set());
   const [attachmentKeys, setAttachmentKeys] = useState<Record<number, string>>({});
   const [attachmentNames, setAttachmentNames] = useState<Record<number, string>>({});
   const [uploadingItemId, setUploadingItemId] = useState<number | null>(null);
@@ -58,6 +59,20 @@ export default function WorksheetPage() {
         setData(worksheet.data);
         setStatus(attempt.data.status);
         setAnswers(Object.fromEntries(attempt.data.answers.map((answer) => [answer.item_id, answer.answer_text ?? ""])));
+        // Butir langkah berurutan yang urutan tersimpannya berbeda dari urutan
+        // tampil bawaan berarti sudah pernah disusun murid pada draf sebelumnya.
+        setTouchedSequences(new Set(
+          worksheet.data.items
+            .filter((item) => {
+              if (item.item_type !== "langkah_berurutan") return false;
+              const saved = attempt.data.answers.find((answer) => answer.item_id === item.id)?.answer_text ?? "";
+              const steps = Array.isArray(item.options?.steps)
+                ? item.options.steps.filter((step): step is string => typeof step === "string")
+                : [];
+              return saved !== "" && steps.length > 0 && saved !== steps.join("\n");
+            })
+            .map((item) => item.id),
+        ));
         setAttachmentKeys(Object.fromEntries(
           attempt.data.answers.filter((answer) => answer.attachment_key).map((answer) => [answer.item_id, answer.attachment_key!]),
         ));
@@ -119,6 +134,33 @@ export default function WorksheetPage() {
 
   function setAnswer(itemId: number, value: string) {
     setAnswers((current) => ({ ...current, [itemId]: value }));
+  }
+
+  // Butir tautan_ruas tidak dihitung: tidak ada jawaban murid di SIMAK untuk
+  // butir itu (kuisnya dikerjakan di RUAS), jadi ia dikeluarkan dari pembilang
+  // maupun penyebut hitungan "terjawab".
+  function isItemAnswered(item: WorksheetItem): boolean {
+    switch (item.item_type) {
+      case "pilihan_ganda":
+      case "isian_singkat":
+      case "uraian":
+      case "refleksi":
+        return (answers[item.id] ?? "").trim() !== "";
+      case "unggah_foto":
+        // Unggahan foto langsung terkirim saat berkas dipilih, jadi kunci
+        // lampiran tersimpan adalah satu-satunya tanda butir ini terjawab.
+        return Boolean(attachmentKeys[item.id]);
+      case "langkah_berurutan":
+        return touchedSequences.has(item.id);
+      default:
+        return false;
+    }
+  }
+
+  function answerProgress() {
+    if (!data) return { answered: 0, total: 0 };
+    const countable = data.items.filter((item) => item.item_type !== "tautan_ruas");
+    return { answered: countable.filter((item) => isItemAnswered(item)).length, total: countable.length };
   }
 
   function buildAnswersPayload() {
@@ -199,6 +241,13 @@ export default function WorksheetPage() {
 
   async function submitWorksheet() {
     if (!data || status !== "draf") return;
+    const { answered, total } = answerProgress();
+    const confirmText = total === 0
+      ? "Kumpulkan sekarang? Setelah terkumpul, jawaban tidak dapat diubah."
+      : answered < total
+        ? `Baru ${answered} dari ${total} soal terjawab. Soal yang belum dijawab akan terkumpul kosong, dan setelah terkumpul jawaban tidak dapat diubah. Kumpulkan sekarang?`
+        : `Semua ${total} soal sudah terjawab. Kumpulkan sekarang? Setelah terkumpul, jawaban tidak dapat diubah.`;
+    if (!window.confirm(confirmText)) return;
     setSaving(true);
     setMessage("");
     try {
@@ -225,14 +274,36 @@ export default function WorksheetPage() {
   if (message && !data) return <main style={styles.container}><Toast message={message} onDismiss={() => setMessage("")} /><Link href="/murid">← Kembali</Link></main>;
   if (!data) return <main style={styles.container}><p>Memuat LKPD...</p></main>;
 
+  const { answered: answeredCount, total: totalCount } = answerProgress();
+
   return (
     <main style={styles.container}>
-      <Link href={`/murid/modules/${data.worksheet.module_id}`} style={styles.back}>← Kembali ke materi</Link>
+      {assignmentId ? (
+        <div style={styles.backRow}>
+          <Link href={`/murid/assignments/${assignmentId}`} style={styles.back}>← Kembali ke penugasan</Link>
+          <Link href={`/murid/modules/${data.worksheet.module_id}`} style={styles.backSecondary}>Lihat materi terkait</Link>
+        </div>
+      ) : (
+        <Link href={`/murid/modules/${data.worksheet.module_id}`} style={styles.back}>← Kembali ke materi</Link>
+      )}
       <p style={styles.eyebrow}>SIMAK · LKPD</p>
       <h1 style={styles.title}>{data.worksheet.title}</h1>
       {data.worksheet.instructions ? <p style={styles.instructions}><MathText text={data.worksheet.instructions} /></p> : null}
       {assignmentId ? <p style={styles.integrityNotice}>Untuk membantu guru meninjau proses belajar, SIMAK mencatat indikasi seperti berpindah halaman dan aktivitas clipboard. Ini bukan penilaian otomatis bahwa Anda melakukan kecurangan.</p> : null}
       {message ? <Toast message={message} onDismiss={() => setMessage("")} /> : null}
+      {assignmentId && status !== "draf" ? (
+        <Link href={`/murid/assignments/${assignmentId}`} style={styles.continueButton}>Kembali ke penugasan untuk melanjutkan →</Link>
+      ) : null}
+
+      {status === "draf" ? (
+        <div style={styles.progressBar}>
+          <span style={styles.progressText}>Terjawab {answeredCount} dari {totalCount}</span>
+          <span style={styles.progressActions}>
+            <button type="button" disabled={saving} onClick={() => void saveDraft()} style={styles.secondaryButtonSmall}>Simpan draf</button>
+            <button type="button" disabled={saving} onClick={() => void submitWorksheet()} style={styles.primaryButtonSmall}>Kumpulkan</button>
+          </span>
+        </div>
+      ) : null}
 
       <section style={styles.list}>
         {data.items.map((item, index) => (
@@ -248,6 +319,7 @@ export default function WorksheetPage() {
               attachmentName={attachmentNames[item.id]}
               uploading={uploadingItemId === item.id}
               onPhotoUpload={(file) => void handlePhotoUpload(item.id, file)}
+              onSequenceMove={() => setTouchedSequences((current) => new Set(current).add(item.id))}
             />
             {status !== "draf" && explanations[item.id] ? (
               <div style={styles.explanation}>
@@ -281,6 +353,7 @@ function AnswerField({
   attachmentName,
   uploading,
   onPhotoUpload,
+  onSequenceMove,
 }: {
   item: WorksheetItem;
   value: string;
@@ -290,6 +363,7 @@ function AnswerField({
   attachmentName?: string;
   uploading: boolean;
   onPhotoUpload: (file: File) => void;
+  onSequenceMove: () => void;
 }) {
   if (item.item_type === "pilihan_ganda") {
     const options = stringOptions(item, "options");
@@ -323,6 +397,7 @@ function AnswerField({
       const next = [...order];
       const [moved] = next.splice(index, 1);
       next.splice(target, 0, moved!);
+      onSequenceMove();
       onChange(next.join("\n"));
     }
     return (
@@ -378,6 +453,14 @@ function AnswerField({
 const styles = {
   container: { maxWidth: 720, margin: "0 auto", padding: "32px 20px 64px" },
   back: { color: "#175cd3", textDecoration: "none" },
+  backRow: { display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" as const },
+  backSecondary: { color: "#667085", fontSize: 14, textDecoration: "none" },
+  continueButton: { display: "inline-block", marginTop: 16, borderRadius: 8, background: "#175cd3", color: "white", padding: "12px 16px", fontWeight: 700, textDecoration: "none" },
+  progressBar: { position: "sticky" as const, top: 0, zIndex: 10, display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" as const, background: "#f8f9fc", border: "1px solid #eaecf0", borderRadius: 10, padding: "10px 12px", marginTop: 20 },
+  progressText: { fontWeight: 700, fontSize: 14 },
+  progressActions: { display: "flex", gap: 8 },
+  primaryButtonSmall: { border: 0, borderRadius: 8, background: "#175cd3", color: "white", padding: "8px 12px", fontWeight: 700 },
+  secondaryButtonSmall: { border: "1px solid #d0d5dd", borderRadius: 8, background: "white", padding: "8px 12px" },
   eyebrow: { color: "#475467", fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", margin: "32px 0 8px" },
   title: { fontSize: 34, margin: 0 },
   instructions: { color: "#667085", lineHeight: 1.6 },

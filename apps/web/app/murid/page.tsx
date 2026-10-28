@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiRequest } from "../../lib/api";
+import { submissionStatusLabel } from "../lib/labels";
 import { Toast } from "../../components/Toast";
 
 type ClassSummary = {
@@ -58,6 +59,15 @@ export default function MuridPage() {
     { title: "Kelas saya", description: "Gabung dan lihat kelas aktif" },
     { title: "Materi", description: "Baca materi yang diterbitkan" },
     { title: "Penugasan", description: "Kerjakan aktivitas yang tersedia" },
+  ];
+  // Tanda selesai langkah hanya dari syarat nyata, bukan posisi wizard:
+  // Kelas saya = sudah tergabung minimal satu kelas; Penugasan = ada
+  // penugasan. Langkah Materi tidak punya sinyal penyelesaian yang andal
+  // (materi tersedia bukan berarti sudah dibaca), jadi tanpa tanda selesai.
+  const studentStepComplete = [
+    data.classes.length > 0,
+    false,
+    data.assignments.length > 0,
   ];
   const displayName = user?.display_name ?? user?.name ?? "Murid";
   const activeAssignments = data.assignments
@@ -158,11 +168,11 @@ export default function MuridPage() {
               <button
                 key={step.title}
                 type="button"
-                className={`wizard-step ${studentStep === index ? "is-active" : ""} ${studentStep > index ? "is-complete" : ""}`}
+                className={`wizard-step ${studentStep === index ? "is-active" : ""} ${studentStepComplete[index] ? "is-complete" : ""}`}
                 onClick={() => setStudentStep(index)}
                 aria-current={studentStep === index ? "step" : undefined}
               >
-                <span className="wizard-step-number">{studentStep > index ? "✓" : index + 1}</span>
+                <span className="wizard-step-number">{studentStepComplete[index] ? "✓" : index + 1}</span>
                 <span><strong>{step.title}</strong><small>{step.description}</small></span>
               </button>
             ))}
@@ -297,7 +307,7 @@ function AssignmentCard({ assignment }: { assignment: AssignmentSummary }) {
     <Link href={`/murid/assignments/${assignment.id}`} className="content-card content-link">
       <strong>{assignment.title}</strong>
       <span className="content-muted">{assignment.instructions ?? "Buka detail penugasan untuk mulai."}</span>
-      <span className="content-meta">Status: {assignment.progress} · batas {formatDate(assignment.due_at)}</span>
+      <span className="content-meta">Status: {submissionStatusLabel(assignment.progress)} · batas {formatDate(assignment.due_at)}</span>
       <span className="content-action">Buka penugasan →</span>
     </Link>
   );

@@ -78,12 +78,47 @@ function ModuleBlock({ block, moduleId }: { block: Block; moduleId: number }) {
     return <MathHtml html={String(block.content.html ?? "")} className="math-rich-content" />;
   }
   if (block.type === "video") {
-    return <p style={styles.notice}>Video tersedia melalui tautan pembelajaran.</p>;
+    return <VideoBlock block={block} />;
   }
   if (block.type === "gambar" || block.type === "berkas") {
     return <AttachmentBlock block={block} moduleId={moduleId} />;
   }
   return null;
+}
+
+function youtubeEmbedId(url: string): string | null {
+  const match = url.match(/(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+  return match ? match[1]! : null;
+}
+
+function VideoBlock({ block }: { block: Block }) {
+  const url = typeof block.content.youtubeUrl === "string" ? block.content.youtubeUrl
+    : typeof block.content.url === "string" ? block.content.url : "";
+  const caption = typeof block.content.caption === "string" ? block.content.caption : "";
+  const videoId = url ? youtubeEmbedId(url) : null;
+  if (videoId) {
+    return (
+      <figure style={styles.figure}>
+        <iframe
+          src={`https://www.youtube-nocookie.com/embed/${videoId}`}
+          title={caption || "Video pembelajaran"}
+          style={styles.video}
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+        />
+        {caption ? <figcaption>{caption}</figcaption> : null}
+      </figure>
+    );
+  }
+  if (url) {
+    return (
+      <p style={styles.notice}>
+        <a href={url} target="_blank" rel="noreferrer" style={styles.fileLink}>Buka video di YouTube</a>
+        {caption ? <> · {caption}</> : null}
+      </p>
+    );
+  }
+  return <p style={styles.notice}>Video tersedia melalui tautan pembelajaran.</p>;
 }
 
 function AttachmentBlock({ block, moduleId }: { block: Block; moduleId: number }) {
@@ -125,6 +160,7 @@ const styles = {
   textBlock: { color: "#344054" },
   notice: { color: "#667085", background: "#f8f9fc", padding: 12, borderRadius: 8 },
   figure: { margin: 0, display: "grid", gap: 8 },
+  video: { width: "100%", aspectRatio: "16 / 9", border: 0, borderRadius: 10 },
   image: { maxWidth: "100%", borderRadius: 10 },
   fileLink: { color: "#175cd3", fontWeight: 700 },
   worksheetSection: { marginTop: 32, display: "grid", gap: 12 },

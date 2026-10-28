@@ -33,6 +33,18 @@ type AttemptResponse = {
 };
 type IntegrityEvent = "visibility_hidden" | "window_blur" | "copy_attempt" | "paste_attempt" | "context_menu";
 
+// Label jenis butir untuk chip kepala kartu — sama seperti peta label pada
+// pratinjau guru; tautan_ruas tampil sebagai "Kuis RUAS" di sisi murid.
+const ITEM_TYPE_LABELS: Record<string, string> = {
+  pilihan_ganda: "Pilihan ganda",
+  isian_singkat: "Isian singkat",
+  uraian: "Uraian",
+  unggah_foto: "Unggah foto",
+  langkah_berurutan: "Langkah berurutan",
+  refleksi: "Refleksi",
+  tautan_ruas: "Kuis RUAS",
+};
+
 export default function WorksheetPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -48,6 +60,15 @@ export default function WorksheetPage() {
   const [status, setStatus] = useState<"draf" | "terkumpul" | "dinilai">("draf");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  // Pemutar satu soal per halaman: pageIndex == items.length berarti layar
+  // tinjauan. Snapshot payload terakhir tersimpan menjadi acuan "kotor"
+  // untuk autosave saat berpindah halaman.
+  const [pageIndex, setPageIndex] = useState(0);
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [autoSaving, setAutoSaving] = useState(false);
+  const savedSnapshotRef = useRef<string>("");
+  const cardTopRef = useRef<HTMLDivElement>(null);
+  const firstPageRenderRef = useRef(true);
   const lastIntegrityEventRef = useRef<Record<string, number>>({});
 
   useEffect(() => {
@@ -56,6 +77,22 @@ export default function WorksheetPage() {
       apiRequest<AttemptResponse>(`/murid/worksheets/${params.id}/attempt`),
     ])
       .then(([worksheet, attempt]) => {
+        // Snapshot awal acuan kotor autosave: payload yang persis dibangun
+        // dari jawaban terload (termasuk fallback urutan tampil untuk butir
+        // langkah yang belum disentuh, sama seperti buildAnswersPayload),
+        // supaya sekadar membuka halaman tidak dianggap mengubah jawaban.
+        savedSnapshotRef.current = JSON.stringify(worksheet.data.items.map((item) => {
+          const savedAnswer = attempt.data.answers.find((answer) => answer.item_id === item.id);
+          const steps = item.item_type === "langkah_berurutan" && Array.isArray(item.options?.steps)
+            ? item.options.steps.filter((step): step is string => typeof step === "string")
+            : [];
+          const answerText = (savedAnswer?.answer_text ?? "") || (steps.length ? steps.join("\n") : "");
+          return {
+            itemId: item.id,
+            answerText,
+            ...(savedAnswer?.attachment_key ? { attachmentKey: savedAnswer.attachment_key } : {}),
+          };
+        }));
         setData(worksheet.data);
         setStatus(attempt.data.status);
         setAnswers(Object.fromEntries(attempt.data.answers.map((answer) => [answer.item_id, answer.answer_text ?? ""])));
@@ -88,6 +125,17 @@ export default function WorksheetPage() {
         setMessage(error instanceof Error ? error.message : "LKPD belum dapat dimuat.");
       });
   }, [params.id, router]);
+
+  // Setiap berganti halaman soal, gulir kembali ke awal kartu agar murid
+  // selalu mulai membaca dari soal, bukan sisa posisi gulir halaman
+  // sebelumnya. Render pertama dilewati.
+  useEffect(() => {
+    if (firstPageRenderRef.current) {
+      firstPageRenderRef.current = false;
+      return;
+    }
+    cardTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [pageIndex]);
 
   useEffect(() => {
     if (!assignmentId) return;
@@ -180,6 +228,61 @@ export default function WorksheetPage() {
     });
   }
 
+  // Kotor = payload jawaban saat ini berbeda dari snapshot terakhir yang
+  // berhasil tersimpan di server.
+  function isDirty() {
+    if (!data || status !== "draf") return false;
+    return savedSnapshotRef.current !== JSON.stringify(buildAnswersPayload());
+  }
+
+  // Ordinal 1-based butir di antara butir terhitung soal (semua kecuali
+  // tautan_ruas); null untuk halaman tautan_ruas.
+  function ordinalOf(index: number): number | null {
+    if (!data || data.items[index].item_type === "tautan_ruas") return null;
+    let ordinal = 0;
+    for (let i = 0; i <= index; i += 1) {
+      if (data.items[i].item_type !== "tautan_ruas") ordinal += 1;
+    }
+    return ordinal;
+  }
+
+  // Jalur simpan tunggal untuk simpan manual maupun autosave: PUT payload
+  // yang sama seperti saveDraft selama ini. Mengembalikan true bila
+  // tersimpan; snapshot + waktu simpan diperbarui hanya saat berhasil.
+  async function persistDraft(): Promise<boolean> {
+    if (!data || status !== "draf") return false;
+    setAutoSaving(true);
+    try {
+      const payload = buildAnswersPayload();
+      await apiRequest(`/murid/worksheets/${data.worksheet.id}/answers`, {
+        method: "PUT",
+        body: JSON.stringify({ answers: payload }),
+      });
+      savedSnapshotRef.current = JSON.stringify(payload);
+      setLastSavedAt(new Date());
+      return true;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Draf belum dapat disimpan.");
+      return false;
+    } finally {
+      setAutoSaving(false);
+    }
+  }
+
+  // Pindah halaman dengan autosave: bila ada perubahan belum tersimpan,
+  // simpan dulu; bila penyimpanan gagal, tetap di halaman ini agar murid
+  // tidak kehilangan konteks (pesan error ditampilkan lewat persistDraft).
+  async function goToPage(next: number) {
+    if (!data) return;
+    const target = Math.max(0, Math.min(next, data.items.length));
+    if (target === pageIndex) return;
+    if (status === "draf" && isDirty()) {
+      const saved = await persistDraft();
+      if (!saved) return;
+    }
+    setPageIndex(target);
+  }
+
   async function handlePhotoUpload(itemId: number, file: File) {
     if (!data) return;
     setMessage("");
@@ -225,18 +328,12 @@ export default function WorksheetPage() {
     if (!data || status !== "draf") return;
     setSaving(true);
     setMessage("");
-    try {
-      await apiRequest(`/murid/worksheets/${data.worksheet.id}/answers`, {
-        method: "PUT",
-        body: JSON.stringify({ answers: buildAnswersPayload() }),
-      });
+    const saved = await persistDraft();
+    if (saved) {
       setStatus("draf");
       setMessage("Draf jawaban tersimpan.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Draf belum dapat disimpan.");
-    } finally {
-      setSaving(false);
     }
+    setSaving(false);
   }
 
   async function submitWorksheet() {
@@ -275,6 +372,19 @@ export default function WorksheetPage() {
   if (!data) return <main style={styles.container}><p>Memuat LKPD...</p></main>;
 
   const { answered: answeredCount, total: totalCount } = answerProgress();
+  // Mode paginasi hanya untuk attempt yang masih bisa diedit; tampilan
+  // terkumpul/dinilai tetap daftar penuh read-only seperti sebelumnya.
+  const pagedMode = status === "draf" && data.items.length > 0;
+  const onReview = pagedMode && pageIndex >= data.items.length;
+  const currentItem = pagedMode && !onReview ? data.items[pageIndex] : null;
+  const currentOrdinal = currentItem ? ordinalOf(pageIndex) : null;
+  const saveIndicator = autoSaving
+    ? "Menyimpan…"
+    : isDirty()
+      ? "Belum disimpan"
+      : lastSavedAt
+        ? `Tersimpan ${String(lastSavedAt.getHours()).padStart(2, "0")}:${String(lastSavedAt.getMinutes()).padStart(2, "0")}`
+        : "";
 
   return (
     <main style={styles.container}>
@@ -297,7 +407,16 @@ export default function WorksheetPage() {
 
       {status === "draf" ? (
         <div style={styles.progressBar}>
-          <span style={styles.progressText}>Terjawab {answeredCount} dari {totalCount}</span>
+          <span style={styles.progressText}>
+            {onReview
+              ? `Periksa jawaban · Terjawab ${answeredCount} dari ${totalCount}`
+              : currentOrdinal !== null
+                ? `Soal ${currentOrdinal} dari ${totalCount} · Terjawab ${answeredCount}`
+                : pagedMode
+                  ? `Kuis RUAS · Terjawab ${answeredCount} dari ${totalCount}`
+                  : `Terjawab ${answeredCount} dari ${totalCount}`}
+            {pagedMode && saveIndicator ? <span style={styles.saveState}> · {saveIndicator}</span> : null}
+          </span>
           <span style={styles.progressActions}>
             <button type="button" disabled={saving} onClick={() => void saveDraft()} style={styles.secondaryButtonSmall}>Simpan draf</button>
             <button type="button" disabled={saving} onClick={() => void submitWorksheet()} style={styles.primaryButtonSmall}>Kumpulkan</button>
@@ -305,36 +424,138 @@ export default function WorksheetPage() {
         </div>
       ) : null}
 
-      <section style={styles.list}>
-        {data.items.map((item, index) => (
-          <article key={item.id} style={styles.question}>
-            <strong>{index + 1}. <MathText text={item.prompt} /></strong>
-            <span style={styles.points}>{item.points} poin</span>
-            <AnswerField
-              item={item}
-              value={answers[item.id] ?? ""}
-              disabled={status !== "draf"}
-              onChange={(value) => setAnswer(item.id, value)}
-              attachmentKey={attachmentKeys[item.id]}
-              attachmentName={attachmentNames[item.id]}
-              uploading={uploadingItemId === item.id}
-              onPhotoUpload={(file) => void handlePhotoUpload(item.id, file)}
-              onSequenceMove={() => setTouchedSequences((current) => new Set(current).add(item.id))}
-            />
-            {status !== "draf" && explanations[item.id] ? (
-              <div style={styles.explanation}>
-                <strong>Pembahasan</strong>
-                <p style={styles.explanationText}><MathText text={explanations[item.id]} /></p>
-              </div>
-            ) : null}
-          </article>
-        ))}
-      </section>
+      {pagedMode ? (
+        <nav style={styles.chipRow} aria-label="Navigasi soal">
+          {data.items.map((item, index) => {
+            const ordinal = ordinalOf(index);
+            const isActive = index === pageIndex;
+            const isAnswered = ordinal !== null && isItemAnswered(item);
+            return (
+              <button
+                key={item.id}
+                type="button"
+                disabled={autoSaving}
+                aria-label={ordinal !== null ? `Soal ${ordinal}${isAnswered ? ", sudah terjawab" : ""}` : "Kuis RUAS"}
+                aria-current={isActive ? true : undefined}
+                onClick={() => void goToPage(index)}
+                style={{
+                  ...styles.chip,
+                  ...(isAnswered ? styles.chipAnswered : {}),
+                  ...(isActive ? styles.chipActive : {}),
+                }}
+              >
+                {ordinal !== null ? ordinal : "RUAS"}
+              </button>
+            );
+          })}
+        </nav>
+      ) : null}
 
-      <div style={styles.actions}>
-        <button type="button" disabled={saving || status !== "draf"} onClick={() => void saveDraft()} style={styles.secondaryButton}>Simpan draf</button>
-        <button type="button" disabled={saving || status !== "draf"} onClick={() => void submitWorksheet()} style={styles.primaryButton}>Kumpulkan LKPD</button>
+      <div ref={cardTopRef} style={styles.pageAnchor}>
+        {pagedMode && onReview ? (
+          <section style={styles.review}>
+            <p style={styles.reviewSummary}>{answeredCount} dari {totalCount} soal terjawab</p>
+            <p style={styles.reviewHint}>Periksa kembali sebelum mengumpulkan — setelah terkumpul, jawaban tidak dapat diubah.</p>
+            <div style={styles.reviewList}>
+              {data.items.map((item, index) => {
+                const ordinal = ordinalOf(index);
+                if (ordinal === null) {
+                  return (
+                    <button key={item.id} type="button" disabled={autoSaving} style={styles.reviewRow} onClick={() => void goToPage(index)}>
+                      <span style={styles.reviewOrdinal}>RUAS</span>
+                      <span style={styles.reviewPrompt}>Kuis RUAS — buka dari halaman soalnya</span>
+                    </button>
+                  );
+                }
+                const answered = isItemAnswered(item);
+                const excerpt = item.prompt.length > 90 ? `${item.prompt.slice(0, 90)}…` : item.prompt;
+                return (
+                  <button key={item.id} type="button" disabled={autoSaving} style={styles.reviewRow} onClick={() => void goToPage(index)}>
+                    <span style={styles.reviewOrdinal}>{ordinal}</span>
+                    <span style={styles.reviewPrompt}>{excerpt}</span>
+                    <span style={answered ? styles.reviewChipDone : styles.reviewChipTodo}>{answered ? "Terjawab" : "Belum dijawab"}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        ) : pagedMode && currentItem ? (
+          <section style={styles.list}>
+            <article style={styles.question}>
+              <div style={styles.cardHead}>
+                <span style={styles.cardTitle}>{currentOrdinal !== null ? `Soal ${currentOrdinal} dari ${totalCount}` : "Kuis RUAS"}</span>
+                <span style={styles.metaChips}>
+                  <span style={styles.typeChip}>{ITEM_TYPE_LABELS[currentItem.item_type] ?? "Soal"}</span>
+                  {currentItem.points > 0 ? <span style={styles.pointsChip}>{currentItem.points} poin</span> : null}
+                </span>
+              </div>
+              <div className="lkpd-prompt"><MathText text={currentItem.prompt} /></div>
+              <AnswerField
+                item={currentItem}
+                value={answers[currentItem.id] ?? ""}
+                disabled={false}
+                onChange={(value) => setAnswer(currentItem.id, value)}
+                attachmentKey={attachmentKeys[currentItem.id]}
+                attachmentName={attachmentNames[currentItem.id]}
+                uploading={uploadingItemId === currentItem.id}
+                onPhotoUpload={(file) => void handlePhotoUpload(currentItem.id, file)}
+                onSequenceMove={() => setTouchedSequences((current) => new Set(current).add(currentItem.id))}
+              />
+            </article>
+          </section>
+        ) : (
+          <section style={styles.list}>
+            {data.items.map((item, index) => (
+              <article key={item.id} style={styles.question}>
+                <strong>{index + 1}. <MathText text={item.prompt} /></strong>
+                <span style={styles.points}>{item.points} poin</span>
+                <AnswerField
+                  item={item}
+                  value={answers[item.id] ?? ""}
+                  disabled={status !== "draf"}
+                  onChange={(value) => setAnswer(item.id, value)}
+                  attachmentKey={attachmentKeys[item.id]}
+                  attachmentName={attachmentNames[item.id]}
+                  uploading={uploadingItemId === item.id}
+                  onPhotoUpload={(file) => void handlePhotoUpload(item.id, file)}
+                  onSequenceMove={() => setTouchedSequences((current) => new Set(current).add(item.id))}
+                />
+                {status !== "draf" && explanations[item.id] ? (
+                  <div style={styles.explanation}>
+                    <strong>Pembahasan</strong>
+                    <p style={styles.explanationText}><MathText text={explanations[item.id]} /></p>
+                  </div>
+                ) : null}
+              </article>
+            ))}
+          </section>
+        )}
       </div>
+
+      {pagedMode ? (
+        <div style={styles.navBar}>
+          {onReview ? (
+            <>
+              <button type="button" disabled={autoSaving} onClick={() => void goToPage(data.items.length - 1)} style={styles.navButton}>← Kembali ke soal terakhir</button>
+              <button type="button" disabled={saving} onClick={() => void submitWorksheet()} style={{ ...styles.navButton, ...styles.navPrimary }}>Kumpulkan</button>
+            </>
+          ) : (
+            <>
+              <button type="button" disabled={pageIndex === 0 || autoSaving} onClick={() => void goToPage(pageIndex - 1)} style={styles.navButton}>← Sebelumnya</button>
+              {pageIndex >= data.items.length - 1 ? (
+                <button type="button" disabled={autoSaving} onClick={() => void goToPage(data.items.length)} style={{ ...styles.navButton, ...styles.navPrimary }}>Periksa jawaban →</button>
+              ) : (
+                <button type="button" disabled={autoSaving} onClick={() => void goToPage(pageIndex + 1)} style={{ ...styles.navButton, ...styles.navPrimary }}>Berikutnya →</button>
+              )}
+            </>
+          )}
+        </div>
+      ) : (
+        <div style={styles.actions}>
+          <button type="button" disabled={saving || status !== "draf"} onClick={() => void saveDraft()} style={styles.secondaryButton}>Simpan draf</button>
+          <button type="button" disabled={saving || status !== "draf"} onClick={() => void submitWorksheet()} style={styles.primaryButton}>Kumpulkan LKPD</button>
+        </div>
+      )}
     </main>
   );
 }
@@ -458,7 +679,30 @@ const styles = {
   continueButton: { display: "inline-block", marginTop: 16, borderRadius: 8, background: "#175cd3", color: "white", padding: "12px 16px", fontWeight: 700, textDecoration: "none" },
   progressBar: { position: "sticky" as const, top: 0, zIndex: 10, display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" as const, background: "#f8f9fc", border: "1px solid #eaecf0", borderRadius: 10, padding: "10px 12px", marginTop: 20 },
   progressText: { fontWeight: 700, fontSize: 14 },
+  saveState: { color: "#667085", fontWeight: 400 },
   progressActions: { display: "flex", gap: 8 },
+  chipRow: { display: "flex", gap: 8, flexWrap: "wrap" as const, marginTop: 12 },
+  chip: { minHeight: 40, minWidth: 40, padding: "8px 10px", borderRadius: 999, border: "1px solid #d0d5dd", background: "white", color: "#475467", fontWeight: 700, fontSize: 13, cursor: "pointer" },
+  chipAnswered: { background: "#eff8ff", borderColor: "#175cd3", color: "#175cd3" },
+  chipActive: { background: "#175cd3", borderColor: "#175cd3", color: "white" },
+  pageAnchor: { scrollMarginTop: 84 },
+  cardHead: { display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" as const },
+  cardTitle: { fontWeight: 700, fontSize: 15, color: "#175cd3" },
+  metaChips: { display: "flex", gap: 6, flexWrap: "wrap" as const },
+  typeChip: { background: "#f2f4f7", border: "1px solid #eaecf0", borderRadius: 999, padding: "3px 9px", color: "#475467", fontSize: 12, fontWeight: 700 },
+  pointsChip: { background: "#eff8ff", border: "1px solid #b2ddff", borderRadius: 999, padding: "3px 9px", color: "#175cd3", fontSize: 12, fontWeight: 700 },
+  review: { marginTop: 28, display: "grid", gap: 12 },
+  reviewSummary: { fontWeight: 700, fontSize: 17, margin: 0 },
+  reviewHint: { color: "#667085", lineHeight: 1.6, margin: 0 },
+  reviewList: { display: "grid", gap: 8 },
+  reviewRow: { display: "flex", gap: 10, alignItems: "center", textAlign: "left" as const, border: "1px solid #eaecf0", borderRadius: 10, background: "white", padding: "12px 14px", cursor: "pointer", fontFamily: "inherit" },
+  reviewOrdinal: { fontWeight: 700, color: "#175cd3", minWidth: 28 },
+  reviewPrompt: { flex: 1, color: "#344054", lineHeight: 1.5 },
+  reviewChipDone: { background: "#ecfdf3", border: "1px solid #a6f4c5", borderRadius: 999, padding: "3px 9px", color: "#027a48", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" as const },
+  reviewChipTodo: { background: "#f9fafb", border: "1px solid #eaecf0", borderRadius: 999, padding: "3px 9px", color: "#667085", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" as const },
+  navBar: { position: "sticky" as const, bottom: 0, zIndex: 10, display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", background: "#f8f9fc", border: "1px solid #eaecf0", borderRadius: 10, padding: "10px 12px", marginTop: 16 },
+  navButton: { minHeight: 48, border: "1px solid #d0d5dd", borderRadius: 8, background: "white", padding: "12px 18px", fontWeight: 700, fontSize: 15, cursor: "pointer" },
+  navPrimary: { border: 0, background: "#175cd3", color: "white" },
   primaryButtonSmall: { border: 0, borderRadius: 8, background: "#175cd3", color: "white", padding: "8px 12px", fontWeight: 700 },
   secondaryButtonSmall: { border: "1px solid #d0d5dd", borderRadius: 8, background: "white", padding: "8px 12px" },
   eyebrow: { color: "#475467", fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", margin: "32px 0 8px" },

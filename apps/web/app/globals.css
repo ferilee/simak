@@ -1570,6 +1570,15 @@ a {
   margin: 0.4em 0;
 }
 
+/* Prompt soal pada pemutar LKPD satu soal per halaman: tipografi baca
+   nyaman seperti materi, terlingkup khusus halaman LKPD murid (bukan
+   bagian dari .math-rich-content). */
+.lkpd-prompt {
+  font-size: 1.05rem;
+  line-height: 1.7;
+  text-align: justify;
+}
+
 .wizard-step small {
   color: var(--color-muted);
   font-size: 12px;

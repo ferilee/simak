@@ -35,8 +35,23 @@ type WorksheetSummary = {
   title: string;
   instructions: string | null;
   status: "draf" | "terbit" | "arsip";
+  started_count: number;
+  submitted_count: number;
+  last_activity_at: string | null;
+  updated_at: string;
 };
 type WorksheetsResponse = { ok: true; data: WorksheetSummary[] };
+type WorksheetPreviewItem = {
+  id: number;
+  sort_order: number;
+  item_type: string;
+  prompt: string;
+  options: Record<string, unknown> | null;
+  answer_key: string | null;
+  explanation: string | null;
+  points: number;
+};
+type WorksheetItemsResponse = { ok: true; data: WorksheetPreviewItem[] };
 type ClassSummary = { id: number; name: string; subject: string; academic_year: string; join_code: string; is_archived: boolean };
 type ClassesResponse = { ok: true; data: ClassSummary[] };
 type AssignmentSummary = {
@@ -160,6 +175,10 @@ export default function GuruPage() {
   const [moduleStatusFilter, setModuleStatusFilter] = useState<"semua" | "draf" | "terbit" | "arsip">("semua");
   const [moduleSubjectFilter, setModuleSubjectFilter] = useState("semua");
   const [moduleSort, setModuleSort] = useState<"terbaru" | "judul" | "penonton">("terbaru");
+  const [worksheetQuery, setWorksheetQuery] = useState("");
+  const [worksheetStatusFilter, setWorksheetStatusFilter] = useState<"semua" | "draf" | "terbit" | "arsip">("semua");
+  const [worksheetModuleFilter, setWorksheetModuleFilter] = useState("semua");
+  const [worksheetSort, setWorksheetSort] = useState<"terbaru" | "judul" | "dikerjakan">("terbaru");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [showCreateModule, setShowCreateModule] = useState(false);
   const [title, setTitle] = useState("");
@@ -231,6 +250,10 @@ export default function GuruPage() {
   const [previewBlocks, setPreviewBlocks] = useState<ModuleBlock[] | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState("");
+  const [previewWorksheet, setPreviewWorksheet] = useState<WorksheetSummary | null>(null);
+  const [previewItems, setPreviewItems] = useState<WorksheetPreviewItem[] | null>(null);
+  const [previewWorksheetLoading, setPreviewWorksheetLoading] = useState(false);
+  const [previewWorksheetError, setPreviewWorksheetError] = useState("");
 
   const guruSteps = [
     { title: "Bangun materi", mobileTitle: "Materi", description: "Buat modul dan susun isi" },
@@ -261,6 +284,27 @@ export default function GuruPage() {
     setModuleStatusFilter("semua");
     setModuleSubjectFilter("semua");
     setModuleSort("terbaru");
+  }
+
+  const normalizedWorksheetQuery = worksheetQuery.trim().toLowerCase();
+  const visibleWorksheets = worksheets
+    .filter((worksheet) => worksheetStatusFilter === "semua" || worksheet.status === worksheetStatusFilter)
+    .filter((worksheet) => worksheetModuleFilter === "semua" || worksheet.module_id === Number(worksheetModuleFilter))
+    .filter((worksheet) => normalizedWorksheetQuery === ""
+      || worksheet.title.toLowerCase().includes(normalizedWorksheetQuery)
+      || (worksheet.instructions ?? "").toLowerCase().includes(normalizedWorksheetQuery))
+    .slice()
+    .sort((a, b) => {
+      if (worksheetSort === "judul") return a.title.localeCompare(b.title, "id");
+      if (worksheetSort === "dikerjakan") return b.started_count - a.started_count || a.title.localeCompare(b.title, "id");
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    });
+
+  function resetWorksheetFilters() {
+    setWorksheetQuery("");
+    setWorksheetStatusFilter("semua");
+    setWorksheetModuleFilter("semua");
+    setWorksheetSort("terbaru");
   }
 
   async function loadModules() {
@@ -316,13 +360,16 @@ export default function GuruPage() {
   }, []);
 
   useEffect(() => {
-    if (!previewModule) return;
+    if (!previewModule && !previewWorksheet) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closePreview();
+      if (event.key === "Escape") {
+        closePreview();
+        closeWorksheetPreview();
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [previewModule]);
+  }, [previewModule, previewWorksheet]);
 
   async function loadAttempts(worksheetId: number) {
     setAttemptLoading(true);
@@ -557,6 +604,28 @@ export default function GuruPage() {
     setPreviewBlocks(null);
     setPreviewError("");
     setPreviewLoading(false);
+  }
+
+  async function openWorksheetPreview(worksheet: WorksheetSummary) {
+    setPreviewWorksheet(worksheet);
+    setPreviewItems(null);
+    setPreviewWorksheetError("");
+    setPreviewWorksheetLoading(true);
+    try {
+      const response = await apiRequest<WorksheetItemsResponse>(`/worksheets/${worksheet.id}/items`);
+      setPreviewItems(response.data);
+    } catch (error) {
+      setPreviewWorksheetError(error instanceof Error ? error.message : "Soal LKPD belum dapat dimuat.");
+    } finally {
+      setPreviewWorksheetLoading(false);
+    }
+  }
+
+  function closeWorksheetPreview() {
+    setPreviewWorksheet(null);
+    setPreviewItems(null);
+    setPreviewWorksheetError("");
+    setPreviewWorksheetLoading(false);
   }
 
   function setBlockFirstField(element: HTMLElement | null) {
@@ -1128,7 +1197,7 @@ export default function GuruPage() {
         <div className="module-section-heading">
           <div>
             <h2 style={styles.sectionTitle}>LKPD</h2>
-            <p className="module-section-summary">{worksheets.length} LKPD · pilih satu untuk menambah soal</p>
+            <p className="module-section-summary">{visibleWorksheets.length === worksheets.length ? `${worksheets.length} LKPD · pilih satu untuk menambah soal` : `Menampilkan ${visibleWorksheets.length} dari ${worksheets.length} LKPD`}</p>
           </div>
         </div>
         <details className="guru-collapsible" open={worksheets.length === 0}>
@@ -1140,21 +1209,74 @@ export default function GuruPage() {
           </form>
         </details>
         {worksheets.length > 0 ? (
+          <div style={styles.moduleToolbar}>
+            <input
+              type="search"
+              value={worksheetQuery}
+              onChange={(event) => setWorksheetQuery(event.target.value)}
+              placeholder="Cari LKPD…"
+              aria-label="Cari LKPD"
+              style={{ ...styles.input, ...styles.moduleSearchInput }}
+            />
+            <select
+              value={worksheetStatusFilter}
+              onChange={(event) => setWorksheetStatusFilter(event.target.value as "semua" | "draf" | "terbit" | "arsip")}
+              aria-label="Saring status LKPD"
+              style={{ ...styles.input, ...styles.moduleFilterSelect }}
+            >
+              <option value="semua">Semua status</option>
+              <option value="draf">Draf</option>
+              <option value="terbit">Terbit</option>
+              <option value="arsip">Arsip</option>
+            </select>
+            <select
+              value={worksheetModuleFilter}
+              onChange={(event) => setWorksheetModuleFilter(event.target.value)}
+              aria-label="Saring modul LKPD"
+              style={{ ...styles.input, ...styles.moduleFilterSelect }}
+            >
+              <option value="semua">Semua modul</option>
+              {modules.map((module) => (
+                <option key={module.id} value={String(module.id)}>{module.title}</option>
+              ))}
+            </select>
+            <select
+              value={worksheetSort}
+              onChange={(event) => setWorksheetSort(event.target.value as "terbaru" | "judul" | "dikerjakan")}
+              aria-label="Urutkan LKPD"
+              style={{ ...styles.input, ...styles.moduleFilterSelect }}
+            >
+              <option value="terbaru">Terakhir diubah</option>
+              <option value="judul">Judul A–Z</option>
+              <option value="dikerjakan">Paling banyak dikerjakan</option>
+            </select>
+          </div>
+        ) : null}
+        {worksheets.length === 0 ? <p style={styles.empty}>Belum ada LKPD.</p> : visibleWorksheets.length === 0 ? (
+          <div style={styles.empty}>
+            <p style={{ margin: "0 0 10px" }}>Tidak ada LKPD yang cocok dengan pencarian/saringan ini.</p>
+            <button type="button" onClick={resetWorksheetFilters} style={styles.secondaryButton}>Atur ulang saringan</button>
+          </div>
+        ) : (
           <div className="module-list">
-            {worksheets.map((worksheet) => (
+            {visibleWorksheets.map((worksheet) => (
               <article key={worksheet.id} className={`module-row ${selectedWorksheetId === worksheet.id ? "is-selected" : ""}`}>
                 <button type="button" onClick={() => setSelectedWorksheetId(worksheet.id)} className="module-row-main">
                   <strong>{worksheet.title}</strong>
                   <span>{worksheet.status}</span>
+                  <span>{worksheet.started_count > 0 ? `${worksheet.started_count} murid mengerjakan · ${worksheet.submitted_count} mengumpulkan` : "Belum ada murid yang mengerjakan"}</span>
                 </button>
                 <span className={`module-status module-status-${worksheet.status}`}>{worksheet.status}</span>
+                <button type="button" onClick={() => void openWorksheetPreview(worksheet)} className="module-row-action">
+                  Pratinjau
+                </button>
                 <button type="button" onClick={() => void changeWorksheetStatus(worksheet)} className="module-row-action">
                   {worksheet.status === "terbit" ? "Arsipkan" : "Terbitkan"}
                 </button>
               </article>
             ))}
           </div>
-        ) : <p style={styles.empty}>Belum ada LKPD.</p>}
+        )}
       </section>
 
       {selectedWorksheetId ? (
@@ -1553,6 +1675,59 @@ export default function GuruPage() {
           </div>
         </div>
       ) : null}
+
+      {previewWorksheet ? (
+        <div style={styles.modalOverlay} onClick={closeWorksheetPreview}>
+          <div
+            style={styles.modalPanel}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Pratinjau LKPD ${previewWorksheet.title}`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div style={styles.modalHeader}>
+              <div style={styles.modalHeading}>
+                <p style={styles.eyebrow}>Pratinjau LKPD — tampilan seperti yang dilihat murid</p>
+                <h2 style={styles.modalTitle}><MathText text={previewWorksheet.title} /></h2>
+                <p style={styles.muted}>
+                  {(() => {
+                    const parentModule = modules.find((module) => module.id === previewWorksheet.module_id);
+                    return parentModule ? <>{parentModule.title} · </> : null;
+                  })()}
+                  <span className={`module-status module-status-${previewWorksheet.status}`}>{previewWorksheet.status}</span>
+                </p>
+                {previewWorksheet.status !== "terbit" ? (
+                  <p style={styles.modalNote}>LKPD ini belum terbit; murid belum dapat melihatnya.</p>
+                ) : null}
+                {previewWorksheet.instructions ? (
+                  <p style={styles.muted}><MathText text={previewWorksheet.instructions} /></p>
+                ) : null}
+                {previewWorksheet.started_count > 0 ? (
+                  <p style={styles.muted}>
+                    {previewWorksheet.started_count} murid mengerjakan · {previewWorksheet.submitted_count} mengumpulkan
+                  </p>
+                ) : (
+                  <p style={styles.muted}>Belum ada murid yang mengerjakan LKPD ini.</p>
+                )}
+              </div>
+              <button type="button" onClick={closeWorksheetPreview} style={styles.modalClose} aria-label="Tutup pratinjau LKPD">×</button>
+            </div>
+            <div style={styles.modalBody}>
+              {previewWorksheetLoading ? <p style={styles.muted}>Memuat soal LKPD...</p> : null}
+              {!previewWorksheetLoading && previewWorksheetError ? <p style={styles.modalError}>{previewWorksheetError}</p> : null}
+              {!previewWorksheetLoading && !previewWorksheetError && previewItems ? (
+                previewItems.length === 0 ? (
+                  <p style={styles.empty}>Belum ada soal pada LKPD ini.</p>
+                ) : (
+                  previewItems.map((item, index) => (
+                    <WorksheetPreviewItemView key={item.id} item={item} index={index} />
+                  ))
+                )
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
@@ -1571,6 +1746,117 @@ function PreviewBlock({ block, moduleId }: { block: ModuleBlock; moduleId: numbe
     return <PreviewAttachmentBlock block={block} moduleId={moduleId} />;
   }
   return null;
+}
+
+const WORKSHEET_ITEM_TYPE_LABELS: Record<string, string> = {
+  pilihan_ganda: "Pilihan ganda",
+  isian_singkat: "Isian singkat",
+  uraian: "Uraian",
+  unggah_foto: "Unggah foto",
+  langkah_berurutan: "Langkah berurutan",
+  refleksi: "Refleksi",
+  tautan_ruas: "Tautan RUAS",
+};
+
+function worksheetItemStringOptions(options: Record<string, unknown> | null, key: string): string[] {
+  const raw = options?.[key];
+  return Array.isArray(raw) ? raw.filter((entry): entry is string => typeof entry === "string") : [];
+}
+
+function WorksheetPreviewItemView({ item, index }: { item: WorksheetPreviewItem; index: number }) {
+  const typeLabel = WORKSHEET_ITEM_TYPE_LABELS[item.item_type] ?? item.item_type;
+  return (
+    <article style={styles.worksheetPreviewItem}>
+      <div style={styles.worksheetPreviewPrompt}>
+        <strong>{index + 1}. <MathText text={item.prompt} /></strong>
+        <span style={styles.muted}>{typeLabel} · {item.points} poin</span>
+      </div>
+      <WorksheetPreviewAnswer item={item} />
+      <div style={styles.teacherOnlyBox}>
+        <p style={styles.teacherOnlyTitle}>Khusus guru</p>
+        {item.answer_key || item.explanation ? (
+          <>
+            {item.answer_key ? (
+              <p style={styles.teacherOnlyText}><strong>Kunci/Rubrik:</strong> <MathText text={item.answer_key} /></p>
+            ) : null}
+            {item.explanation ? (
+              <p style={styles.teacherOnlyText}><strong>Pembahasan:</strong> <MathText text={item.explanation} /></p>
+            ) : null}
+          </>
+        ) : (
+          <p style={styles.teacherOnlyText}>Belum ada kunci atau pembahasan.</p>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function WorksheetPreviewAnswer({ item }: { item: WorksheetPreviewItem }) {
+  if (item.item_type === "pilihan_ganda") {
+    const options = worksheetItemStringOptions(item.options, "options");
+    return (
+      <div style={styles.previewOptions}>
+        {options.map((option, optionIndex) => (
+          <label key={`${option}-${optionIndex}`} style={styles.previewOption}>
+            <input type="radio" name={`preview-item-${item.id}`} disabled />
+            <span>{String.fromCharCode(65 + optionIndex)}. <MathText text={option} />{item.answer_key === option ? <strong> (kunci)</strong> : null}</span>
+          </label>
+        ))}
+      </div>
+    );
+  }
+  if (item.item_type === "isian_singkat") {
+    const unit = typeof item.options?.unit === "string" ? item.options.unit : null;
+    return (
+      <div style={styles.previewShortAnswer}>
+        <input disabled placeholder="Jawaban singkat" style={styles.input} />
+        {unit ? <span style={styles.muted}>{unit}</span> : null}
+      </div>
+    );
+  }
+  if (item.item_type === "uraian") {
+    const placeholder = typeof item.options?.placeholder === "string" ? item.options.placeholder : "Tulis jawaban Anda";
+    return <textarea disabled rows={4} placeholder={placeholder} style={styles.textarea} />;
+  }
+  if (item.item_type === "unggah_foto") {
+    const maxFiles = typeof item.options?.maxFiles === "number" ? item.options.maxFiles : 1;
+    const instruction = typeof item.options?.instruction === "string" ? item.options.instruction : null;
+    return (
+      <div style={styles.previewNotice}>
+        <p style={{ margin: 0 }}>Murid mengunggah foto jawaban (maksimal {maxFiles} berkas).</p>
+        {instruction ? <p style={{ margin: "6px 0 0" }}><MathText text={instruction} /></p> : null}
+      </div>
+    );
+  }
+  if (item.item_type === "langkah_berurutan") {
+    const steps = worksheetItemStringOptions(item.options, "steps");
+    return (
+      <div>
+        <ol style={styles.previewSteps}>
+          {steps.map((step, stepIndex) => (
+            <li key={`${step}-${stepIndex}`}><MathText text={step} /></li>
+          ))}
+        </ol>
+        <p style={styles.previewCaption}>Urutan tampil ke murid (diacak dari urutan benar).</p>
+      </div>
+    );
+  }
+  if (item.item_type === "refleksi") {
+    return <p style={styles.previewNotice}>Murid menulis refleksi (3-2-1) pada kolom teks.</p>;
+  }
+  if (item.item_type === "tautan_ruas") {
+    const url = typeof item.options?.url === "string" ? item.options.url : "";
+    const label = typeof item.options?.label === "string" && item.options.label ? item.options.label : "Buka Kuis di RUAS";
+    return (
+      <div style={styles.previewRuas}>
+        {url ? (
+          <a href={url} target="_blank" rel="noreferrer" style={{ ...styles.primaryButton, textDecoration: "none", textAlign: "center" as const }}>{label}</a>
+        ) : null}
+        {url ? <span style={styles.previewCaption}>{url}</span> : null}
+      </div>
+    );
+  }
+  return <p style={styles.previewNotice}>Jenis soal ini tidak dikenal.</p>;
 }
 
 function youtubeEmbedId(url: string): string | null {
@@ -1699,6 +1985,17 @@ const styles = {
   previewVideo: { width: "100%", aspectRatio: "16 / 9", border: 0, borderRadius: 10 },
   previewFileLink: { color: "#175cd3", fontWeight: 700 },
   previewNotice: { color: "#667085", background: "#f8f9fc", padding: 12, borderRadius: 8, margin: 0 },
+  worksheetPreviewItem: { display: "grid", gap: 10, border: "1px solid #eaecf0", borderRadius: 10, padding: 14 },
+  worksheetPreviewPrompt: { display: "grid", gap: 4 },
+  previewOptions: { display: "grid", gap: 8 },
+  previewOption: { display: "flex", gap: 8, alignItems: "flex-start" },
+  previewShortAnswer: { display: "flex", gap: 8, alignItems: "center" },
+  previewSteps: { margin: "0 0 6px", paddingLeft: 22, display: "grid", gap: 4 },
+  previewCaption: { color: "#667085", fontSize: 13, margin: 0, wordBreak: "break-all" as const },
+  previewRuas: { display: "grid", gap: 8 },
+  teacherOnlyBox: { border: "1px dashed #84adff", background: "#f5f8ff", borderRadius: 8, padding: 12, display: "grid", gap: 6 },
+  teacherOnlyTitle: { margin: 0, fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", color: "#175cd3", textTransform: "uppercase" as const },
+  teacherOnlyText: { margin: 0, whiteSpace: "pre-wrap" as const },
 };
 
 function toDateTimeLocal(value: Date) {

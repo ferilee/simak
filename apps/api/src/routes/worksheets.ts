@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
 import { db, schema } from "@simak/db";
 import {
@@ -16,7 +16,16 @@ export const worksheetRoutes = new Hono();
 
 const { modules, users, worksheetAnswers, worksheetAttempts, worksheetItems, worksheets } = schema;
 
-function serializeWorksheet(worksheet: typeof worksheets.$inferSelect) {
+type WorksheetAttemptStats = {
+  started_count: number;
+  submitted_count: number;
+  last_activity_at: Date | null;
+};
+
+function serializeWorksheet(
+  worksheet: typeof worksheets.$inferSelect,
+  stats: WorksheetAttemptStats = { started_count: 0, submitted_count: 0, last_activity_at: null },
+) {
   return {
     id: worksheet.id,
     module_id: worksheet.moduleId,
@@ -25,6 +34,9 @@ function serializeWorksheet(worksheet: typeof worksheets.$inferSelect) {
     status: worksheet.status,
     created_at: worksheet.createdAt,
     updated_at: worksheet.updatedAt,
+    started_count: stats.started_count,
+    submitted_count: stats.submitted_count,
+    last_activity_at: stats.last_activity_at,
   };
 }
 
@@ -55,8 +67,31 @@ async function ownedWorksheet(userId: number, worksheetId: number) {
 
 worksheetRoutes.get("/", requireRole("guru"), async (c) => {
   const user = c.get("user")!;
-  const rows = await db.select().from(worksheets).where(eq(worksheets.teacherId, user.userId));
-  return c.json({ ok: true, data: rows.map(serializeWorksheet) });
+  // Statistik pengerjaan per LKPD dari worksheet_attempts:
+  // started_count = murid unik yang sudah mulai mengerjakan (punya attempt),
+  // submitted_count = murid unik yang attempt-nya terkumpul/dinilai,
+  // last_activity_at = aktivitas attempt terakhir.
+  const rows = await db
+    .select({
+      worksheet: worksheets,
+      startedCount: sql<number>`count(distinct ${worksheetAttempts.studentId})`,
+      submittedCount: sql<number>`count(distinct case when ${worksheetAttempts.status} in ('terkumpul', 'dinilai') then ${worksheetAttempts.studentId} end)`,
+      lastActivityAt: sql<Date | null>`max(${worksheetAttempts.updatedAt})`,
+    })
+    .from(worksheets)
+    .leftJoin(worksheetAttempts, eq(worksheetAttempts.worksheetId, worksheets.id))
+    .where(eq(worksheets.teacherId, user.userId))
+    .groupBy(worksheets.id);
+  return c.json({
+    ok: true,
+    data: rows.map((row) =>
+      serializeWorksheet(row.worksheet, {
+        started_count: Number(row.startedCount),
+        submitted_count: Number(row.submittedCount),
+        last_activity_at: row.lastActivityAt,
+      }),
+    ),
+  });
 });
 
 worksheetRoutes.post(

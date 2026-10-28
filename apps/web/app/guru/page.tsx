@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiBase, apiRequest } from "../../lib/api";
 import { Toast } from "../../components/Toast";
-import { MathText } from "../../components/MathContent";
+import { MathHtml, MathText } from "../../components/MathContent";
 
 type ModuleSummary = {
   id: number;
@@ -17,6 +17,14 @@ type ModuleSummary = {
 };
 
 type ModulesResponse = { ok: true; data: ModuleSummary[] };
+type ModuleBlock = {
+  id: number;
+  sort_order: number;
+  type: "teks" | "gambar" | "video" | "berkas" | "sub_bab";
+  content: Record<string, unknown>;
+  attachment_key: string | null;
+};
+type ModuleBlocksResponse = { ok: true; data: ModuleBlock[] };
 type WorksheetSummary = {
   id: number;
   module_id: number | null;
@@ -209,6 +217,10 @@ export default function GuruPage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [guruStep, setGuruStep] = useState(0);
+  const [previewModule, setPreviewModule] = useState<ModuleSummary | null>(null);
+  const [previewBlocks, setPreviewBlocks] = useState<ModuleBlock[] | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
 
   const guruSteps = [
     { title: "Bangun materi", mobileTitle: "Materi", description: "Buat modul dan susun isi" },
@@ -269,6 +281,15 @@ export default function GuruPage() {
     }, 30_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!previewModule) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closePreview();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [previewModule]);
 
   async function loadAttempts(worksheetId: number) {
     setAttemptLoading(true);
@@ -481,6 +502,28 @@ export default function GuruPage() {
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Status modul belum dapat diubah.");
     }
+  }
+
+  async function openPreview(module: ModuleSummary) {
+    setPreviewModule(module);
+    setPreviewBlocks(null);
+    setPreviewError("");
+    setPreviewLoading(true);
+    try {
+      const response = await apiRequest<ModuleBlocksResponse>(`/modules/${module.id}/blocks`);
+      setPreviewBlocks(response.data);
+    } catch (error) {
+      setPreviewError(error instanceof Error ? error.message : "Isi materi belum dapat dimuat.");
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  function closePreview() {
+    setPreviewModule(null);
+    setPreviewBlocks(null);
+    setPreviewError("");
+    setPreviewLoading(false);
   }
 
   async function addTextBlock(event: FormEvent<HTMLFormElement>) {
@@ -851,6 +894,9 @@ export default function GuruPage() {
                   <span>{module.subject} · versi {module.version}</span>
                 </button>
                 <span className={`module-status module-status-${module.status}`}>{module.status}</span>
+                <button type="button" onClick={() => void openPreview(module)} className="module-row-action">
+                  Pratinjau
+                </button>
                 <button type="button" onClick={() => void changeStatus(module)} className="module-row-action">
                   {module.status === "terbit" ? "Arsipkan" : "Terbitkan"}
                 </button>
@@ -1316,8 +1362,126 @@ export default function GuruPage() {
           </footer>
         </section>
       </div>
+
+      {previewModule ? (
+        <div style={styles.modalOverlay} onClick={closePreview}>
+          <div
+            style={styles.modalPanel}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Pratinjau ${previewModule.title}`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div style={styles.modalHeader}>
+              <div style={styles.modalHeading}>
+                <p style={styles.eyebrow}>Pratinjau — tampilan seperti yang dilihat murid</p>
+                <h2 style={styles.modalTitle}><MathText text={previewModule.title} /></h2>
+                <p style={styles.muted}>
+                  {previewModule.subject} · <span className={`module-status module-status-${previewModule.status}`}>{previewModule.status}</span>
+                </p>
+                {previewModule.status !== "terbit" ? (
+                  <p style={styles.modalNote}>Modul ini belum terbit; murid belum dapat melihatnya.</p>
+                ) : null}
+                {previewModule.description ? (
+                  <p style={styles.muted}><MathText text={previewModule.description} /></p>
+                ) : null}
+              </div>
+              <button type="button" onClick={closePreview} style={styles.modalClose} aria-label="Tutup pratinjau">×</button>
+            </div>
+            <div style={styles.modalBody}>
+              {previewLoading ? <p style={styles.muted}>Memuat isi materi...</p> : null}
+              {!previewLoading && previewError ? <p style={styles.modalError}>{previewError}</p> : null}
+              {!previewLoading && !previewError && previewBlocks ? (
+                previewBlocks.length === 0 ? (
+                  <p style={styles.empty}>Belum ada isi pada materi ini.</p>
+                ) : (
+                  previewBlocks.map((block) => (
+                    <PreviewBlock key={block.id} block={block} moduleId={previewModule.id} />
+                  ))
+                )
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
+}
+
+function PreviewBlock({ block, moduleId }: { block: ModuleBlock; moduleId: number }) {
+  if (block.type === "sub_bab") {
+    return <h3 style={styles.previewSubheading}><MathText text={String(block.content.title ?? "Sub-bab")} /></h3>;
+  }
+  if (block.type === "teks") {
+    return <MathHtml html={String(block.content.html ?? "")} className="math-rich-content" />;
+  }
+  if (block.type === "video") {
+    return <PreviewVideoBlock block={block} />;
+  }
+  if (block.type === "gambar" || block.type === "berkas") {
+    return <PreviewAttachmentBlock block={block} moduleId={moduleId} />;
+  }
+  return null;
+}
+
+function youtubeEmbedId(url: string): string | null {
+  const match = url.match(/(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+  return match ? match[1]! : null;
+}
+
+function PreviewVideoBlock({ block }: { block: ModuleBlock }) {
+  const url = typeof block.content.youtubeUrl === "string" ? block.content.youtubeUrl : "";
+  const caption = typeof block.content.caption === "string" ? block.content.caption : "";
+  const videoId = url ? youtubeEmbedId(url) : null;
+  return (
+    <figure style={styles.previewFigure}>
+      {videoId ? (
+        <iframe
+          src={`https://www.youtube-nocookie.com/embed/${videoId}`}
+          title={caption || "Video pembelajaran"}
+          style={styles.previewVideo}
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+        />
+      ) : url ? (
+        <a href={url} target="_blank" rel="noreferrer" style={styles.previewFileLink}>Buka video →</a>
+      ) : null}
+      {caption ? <figcaption><MathText text={caption} /></figcaption> : null}
+    </figure>
+  );
+}
+
+function PreviewAttachmentBlock({ block, moduleId }: { block: ModuleBlock; moduleId: number }) {
+  const contentKey = typeof block.content.attachmentKey === "string" ? block.content.attachmentKey : null;
+  const key = block.attachment_key ?? contentKey;
+  const [url, setUrl] = useState<string | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!key) {
+      setError("Lampiran tidak ditemukan.");
+      return;
+    }
+    void apiRequest<{ ok: true; data: { download_url: string } }>(
+      `/uploads/download?moduleId=${moduleId}&key=${encodeURIComponent(key)}`,
+    )
+      .then((response) => setUrl(response.data.download_url))
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Lampiran belum dapat dibuka."));
+  }, [key, moduleId]);
+
+  if (error) return <p style={styles.previewNotice}>{error}</p>;
+  if (!url) return <p style={styles.previewNotice}>Memuat lampiran...</p>;
+  if (block.type === "gambar") {
+    const caption = typeof block.content.caption === "string" ? block.content.caption : "";
+    return (
+      <figure style={styles.previewFigure}>
+        <img src={url} alt={caption || "Lampiran materi"} style={styles.previewImage} />
+        {caption ? <figcaption><MathText text={caption} /></figcaption> : null}
+      </figure>
+    );
+  }
+  const label = typeof block.content.label === "string" ? block.content.label : "lampiran";
+  return <a href={url} target="_blank" rel="noreferrer" style={styles.previewFileLink}>Buka {label} →</a>;
 }
 
 const styles = {
@@ -1361,6 +1525,21 @@ const styles = {
   reportCell: { borderBottom: "1px solid #eaecf0", padding: "10px 8px", textAlign: "left" as const, verticalAlign: "top" as const },
   dateRange: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 },
   warningBox: { background: "#fffaeb", color: "#b54708", borderRadius: 8, padding: 12 },
+  modalOverlay: { position: "fixed" as const, inset: 0, background: "rgba(16, 24, 40, 0.55)", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "4vh 16px", zIndex: 50, overflowY: "auto" as const },
+  modalPanel: { background: "white", borderRadius: 14, width: "min(760px, 92vw)", maxHeight: "90vh", overflowY: "auto" as const, padding: "20px 22px" },
+  modalHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, borderBottom: "1px solid #eaecf0", paddingBottom: 14, marginBottom: 16 },
+  modalHeading: { display: "grid", gap: 6 },
+  modalTitle: { fontSize: 24, margin: 0 },
+  modalClose: { border: "1px solid #d0d5dd", borderRadius: 8, background: "white", width: 36, height: 36, fontSize: 20, lineHeight: 1, cursor: "pointer", flexShrink: 0 },
+  modalNote: { background: "#fffaeb", color: "#b54708", borderRadius: 8, padding: 10, margin: 0 },
+  modalError: { color: "#b42318", background: "#fef3f2", padding: 12, borderRadius: 8, margin: 0 },
+  modalBody: { display: "grid", gap: 14, lineHeight: 1.7 },
+  previewSubheading: { fontSize: 20, margin: "12px 0 0", borderTop: "1px solid #eaecf0", paddingTop: 16 },
+  previewFigure: { margin: 0, display: "grid", gap: 8 },
+  previewImage: { maxWidth: "100%", borderRadius: 10 },
+  previewVideo: { width: "100%", aspectRatio: "16 / 9", border: 0, borderRadius: 10 },
+  previewFileLink: { color: "#175cd3", fontWeight: 700 },
+  previewNotice: { color: "#667085", background: "#f8f9fc", padding: 12, borderRadius: 8, margin: 0 },
 };
 
 function toDateTimeLocal(value: Date) {

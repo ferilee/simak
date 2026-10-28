@@ -14,6 +14,9 @@ type ModuleSummary = {
   description: string | null;
   status: "draf" | "terbit" | "arsip";
   version: number;
+  viewer_count: number;
+  view_count: number;
+  last_viewed_at: string | null;
 };
 
 type ModulesResponse = { ok: true; data: ModuleSummary[] };
@@ -892,6 +895,7 @@ export default function GuruPage() {
                 <button type="button" onClick={() => setSelectedId(module.id)} className="module-row-main">
                   <strong>{module.title}</strong>
                   <span>{module.subject} · versi {module.version}</span>
+                  <span>{module.viewer_count > 0 ? `Dilihat ${module.viewer_count} murid` : "Belum ada murid yang melihat"}</span>
                 </button>
                 <span className={`module-status module-status-${module.status}`}>{module.status}</span>
                 <button type="button" onClick={() => void openPreview(module)} className="module-row-action">
@@ -1385,6 +1389,15 @@ export default function GuruPage() {
                 {previewModule.description ? (
                   <p style={styles.muted}><MathText text={previewModule.description} /></p>
                 ) : null}
+                {previewModule.viewer_count > 0 ? (
+                  <p style={styles.muted}>
+                    Dilihat oleh {previewModule.viewer_count} murid · {previewModule.view_count} kali dibuka
+                    {previewModule.last_viewed_at ? ` · terakhir ${formatDate(previewModule.last_viewed_at)}` : ""}
+                  </p>
+                ) : (
+                  <p style={styles.muted}>Belum ada murid yang tercatat melihat materi ini.</p>
+                )}
+                <p style={styles.muted}>Jumlah dihitung dari murid unik yang membuka materi ini atau penugasan yang berisi materi ini.</p>
               </div>
               <button type="button" onClick={closePreview} style={styles.modalClose} aria-label="Tutup pratinjau">×</button>
             </div>

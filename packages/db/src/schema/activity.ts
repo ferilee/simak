@@ -1,6 +1,7 @@
 import { bigint, index, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex } from "drizzle-orm/mysql-core";
 import { users } from "./users";
 import { assignments } from "./assignments";
+import { modules } from "./modules";
 
 // Jejak aktivitas = bahan baku presensi dan rekap bukti.
 // Rekap BUKAN tabel tersendiri: ia query agregasi atas tabel ini,
@@ -13,6 +14,9 @@ export const activityLogs = mysqlTable(
       .notNull()
       .references(() => users.id),
     assignmentId: bigint("assignment_id", { mode: "number" }).references(() => assignments.id),
+    // Modul yang dibuka murid — diisi baik saat membuka materi langsung maupun
+    // lewat penugasan, agar guru bisa melihat jumlah penonton per materi.
+    moduleId: bigint("module_id", { mode: "number" }).references(() => modules.id, { onDelete: "set null" }),
     event: mysqlEnum("event", [
       "buka_materi",
       "mulai_lkpd",
@@ -25,6 +29,7 @@ export const activityLogs = mysqlTable(
   (t) => [
     index("activity_logs_assignment_idx").on(t.assignmentId, t.createdAt),
     index("activity_logs_student_idx").on(t.studentId, t.createdAt),
+    index("activity_logs_module_idx").on(t.moduleId, t.createdAt),
   ],
 );
 

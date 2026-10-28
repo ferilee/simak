@@ -191,7 +191,7 @@ muridRoutes.get("/assignments/:id", async (c) => {
 
   const now = Date.now();
   if (now < assignment.opensAt.getTime()) return c.json({ ok: false, message: "Penugasan belum dibuka." }, 403);
-  await db.insert(activityLogs).values({ studentId: user.userId, assignmentId, event: "buka_materi" });
+  await db.insert(activityLogs).values({ studentId: user.userId, assignmentId, moduleId: assignment.moduleId, event: "buka_materi" });
 
   const [attempt] = assignment.worksheetId === null
     ? []
@@ -256,6 +256,14 @@ muridRoutes.get("/modules/:id", async (c) => {
     )
     .limit(1);
   if (!access) return c.json({ ok: false, message: "Materi ini belum tersedia untuk kelas Anda." }, 403);
+
+  // Catat pembukaan materi per modul untuk statistik penonton guru.
+  // Kegagalan pencatatan tidak boleh menggagalkan pembacaan materi.
+  try {
+    await db.insert(activityLogs).values({ studentId: user.userId, assignmentId: null, moduleId, event: "buka_materi" });
+  } catch {
+    // Abaikan — materi tetap dilayani.
+  }
 
   const blocks = await db
     .select()

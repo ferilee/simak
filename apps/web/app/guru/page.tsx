@@ -81,6 +81,12 @@ type WorksheetAttemptSummary = {
   updated_at: string;
 };
 type WorksheetAttemptsResponse = { ok: true; data: WorksheetAttemptSummary[] };
+type GradingAttemptSummary = WorksheetAttemptSummary & {
+  worksheet_id: number;
+  worksheet_title: string;
+};
+type GradingAttemptsResponse = { ok: true; data: GradingAttemptSummary[] };
+type GradingStatusFilter = "semua" | "draf" | "terkumpul" | "belum_dinilai" | "sudah_dinilai";
 type ExitTicketSummary = {
   understood_3: string;
   examples_2: string;
@@ -263,6 +269,13 @@ export default function GuruPage() {
   const sessionReportPanelRef = useRef<HTMLElement | null>(null);
   const exitTicketPanelRef = useRef<HTMLElement | null>(null);
   const [attempts, setAttempts] = useState<WorksheetAttemptSummary[]>([]);
+  const [allAttempts, setAllAttempts] = useState<GradingAttemptSummary[]>([]);
+  const [gradingSource, setGradingSource] = useState<number | "semua">("semua");
+  const [gradingStatusFilter, setGradingStatusFilter] = useState<GradingStatusFilter>("semua");
+  // Penanda bahwa perubahan selectedWorksheetId berasal dari klik baris pada
+  // mode gabungan panel Pengumpulan: pemilih sumber tidak boleh ikut beralih
+  // ke mode satu LKPD hanya karena rincian attempt dibuka dari daftar gabungan.
+  const gradingPickRef = useRef(false);
   const [selectedAttemptId, setSelectedAttemptId] = useState<number | null>(null);
   const [attemptDetail, setAttemptDetail] = useState<WorksheetAttemptDetail | null>(null);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<number | null>(null);
@@ -461,6 +474,21 @@ export default function GuruPage() {
   const selectedModule = modules.find((module) => module.id === selectedId) ?? null;
   const selectedWorksheet = worksheets.find((worksheet) => worksheet.id === selectedWorksheetId) ?? null;
 
+  // Daftar yang ditampilkan panel Pengumpulan LKPD: gabungan semua LKPD
+  // (mode "Semua LKPD") atau daftar per-LKPD yang sedang aktif. Saringan
+  // status diterapkan di klien untuk kedua mode: "belum dinilai" berarti
+  // sudah terkumpul tetapi belum punya nilai, "sudah dinilai" berarti
+  // total nilai sudah terisi.
+  const gradingCombined = gradingSource === "semua";
+  const gradingAttempts: (WorksheetAttemptSummary & { worksheet_id?: number; worksheet_title?: string })[] = gradingCombined ? allAttempts : attempts;
+  const visibleGradingAttempts = gradingAttempts.filter((attempt) => {
+    if (gradingStatusFilter === "draf") return attempt.status === "draf";
+    if (gradingStatusFilter === "terkumpul") return attempt.status === "terkumpul";
+    if (gradingStatusFilter === "belum_dinilai") return attempt.status === "terkumpul" && attempt.total_score === null;
+    if (gradingStatusFilter === "sudah_dinilai") return attempt.total_score !== null;
+    return true;
+  });
+
   async function loadModules() {
     try {
       const me = await apiRequest<MeResponse>("/auth/me");
@@ -537,6 +565,18 @@ export default function GuruPage() {
         setSelectedAttemptId(null);
         setAttemptDetail(null);
       }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Pengumpulan belum dapat dimuat.");
+    } finally {
+      setAttemptLoading(false);
+    }
+  }
+
+  async function loadAllAttempts() {
+    setAttemptLoading(true);
+    try {
+      const response = await apiRequest<GradingAttemptsResponse>("/grading/attempts");
+      setAllAttempts(response.data);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Pengumpulan belum dapat dimuat.");
     } finally {
@@ -684,6 +724,24 @@ export default function GuruPage() {
     }
     void loadAttempts(selectedWorksheetId);
   }, [selectedWorksheetId]);
+
+  // Pemilih sumber panel Pengumpulan LKPD mengikuti LKPD yang dipilih di
+  // Langkah 2 (termasuk pilihan bawaan saat halaman dimuat). Klik baris pada
+  // mode gabungan dikecualikan lewat gradingPickRef: di sana
+  // selectedWorksheetId hanya diatur agar rincian dan penyimpanan nilai
+  // memakai endpoint per-LKPD yang benar, bukan untuk mengganti sumber.
+  useEffect(() => {
+    if (gradingPickRef.current) {
+      gradingPickRef.current = false;
+      return;
+    }
+    setGradingSource(selectedWorksheetId ?? "semua");
+  }, [selectedWorksheetId]);
+
+  useEffect(() => {
+    if (loading || gradingSource !== "semua") return;
+    void loadAllAttempts();
+  }, [gradingSource, loading]);
 
   useEffect(() => {
     if (selectedWorksheetId && selectedAttemptId) void loadAttemptDetail(selectedWorksheetId, selectedAttemptId);
@@ -1472,6 +1530,7 @@ export default function GuruPage() {
       });
       setMessage("Penilaian disimpan.");
       await loadAttempts(selectedWorksheetId);
+      if (gradingSource === "semua") await loadAllAttempts();
       await loadAttemptDetail(selectedWorksheetId, selectedAttemptId);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Penilaian belum dapat disimpan.");
@@ -2337,26 +2396,67 @@ export default function GuruPage() {
         </section>
       ) : null}
 
-      {selectedWorksheetId ? (
         <section className="wizard-step-panel teacher-grading-section" data-active={guruStep === 4} style={styles.panel}>
           <h2 style={styles.sectionTitle}>Pengumpulan LKPD</h2>
-          {attemptLoading && attempts.length === 0 ? <p style={styles.muted}>Memuat pengumpulan...</p> : null}
-          {!attemptLoading && attempts.length === 0 ? <p style={styles.empty}>Belum ada murid yang mengumpulkan LKPD ini.</p> : null}
-          {attempts.length > 0 ? (
+          <div style={styles.moduleToolbar}>
+            <select
+              value={gradingCombined ? "semua" : String(gradingSource)}
+              onChange={(event) => {
+                const value = event.target.value;
+                if (value === "semua") {
+                  setGradingSource("semua");
+                } else {
+                  setSelectedWorksheetId(Number(value));
+                }
+              }}
+              aria-label="Sumber pengumpulan LKPD"
+              style={{ ...styles.input, ...styles.moduleFilterSelect }}
+            >
+              <option value="semua">Semua LKPD</option>
+              {worksheets.map((worksheet) => (
+                <option key={worksheet.id} value={String(worksheet.id)}>{worksheet.title}</option>
+              ))}
+            </select>
+            <select
+              value={gradingStatusFilter}
+              onChange={(event) => setGradingStatusFilter(event.target.value as GradingStatusFilter)}
+              aria-label="Saring status pengumpulan"
+              style={{ ...styles.input, ...styles.moduleFilterSelect }}
+            >
+              <option value="semua">Semua status</option>
+              <option value="draf">Draf</option>
+              <option value="terkumpul">Terkumpul</option>
+              <option value="belum_dinilai">Belum dinilai</option>
+              <option value="sudah_dinilai">Sudah dinilai</option>
+            </select>
+          </div>
+          {attemptLoading && gradingAttempts.length === 0 ? <p style={styles.muted}>Memuat pengumpulan...</p> : null}
+          {!attemptLoading && gradingAttempts.length === 0 ? (
+            <p style={styles.empty}>{gradingCombined ? "Belum ada pengumpulan dari LKPD mana pun." : "Belum ada murid yang mengumpulkan LKPD ini."}</p>
+          ) : null}
+          {gradingAttempts.length > 0 ? (
             <div className="teacher-attempt-layout">
               <div className="teacher-attempt-list" style={styles.list}>
-                {attempts.map((attempt) => (
+                {visibleGradingAttempts.map((attempt) => (
                   <button
                     key={attempt.id}
                     type="button"
-                    onClick={() => setSelectedAttemptId(attempt.id)}
+                    onClick={() => {
+                      if (gradingCombined && attempt.worksheet_id && attempt.worksheet_id !== selectedWorksheetId) {
+                        gradingPickRef.current = true;
+                        setSelectedWorksheetId(attempt.worksheet_id);
+                      }
+                      setSelectedAttemptId(attempt.id);
+                    }}
                     style={{ ...styles.attempt, borderColor: selectedAttemptId === attempt.id ? "#175cd3" : "#eaecf0" }}
                   >
                     <strong>{attempt.student_name}</strong>
+                    {gradingCombined && attempt.worksheet_title ? <span style={styles.muted}>{attempt.worksheet_title}</span> : null}
                     <span style={styles.muted}>{attempt.username} · {attempt.status}</span>
                     <span style={styles.muted}>{attempt.total_score === null ? "Belum dinilai" : `Nilai ${attempt.total_score}`}</span>
                   </button>
                 ))}
+                {visibleGradingAttempts.length === 0 ? <p style={styles.muted}>Tidak ada pengumpulan yang cocok dengan saringan status ini.</p> : null}
               </div>
               {attemptDetail ? (
                 <div className="teacher-attempt-review" style={styles.review}>
@@ -2408,7 +2508,6 @@ export default function GuruPage() {
             </div>
           ) : null}
         </section>
-      ) : null}
           </div>
 
           <footer className="wizard-footer">

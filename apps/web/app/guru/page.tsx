@@ -2031,7 +2031,7 @@ export default function GuruPage() {
             <button type="submit" style={styles.primaryButton}>Buat draf penugasan</button>
           </form>
         </details>
-        {assignments.length > 0 ? <div className="module-list">{assignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><div className="resource-row-actions"><button type="button" onClick={() => void loadSessionReport(assignment.id)} style={styles.secondaryButton}>{selectedReportAssignmentId === assignment.id ? "Segarkan rekap" : "Lihat rekap"}</button><button type="button" onClick={() => void loadAssignmentSummary(assignment.id)} style={styles.secondaryButton}>{selectedAssignmentId === assignment.id ? "Segarkan exit ticket" : "Lihat exit ticket"}</button><button type="button" onClick={() => void changeAssignmentStatus(assignment)} style={styles.secondaryButton}>{assignment.status === "terbit" ? "Tutup" : "Terbitkan"}</button></div></article>)}</div> : <p style={styles.empty}>Belum ada penugasan.</p>}
+        {assignments.length > 0 ? <div className="module-list">{assignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><div className="resource-row-actions"><button type="button" onClick={() => void changeAssignmentStatus(assignment)} style={styles.secondaryButton}>{assignment.status === "terbit" ? "Tutup" : "Terbitkan"}</button>{assignment.status === "terbit" ? <a href={`https://wa.me/?text=${encodeURIComponent(buildWhatsAppShareMessage(assignment, typeof window !== "undefined" ? window.location.origin : ""))}`} target="_blank" rel="noreferrer" style={{ ...styles.secondaryButton, color: "inherit", textDecoration: "none" }}>Bagikan WA</a> : null}</div></article>)}</div> : <p style={styles.empty}>Belum ada penugasan.</p>}
       </section>
 
       <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 4} style={styles.panel}>
@@ -2134,6 +2134,16 @@ export default function GuruPage() {
         </details>
         {ruasImportResult ? <p style={styles.muted}>Baris: {ruasImportResult.total} · cocok: {ruasImportResult.cocok} · tidak ditemukan: {ruasImportResult.tidak_ditemukan} · duplikat: {ruasImportResult.duplikat}</p> : null}
         {ruasImportResult?.unmatched.length ? <div style={styles.warningBox}>Baris yang perlu diperiksa: {ruasImportResult.unmatched.map((row) => `${row.identifier} (${row.match_status})`).join(", ")}</div> : null}
+      </section>
+
+      <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 4} style={styles.panel}>
+        <div className="module-section-heading">
+          <div>
+            <h2 style={styles.sectionTitle}>Rekap penugasan</h2>
+            <p className="module-section-summary">{assignments.length} penugasan · pilih penugasan untuk melihat rekap dan exit ticket</p>
+          </div>
+        </div>
+        {assignments.length > 0 ? <div className="module-list">{assignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><div className="resource-row-actions"><button type="button" onClick={() => void loadSessionReport(assignment.id)} style={styles.secondaryButton}>{selectedReportAssignmentId === assignment.id ? "Segarkan rekap" : "Lihat rekap"}</button><button type="button" onClick={() => void loadAssignmentSummary(assignment.id)} style={styles.secondaryButton}>{selectedAssignmentId === assignment.id ? "Segarkan exit ticket" : "Lihat exit ticket"}</button></div></article>)}</div> : <p style={styles.empty}>Belum ada penugasan.</p>}
       </section>
 
       {selectedReportAssignmentId ? (
@@ -2716,6 +2726,25 @@ function parseRuasCsv(value: string) {
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function buildWhatsAppShareMessage(assignment: AssignmentSummary, origin: string) {
+  const due = new Intl.DateTimeFormat("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }).format(new Date(assignment.due_at));
+  const lines = [`📚 *${assignment.title}*`];
+  if (assignment.classes.length > 0) lines.push(`Kelas: ${assignment.classes.map((kelas) => kelas.name).join(", ")}`);
+  lines.push(
+    "",
+    "Kegiatan belajar hari ini:",
+    "1. Baca dan pahami materi di SIMAK",
+    "2. Kerjakan LKPD-nya",
+    "3. Kerjakan kuis di RUAS",
+    "4. Isi exit ticket 3-2-1",
+    "",
+    `⏰ Batas pengumpulan: ${due} WIB — pengumpulan tercatat sebagai kehadiran.`,
+    `🔗 SIMAK: ${origin}`,
+  );
+  if (assignment.ruas_quiz_url) lines.push(`🔗 RUAS: ${assignment.ruas_quiz_url}`);
+  return lines.join("\n");
 }
 
 function integrityEventLabel(event: string) {

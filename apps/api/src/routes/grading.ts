@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@simak/db";
 import { requireRole } from "../middleware/auth";
 
@@ -8,7 +8,54 @@ export const gradingRoutes = new Hono();
 
 gradingRoutes.use("*", requireRole("guru"));
 
-const { assignmentClasses, assignments, classMembers, classes, exitTickets, users, worksheetAttempts } = schema;
+const { assignmentClasses, assignments, classMembers, classes, exitTickets, users, worksheetAttempts, worksheets } = schema;
+
+function serializeScore(score: string | null) {
+  return score === null ? null : Number(score);
+}
+
+// Daftar gabungan pengumpulan lintas semua LKPD milik guru yang login
+// (mode "Semua LKPD" pada panel Pengumpulan LKPD). Kolomnya sama seperti
+// daftar per-LKPD di routes/worksheets.ts, ditambah identitas LKPD asal
+// setiap attempt agar rincian penilaian bisa dibuka dari daftar gabungan.
+gradingRoutes.get("/attempts", async (c) => {
+  const user = c.get("user")!;
+
+  const rows = await db
+    .select({
+      id: worksheetAttempts.id,
+      worksheetId: worksheetAttempts.worksheetId,
+      worksheetTitle: worksheets.title,
+      studentId: worksheetAttempts.studentId,
+      studentName: users.name,
+      username: users.username,
+      status: worksheetAttempts.status,
+      submittedAt: worksheetAttempts.submittedAt,
+      totalScore: worksheetAttempts.totalScore,
+      updatedAt: worksheetAttempts.updatedAt,
+    })
+    .from(worksheetAttempts)
+    .innerJoin(worksheets, eq(worksheets.id, worksheetAttempts.worksheetId))
+    .innerJoin(users, eq(users.id, worksheetAttempts.studentId))
+    .where(eq(worksheets.teacherId, user.userId))
+    .orderBy(desc(worksheetAttempts.updatedAt));
+
+  return c.json({
+    ok: true,
+    data: rows.map((row) => ({
+      id: row.id,
+      worksheet_id: row.worksheetId,
+      worksheet_title: row.worksheetTitle,
+      student_id: row.studentId,
+      student_name: row.studentName,
+      username: row.username,
+      status: row.status,
+      submitted_at: row.submittedAt,
+      total_score: serializeScore(row.totalScore),
+      updated_at: row.updatedAt,
+    })),
+  });
+});
 
 gradingRoutes.get("/assignments/:id", async (c) => {
   const user = c.get("user")!;

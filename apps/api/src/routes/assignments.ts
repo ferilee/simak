@@ -8,7 +8,7 @@ import { requireRole } from "../middleware/auth";
 // Penugasan ke kelas: jadwal buka/tutup dan tautan kuis RUAS.
 export const assignmentRoutes = new Hono();
 
-const { assignmentClasses, assignments, classes, modules, worksheets } = schema;
+const { assignmentClasses, assignments, classMembers, classes, exitTickets, modules, worksheetAttempts, worksheets } = schema;
 
 function serializeAssignment(
   assignment: typeof assignments.$inferSelect,
@@ -95,6 +95,35 @@ async function validateTeacherClasses(userId: number, classIds: number[]) {
   return rows.length === new Set(classIds).size;
 }
 
+// Predikat "sudah ada aktivitas murid" untuk satu penugasan, memakai sumber
+// data yang sama dengan rekap sesi (routes/reports.ts): murid sasaran adalah
+// anggota kelas tujuan penugasan (kelas yang tidak diarsipkan), dan aktivitas
+// terhitung adalah exit ticket untuk penugasan ini ATAU attempt pada LKPD
+// tertaut — keduanya oleh salah satu murid sasaran.
+async function assignmentHasStudentActivity(assignment: typeof assignments.$inferSelect) {
+  const memberRows = await db
+    .select({ studentId: classMembers.studentId })
+    .from(assignmentClasses)
+    .innerJoin(classes, eq(classes.id, assignmentClasses.classId))
+    .innerJoin(classMembers, eq(classMembers.classId, classes.id))
+    .where(and(eq(assignmentClasses.assignmentId, assignment.id), eq(classes.isArchived, false)));
+  const studentIds = [...new Set(memberRows.map((row) => row.studentId))];
+  if (studentIds.length === 0) return false;
+  const [ticket] = await db
+    .select({ id: exitTickets.id })
+    .from(exitTickets)
+    .where(and(eq(exitTickets.assignmentId, assignment.id), inArray(exitTickets.studentId, studentIds)))
+    .limit(1);
+  if (ticket) return true;
+  if (assignment.worksheetId === null) return false;
+  const [attempt] = await db
+    .select({ id: worksheetAttempts.id })
+    .from(worksheetAttempts)
+    .where(and(eq(worksheetAttempts.worksheetId, assignment.worksheetId), inArray(worksheetAttempts.studentId, studentIds)))
+    .limit(1);
+  return Boolean(attempt);
+}
+
 assignmentRoutes.use("*", requireRole("guru"));
 
 assignmentRoutes.get("/", async (c) => {
@@ -152,6 +181,30 @@ assignmentRoutes.patch("/:id", zValidator("json", updateAssignmentSchema), async
   const current = await ownedAssignment(user.userId, assignmentId);
   if (!current) return c.json({ ok: false, message: "Penugasan tidak ditemukan." }, 404);
   const input = c.req.valid("json");
+  // Pagar status — penugasan ditutup bersifat final: PATCH yang mengubah isi
+  // apa pun ditolak. Satu-satunya pengecualian adalah PATCH yang hanya berisi
+  // field status, karena UI membuka kembali penugasan ditutup lewat tombol
+  // "Terbitkan" yang mengirim body { status } saja.
+  if (current.status === "ditutup") {
+    const contentKeys = ["moduleId", "worksheetId", "title", "instructions", "ruasQuizUrl", "opensAt", "dueAt", "classIds"] as const;
+    if (contentKeys.some((key) => input[key] !== undefined)) {
+      return c.json({ ok: false, message: "Penugasan yang sudah ditutup tidak dapat diubah." }, 409);
+    }
+  }
+  // Pagar status — pada penugasan terbit yang sudah dikerjakan murid, modul,
+  // LKPD, dan kelas tujuan terkunci: menggantinya akan memutuskan pasangan
+  // penugasan–LKPD yang menjadi dasar rekap dan pengumpulan. Field lain
+  // (judul, petunjuk, tautan RUAS, jadwal, status) tetap boleh berubah.
+  if (current.status === "terbit" && (input.moduleId !== undefined || input.worksheetId !== undefined || input.classIds !== undefined)) {
+    const linkedClasses = await getLinkedClasses(assignmentId);
+    const moduleChanged = input.moduleId !== undefined && input.moduleId !== (current.moduleId ?? undefined);
+    const worksheetChanged = input.worksheetId !== undefined && input.worksheetId !== (current.worksheetId ?? undefined);
+    const classesChanged = input.classIds !== undefined
+      && (input.classIds.length !== linkedClasses.length || input.classIds.some((id) => !linkedClasses.some((kelas) => kelas.id === id)));
+    if ((moduleChanged || worksheetChanged || classesChanged) && (await assignmentHasStudentActivity(current))) {
+      return c.json({ ok: false, message: "Modul, LKPD, dan kelas tujuan tidak dapat diubah karena sudah ada murid yang mengerjakan penugasan ini." }, 409);
+    }
+  }
   const referenceError = await validateTeacherReferences(user.userId, input.moduleId, input.worksheetId);
   if (referenceError) return c.json({ ok: false, message: referenceError }, 404);
   if (input.classIds && !(await validateTeacherClasses(user.userId, input.classIds))) {

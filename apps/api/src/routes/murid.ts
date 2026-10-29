@@ -113,6 +113,17 @@ async function getOrCreateAttempt(studentId: number, worksheetId: number) {
   return attempt!;
 }
 
+// Kunci perbandingan mapel: teks penuh (trim + huruf kecil) plus isi kurung
+// bila ada, mis. "Koding dan Kecerdasan Artifisial (KKA)" →
+// {"koding dan kecerdasan artifisial (kka)", "kka"}.
+function subjectKeys(subject: string): Set<string> {
+  const full = subject.trim().toLowerCase();
+  const keys = new Set<string>([full]);
+  const parenthetical = /\(([^)]*)\)/.exec(full)?.[1]?.trim();
+  if (parenthetical) keys.add(parenthetical);
+  return keys;
+}
+
 muridRoutes.get("/today", async (c) => {
   const user = c.get("user")!;
   const memberships = await db
@@ -128,19 +139,24 @@ muridRoutes.get("/today", async (c) => {
     .where(and(eq(classMembers.studentId, user.userId), eq(classes.isArchived, false)));
 
   const teacherIds = [...new Set(memberships.map((membership) => membership.teacherId))];
-  const subjects = [...new Set(memberships.map((membership) => membership.subject))];
-  const publishedModules = teacherIds.length
+  // Daftar materi memakai aturan DAN: modul harus milik guru murid ini DAN
+  // mapelnya termasuk mapel kelas murid ini. Syarat guru saja (aturan ATAU)
+  // meloloskan semua modul terbit seorang guru ke semua muridnya, padahal
+  // satu guru bisa mengajar dua mapel. Penyaringan mapel dilakukan di kode
+  // dengan kunci ternormalisasi karena ejaan mapel kelas dan modul tidak
+  // selalu sama persis — mis. kelas "KKA" vs modul
+  // "Koding dan Kecerdasan Artifisial (KKA)".
+  const studentSubjectKeys = new Set(memberships.flatMap((membership) => [...subjectKeys(membership.subject)]));
+  const teacherModules = teacherIds.length
     ? await db
         .select()
         .from(modules)
-        .where(
-          and(
-            eq(modules.status, "terbit"),
-            or(inArray(modules.teacherId, teacherIds), inArray(modules.subject, subjects)),
-          ),
-        )
+        .where(and(eq(modules.status, "terbit"), inArray(modules.teacherId, teacherIds)))
         .orderBy(asc(modules.updatedAt))
     : [];
+  const publishedModules = teacherModules.filter((module) =>
+    [...subjectKeys(module.subject)].some((key) => studentSubjectKeys.has(key)),
+  );
 
   const classIds = memberships.map((membership) => membership.id);
   const assignmentRows = classIds.length

@@ -198,6 +198,18 @@ export default function GuruPage() {
   const [blockHtml, setBlockHtml] = useState("");
   const [blockType, setBlockType] = useState<"teks" | "sub_bab" | "video" | "lampiran">("teks");
   const [attachment, setAttachment] = useState<File | null>(null);
+  const [moduleBlocks, setModuleBlocks] = useState<ModuleBlock[]>([]);
+  const [worksheetItems, setWorksheetItems] = useState<WorksheetPreviewItem[]>([]);
+  const [editingModuleMeta, setEditingModuleMeta] = useState(false);
+  const [editModuleTitle, setEditModuleTitle] = useState("");
+  const [editModuleSubject, setEditModuleSubject] = useState("");
+  const [editModuleDescription, setEditModuleDescription] = useState("");
+  const [editingWorksheetMeta, setEditingWorksheetMeta] = useState(false);
+  const [editWorksheetTitle, setEditWorksheetTitle] = useState("");
+  const [editWorksheetInstructions, setEditWorksheetInstructions] = useState("");
+  const [editingBlock, setEditingBlock] = useState<ModuleBlock | null>(null);
+  const [editingTextAsHtml, setEditingTextAsHtml] = useState(false);
+  const [editingItem, setEditingItem] = useState<WorksheetPreviewItem | null>(null);
   const blockFirstFieldRef = useRef<HTMLElement | null>(null);
   const [worksheets, setWorksheets] = useState<WorksheetSummary[]>([]);
   const [classes, setClasses] = useState<ClassSummary[]>([]);
@@ -414,6 +426,9 @@ export default function GuruPage() {
       </article>
     );
   }
+
+  const selectedModule = modules.find((module) => module.id === selectedId) ?? null;
+  const selectedWorksheet = worksheets.find((worksheet) => worksheet.id === selectedWorksheetId) ?? null;
 
   async function loadModules() {
     try {
@@ -643,6 +658,49 @@ export default function GuruPage() {
     if (selectedWorksheetId && selectedAttemptId) void loadAttemptDetail(selectedWorksheetId, selectedAttemptId);
   }, [selectedWorksheetId, selectedAttemptId]);
 
+  async function loadModuleBlocks(moduleId: number) {
+    try {
+      const response = await apiRequest<ModuleBlocksResponse>(`/modules/${moduleId}/blocks`);
+      setModuleBlocks(response.data);
+    } catch (error) {
+      setModuleBlocks([]);
+      setMessage(error instanceof Error ? error.message : "Isi materi belum dapat dimuat.");
+    }
+  }
+
+  async function loadWorksheetItems(worksheetId: number) {
+    try {
+      const response = await apiRequest<WorksheetItemsResponse>(`/worksheets/${worksheetId}/items`);
+      setWorksheetItems(response.data);
+    } catch (error) {
+      setWorksheetItems([]);
+      setMessage(error instanceof Error ? error.message : "Soal LKPD belum dapat dimuat.");
+    }
+  }
+
+  // Ganti modul/LKPD terpilih selalu membatalkan mode edit yang sedang berjalan
+  // agar formulir tidak mengubah data milik pilihan sebelumnya.
+  useEffect(() => {
+    setEditingBlock(null);
+    setEditingTextAsHtml(false);
+    setEditingModuleMeta(false);
+    if (!selectedId) {
+      setModuleBlocks([]);
+      return;
+    }
+    void loadModuleBlocks(selectedId);
+  }, [selectedId]);
+
+  useEffect(() => {
+    setEditingItem(null);
+    setEditingWorksheetMeta(false);
+    if (!selectedWorksheetId) {
+      setWorksheetItems([]);
+      return;
+    }
+    void loadWorksheetItems(selectedWorksheetId);
+  }, [selectedWorksheetId]);
+
   async function createModule(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage("");
@@ -663,6 +721,55 @@ export default function GuruPage() {
       }, 150);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Modul belum dapat dibuat.");
+    }
+  }
+
+  function startEditModuleMeta() {
+    if (!selectedModule) return;
+    setEditModuleTitle(selectedModule.title);
+    setEditModuleSubject(selectedModule.subject);
+    setEditModuleDescription(selectedModule.description ?? "");
+    setEditingModuleMeta(true);
+  }
+
+  async function saveModuleMeta(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedId) return;
+    try {
+      // Hanya metadata yang dikirim; status modul tidak ikut berubah.
+      await apiRequest(`/modules/${selectedId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ title: editModuleTitle, subject: editModuleSubject, description: editModuleDescription }),
+      });
+      setEditingModuleMeta(false);
+      setMessage("Data modul disimpan.");
+      await loadModules();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Data modul belum dapat disimpan.");
+    }
+  }
+
+  function startEditWorksheetMeta() {
+    if (!selectedWorksheet) return;
+    setEditWorksheetTitle(selectedWorksheet.title);
+    setEditWorksheetInstructions(selectedWorksheet.instructions ?? "");
+    setEditingWorksheetMeta(true);
+  }
+
+  async function saveWorksheetMeta(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedWorksheetId) return;
+    try {
+      // Hanya judul + petunjuk; status LKPD tidak ikut berubah.
+      await apiRequest(`/worksheets/${selectedWorksheetId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ title: editWorksheetTitle, instructions: editWorksheetInstructions }),
+      });
+      setEditingWorksheetMeta(false);
+      setMessage("Data LKPD disimpan.");
+      await loadModules();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Data LKPD belum dapat disimpan.");
     }
   }
 
@@ -758,14 +865,219 @@ export default function GuruPage() {
 
   async function addBlock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const added = blockType === "teks"
-      ? await addTextBlock(event)
+    const saved = editingBlock
+      ? await updateBlock()
+      : blockType === "teks"
+        ? await addTextBlock(event)
+        : blockType === "sub_bab"
+          ? await addSubBabBlock(event)
+          : blockType === "video"
+            ? await addVideoBlock(event)
+            : await addAttachmentBlock(event);
+    if (saved) {
+      if (selectedId) await loadModuleBlocks(selectedId);
+      blockFirstFieldRef.current?.focus();
+    }
+  }
+
+  async function updateBlock() {
+    return blockType === "teks"
+      ? await updateTextBlock()
       : blockType === "sub_bab"
-        ? await addSubBabBlock(event)
+        ? await updateSubBabBlock()
         : blockType === "video"
-          ? await addVideoBlock(event)
-          : await addAttachmentBlock(event);
-    if (added) blockFirstFieldRef.current?.focus();
+          ? await updateVideoBlock()
+          : await updateAttachmentBlock();
+  }
+
+  async function updateTextBlock() {
+    if (!selectedId || !editingBlock || !blockHtml.trim()) return false;
+    try {
+      await apiRequest(`/modules/${selectedId}/blocks/${editingBlock.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          // Jalur simpan bercabang mengikuti bentuk tersimpan blok: blok HTML
+          // disimpan kembali apa adanya sebagai HTML (tanpa konverter Markdown
+          // yang akan merusaknya), blok Markdown melewati konverter yang sama
+          // seperti saat dibuat.
+          content: { type: "teks", html: editingTextAsHtml ? blockHtml : markdownToHtml(blockHtml) },
+        }),
+      });
+      setBlockHtml("");
+      setEditingBlock(null);
+      setEditingTextAsHtml(false);
+      setMessage("Blok materi diperbarui.");
+      return true;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Blok belum dapat diperbarui.");
+      return false;
+    }
+  }
+
+  async function updateSubBabBlock() {
+    if (!selectedId || !editingBlock || !subBabTitle.trim()) return false;
+    try {
+      await apiRequest(`/modules/${selectedId}/blocks/${editingBlock.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          content: { type: "sub_bab", title: subBabTitle.trim() },
+        }),
+      });
+      setSubBabTitle("");
+      setEditingBlock(null);
+      setMessage("Blok materi diperbarui.");
+      return true;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Blok belum dapat diperbarui.");
+      return false;
+    }
+  }
+
+  async function updateVideoBlock() {
+    if (!selectedId || !editingBlock || !videoUrl.trim()) return false;
+    try {
+      await apiRequest(`/modules/${selectedId}/blocks/${editingBlock.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          content: {
+            type: "video",
+            youtubeUrl: videoUrl.trim(),
+            ...(videoCaption.trim() ? { caption: videoCaption.trim() } : {}),
+          },
+        }),
+      });
+      setVideoUrl("");
+      setVideoCaption("");
+      setEditingBlock(null);
+      setMessage("Blok materi diperbarui.");
+      return true;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Blok belum dapat diperbarui.");
+      return false;
+    }
+  }
+
+  async function updateAttachmentBlock() {
+    if (!selectedId || !editingBlock) return false;
+    if (!attachment) {
+      // Tanpa berkas baru dipilih, lampiran lama dipertahankan apa adanya.
+      setEditingBlock(null);
+      setMessage("Lampiran tidak diubah.");
+      return true;
+    }
+    try {
+      if (attachment.size > 10 * 1024 * 1024) throw new Error("Ukuran lampiran maksimal 10 MB.");
+      const presign = await apiRequest<{
+        ok: true;
+        data: { upload_url: string; attachment_key: string; content_type: string };
+      }>("/uploads/presign", {
+        method: "POST",
+        body: JSON.stringify({
+          moduleId: selectedId,
+          filename: attachment.name,
+          contentType: attachment.type,
+          size: attachment.size,
+        }),
+      });
+      const upload = await fetch(presign.data.upload_url, {
+        method: "PUT",
+        headers: { "Content-Type": presign.data.content_type },
+        body: attachment,
+      });
+      if (!upload.ok) throw new Error("Lampiran gagal diunggah ke penyimpanan.");
+
+      // Jenis blok tidak berubah: gambar tetap gambar, berkas tetap berkas;
+      // keterangan/label lama dipertahankan bila ada.
+      const stored = editingBlock.content;
+      const content = editingBlock.type === "gambar"
+        ? {
+            type: "gambar",
+            attachmentKey: presign.data.attachment_key,
+            caption: typeof stored.caption === "string" && stored.caption ? stored.caption : attachment.name,
+          }
+        : {
+            type: "berkas",
+            attachmentKey: presign.data.attachment_key,
+            label: typeof stored.label === "string" && stored.label ? stored.label : attachment.name,
+          };
+      await apiRequest(`/modules/${selectedId}/blocks/${editingBlock.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ content, attachmentKey: presign.data.attachment_key }),
+      });
+      setAttachment(null);
+      setEditingBlock(null);
+      setMessage("Lampiran diperbarui.");
+      return true;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Lampiran belum dapat diperbarui.");
+      return false;
+    }
+  }
+
+  function startEditBlock(block: ModuleBlock) {
+    setEditingBlock(block);
+    setAttachment(null);
+    if (block.type === "teks") {
+      setBlockType("teks");
+      if (typeof block.content.markdown === "string") {
+        setEditingTextAsHtml(false);
+        setBlockHtml(block.content.markdown);
+      } else {
+        setEditingTextAsHtml(true);
+        setBlockHtml(typeof block.content.html === "string" ? block.content.html : "");
+      }
+    } else if (block.type === "sub_bab") {
+      setBlockType("sub_bab");
+      setSubBabTitle(typeof block.content.title === "string" ? block.content.title : "");
+    } else if (block.type === "video") {
+      setBlockType("video");
+      setVideoUrl(typeof block.content.youtubeUrl === "string" ? block.content.youtubeUrl : "");
+      setVideoCaption(typeof block.content.caption === "string" ? block.content.caption : "");
+    } else {
+      setBlockType("lampiran");
+    }
+    document.getElementById("panel-isi-materi")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function cancelEditBlock() {
+    setEditingBlock(null);
+    setEditingTextAsHtml(false);
+    setBlockHtml("");
+    setSubBabTitle("");
+    setVideoUrl("");
+    setVideoCaption("");
+    setAttachment(null);
+  }
+
+  async function moveBlock(blockId: number, direction: -1 | 1) {
+    if (!selectedId) return;
+    const index = moduleBlocks.findIndex((block) => block.id === blockId);
+    const targetIndex = index + direction;
+    if (index < 0 || targetIndex < 0 || targetIndex >= moduleBlocks.length) return;
+    const blockIds = moduleBlocks.map((block) => block.id);
+    [blockIds[index], blockIds[targetIndex]] = [blockIds[targetIndex], blockIds[index]];
+    try {
+      const response = await apiRequest<ModuleBlocksResponse>(`/modules/${selectedId}/blocks/order`, {
+        method: "PATCH",
+        body: JSON.stringify({ blockIds }),
+      });
+      setModuleBlocks(response.data);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Urutan blok belum dapat diubah.");
+    }
+  }
+
+  async function deleteBlock(block: ModuleBlock) {
+    if (!selectedId) return;
+    if (!(await confirmDialog(`Hapus blok ${BLOCK_TYPE_LABELS[block.type].toLowerCase()} ini dari materi? Tindakan ini tidak dapat dibatalkan.`, { confirmLabel: "Hapus" }))) return;
+    try {
+      await apiRequest(`/modules/${selectedId}/blocks/${block.id}`, { method: "DELETE" });
+      if (editingBlock?.id === block.id) cancelEditBlock();
+      setMessage("Blok dihapus.");
+      await loadModuleBlocks(selectedId);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Blok belum dapat dihapus.");
+    }
   }
 
   async function addTextBlock(event: FormEvent<HTMLFormElement>) {
@@ -921,9 +1233,9 @@ export default function GuruPage() {
     }
   }
 
-  async function addWorksheetItem(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!selectedWorksheetId) return;
+  // Payload butir dipakai bersama oleh buat-baru dan edit agar perilaku
+  // per-jenis selalu sama; mengembalikan null bila masukan belum lengkap.
+  function buildItemPayload() {
     const lines = (value: string) => value.split("\n").map((line) => line.trim()).filter(Boolean);
     let options: Record<string, unknown>;
     let answerKey: string | undefined = itemAnswerKey.trim() || undefined;
@@ -955,39 +1267,138 @@ export default function GuruPage() {
       const url = itemUrl.trim();
       if (!/^https?:\/\//i.test(url)) {
         setMessage("URL tautan RUAS harus diawali http:// atau https://.");
-        return;
+        return null;
       }
       options = { itemType, url, label: itemUrlLabel.trim() || "Buka Kuis di RUAS" };
       answerKey = undefined;
     }
+    return {
+      itemType,
+      prompt: itemPrompt,
+      options,
+      answerKey,
+      explanation: itemExplanation.trim() || undefined,
+      points: Number(itemPoints) || 10,
+    };
+  }
+
+  function resetItemForm() {
+    setItemPrompt("");
+    setItemOptions("");
+    setItemAnswerKey("");
+    setItemExplanation("");
+    setItemTolerance("0");
+    setItemUnit("");
+    setItemPlaceholder("");
+    setItemMaxFiles("1");
+    setItemPhotoInstruction("");
+    setItemSteps("");
+    setItemCorrectOrder("");
+    setItemUrl("");
+    setItemUrlLabel("Buka Kuis di RUAS");
+  }
+
+  async function addWorksheetItem(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedWorksheetId) return;
+    const payload = buildItemPayload();
+    if (!payload) return;
     try {
       await apiRequest(`/worksheets/${selectedWorksheetId}/items`, {
         method: "POST",
-        body: JSON.stringify({
-          itemType,
-          prompt: itemPrompt,
-          options,
-          answerKey,
-          explanation: itemExplanation.trim() || undefined,
-          points: Number(itemPoints) || 10,
-        }),
+        body: JSON.stringify(payload),
       });
-      setItemPrompt("");
-      setItemOptions("");
-      setItemAnswerKey("");
-      setItemExplanation("");
-      setItemTolerance("0");
-      setItemUnit("");
-      setItemPlaceholder("");
-      setItemMaxFiles("1");
-      setItemPhotoInstruction("");
-      setItemSteps("");
-      setItemCorrectOrder("");
-      setItemUrl("");
-      setItemUrlLabel("Buka Kuis di RUAS");
+      resetItemForm();
       setMessage("Soal LKPD ditambahkan.");
+      await loadWorksheetItems(selectedWorksheetId);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Soal belum dapat ditambahkan.");
+    }
+  }
+
+  async function updateWorksheetItem(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedWorksheetId || !editingItem) return;
+    const payload = buildItemPayload();
+    if (!payload) return;
+    try {
+      await apiRequest(`/worksheets/${selectedWorksheetId}/items/${editingItem.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      resetItemForm();
+      setEditingItem(null);
+      setMessage("Soal LKPD diperbarui.");
+      await loadWorksheetItems(selectedWorksheetId);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Soal belum dapat diperbarui.");
+    }
+  }
+
+  function startEditItem(item: WorksheetPreviewItem) {
+    resetItemForm();
+    setEditingItem(item);
+    setItemType(item.item_type as typeof itemType);
+    setItemPrompt(item.prompt);
+    setItemAnswerKey(item.answer_key ?? "");
+    setItemExplanation(item.explanation ?? "");
+    setItemPoints(String(item.points));
+    const options = item.options ?? {};
+    if (item.item_type === "pilihan_ganda") {
+      setItemOptions(worksheetItemStringOptions(item.options, "options").join("\n"));
+    } else if (item.item_type === "isian_singkat") {
+      setItemTolerance(String(typeof options.tolerance === "number" ? options.tolerance : 0));
+      setItemUnit(typeof options.unit === "string" ? options.unit : "");
+    } else if (item.item_type === "uraian") {
+      setItemPlaceholder(typeof options.placeholder === "string" ? options.placeholder : "");
+    } else if (item.item_type === "unggah_foto") {
+      setItemMaxFiles(String(typeof options.maxFiles === "number" ? options.maxFiles : 1));
+      setItemPhotoInstruction(typeof options.instruction === "string" ? options.instruction : "");
+    } else if (item.item_type === "langkah_berurutan") {
+      setItemSteps(worksheetItemStringOptions(item.options, "steps").join("\n"));
+      setItemCorrectOrder(item.answer_key ?? "");
+    } else if (item.item_type === "tautan_ruas") {
+      setItemUrl(typeof options.url === "string" ? options.url : "");
+      setItemUrlLabel(typeof options.label === "string" && options.label ? options.label : "Buka Kuis di RUAS");
+    }
+    document.getElementById("panel-soal-lkpd")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function cancelEditItem() {
+    setEditingItem(null);
+    resetItemForm();
+  }
+
+  async function moveItem(itemId: number, direction: -1 | 1) {
+    if (!selectedWorksheetId) return;
+    const index = worksheetItems.findIndex((item) => item.id === itemId);
+    const targetIndex = index + direction;
+    if (index < 0 || targetIndex < 0 || targetIndex >= worksheetItems.length) return;
+    const itemIds = worksheetItems.map((item) => item.id);
+    [itemIds[index], itemIds[targetIndex]] = [itemIds[targetIndex], itemIds[index]];
+    try {
+      const response = await apiRequest<WorksheetItemsResponse>(`/worksheets/${selectedWorksheetId}/items/order`, {
+        method: "PATCH",
+        body: JSON.stringify({ itemIds }),
+      });
+      setWorksheetItems(response.data);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Urutan soal belum dapat diubah.");
+    }
+  }
+
+  async function deleteItem(item: WorksheetPreviewItem) {
+    if (!selectedWorksheetId) return;
+    if (!(await confirmDialog("Hapus butir soal ini dari LKPD? Tindakan ini tidak dapat dibatalkan.", { confirmLabel: "Hapus" }))) return;
+    try {
+      await apiRequest(`/worksheets/${selectedWorksheetId}/items/${item.id}`, { method: "DELETE" });
+      if (editingItem?.id === item.id) cancelEditItem();
+      setMessage("Butir soal dihapus.");
+      await loadWorksheetItems(selectedWorksheetId);
+    } catch (error) {
+      // Penolakan server (mis. 409 karena butir sudah dijawab murid)
+      // ditampilkan apa adanya lewat pesan error dari API.
+      setMessage(error instanceof Error ? error.message : "Butir belum dapat dihapus.");
     }
   }
 
@@ -1250,7 +1661,30 @@ export default function GuruPage() {
 
       {selectedId ? (
         <section id="panel-isi-materi" className="wizard-step-panel" data-active={guruStep === 0} style={styles.panel}>
-          <h2 style={styles.sectionTitle}>Tambah isi materi</h2>
+          {selectedModule ? (
+            <div className="selected-resource-heading">
+              <div>
+                <p className="module-section-summary">Modul terpilih</p>
+                <strong>{selectedModule.title}</strong>
+              </div>
+              {!editingModuleMeta ? (
+                <button type="button" className="module-row-action" onClick={startEditModuleMeta}>Edit modul</button>
+              ) : null}
+            </div>
+          ) : null}
+          {editingModuleMeta ? (
+            <form onSubmit={saveModuleMeta} style={styles.form}>
+              <input required value={editModuleTitle} onChange={(event) => setEditModuleTitle(event.target.value)} placeholder="Judul modul" style={styles.input} />
+              <input required value={editModuleSubject} onChange={(event) => setEditModuleSubject(event.target.value)} placeholder="Mata pelajaran" style={styles.input} />
+              <textarea value={editModuleDescription} onChange={(event) => setEditModuleDescription(event.target.value)} placeholder="Deskripsi singkat" rows={3} style={styles.textarea} />
+              <button type="submit" style={styles.primaryButton}>Simpan data modul</button>
+              <button type="button" onClick={() => setEditingModuleMeta(false)} style={styles.secondaryButton}>Batal</button>
+            </form>
+          ) : null}
+          <h2 style={styles.sectionTitle}>{editingBlock ? "Edit isi materi" : "Tambah isi materi"}</h2>
+          {editingBlock ? (
+            <p style={styles.message}>Mode edit: mengubah blok {BLOCK_TYPE_LABELS[editingBlock.type].toLowerCase()}. Jenis blok terkunci — untuk mengganti jenis, hapus blok ini lalu buat blok baru.</p>
+          ) : null}
           <div style={styles.blockTypeRow} role="group" aria-label="Jenis blok">
             {([
               { value: "teks", label: "Teks" },
@@ -1262,6 +1696,7 @@ export default function GuruPage() {
                 key={option.value}
                 type="button"
                 aria-pressed={blockType === option.value}
+                disabled={editingBlock !== null}
                 onClick={() => setBlockType(option.value)}
                 style={blockType === option.value ? styles.blockTypeButtonActive : styles.blockTypeButton}
               >
@@ -1281,7 +1716,11 @@ export default function GuruPage() {
                   rows={6}
                   style={styles.textarea}
                 />
-                <small style={styles.muted}>Markdown: ## Judul sub-bab · **tebal** · $$ rumus $$ di baris sendiri = rumus besar di tengah · awali baris dengan &gt; untuk kotak rumus (baris pertama jadi labelnya).</small>
+                {editingBlock && editingTextAsHtml ? (
+                  <small style={styles.muted}>Blok ini tersimpan sebagai HTML, jadi disunting dan disimpan kembali sebagai HTML langsung (tanpa konversi Markdown).</small>
+                ) : (
+                  <small style={styles.muted}>Markdown: ## Judul sub-bab · **tebal** · $$ rumus $$ di baris sendiri = rumus besar di tengah · awali baris dengan &gt; untuk kotak rumus (baris pertama jadi labelnya).</small>
+                )}
               </>
             ) : null}
             {blockType === "sub_bab" ? (
@@ -1319,10 +1758,10 @@ export default function GuruPage() {
                   <label ref={setBlockFirstField} htmlFor="module-attachment-file" tabIndex={-1} style={styles.filePickerButton}>
                     Pilih gambar/PDF
                   </label>
-                  <span style={styles.fileName}>{attachment ? attachment.name : "Belum ada berkas dipilih"}</span>
+                  <span style={styles.fileName}>{attachment ? attachment.name : editingBlock ? attachmentDisplayName(editingBlock) : "Belum ada berkas dipilih"}</span>
                   <input
                     id="module-attachment-file"
-                    required
+                    required={!editingBlock}
                     type="file"
                     accept="image/jpeg,image/png,image/webp,application/pdf"
                     onChange={(event) => setAttachment(event.target.files?.[0] ?? null)}
@@ -1333,9 +1772,33 @@ export default function GuruPage() {
               </>
             ) : null}
             <button type="submit" style={styles.primaryButton}>
-              {blockType === "teks" ? "Tambahkan blok" : blockType === "sub_bab" ? "Tambahkan sub-bab" : blockType === "video" ? "Tambahkan video" : "Unggah lampiran"}
+              {editingBlock ? "Simpan perubahan" : blockType === "teks" ? "Tambahkan blok" : blockType === "sub_bab" ? "Tambahkan sub-bab" : blockType === "video" ? "Tambahkan video" : "Unggah lampiran"}
             </button>
+            {editingBlock ? (
+              <button type="button" onClick={cancelEditBlock} style={styles.secondaryButton}>Batal</button>
+            ) : null}
           </form>
+          <h3 style={styles.contentListTitle}>Isi materi saat ini</h3>
+          {moduleBlocks.length === 0 ? (
+            <p style={styles.empty}>Belum ada isi pada modul ini. Tambahkan blok pertama lewat panel di atas.</p>
+          ) : (
+            <div className="module-list">
+              {moduleBlocks.map((block, index) => (
+                <article key={block.id} className={`module-row content-row ${editingBlock?.id === block.id ? "is-selected" : ""}`}>
+                  <div className="content-row-main">
+                    <strong>{BLOCK_TYPE_LABELS[block.type]}</strong>
+                    <span>{blockSnippet(block)}</span>
+                  </div>
+                  <div className="content-row-actions">
+                    <button type="button" className="module-row-action" disabled={index === 0} onClick={() => void moveBlock(block.id, -1)}>Naik</button>
+                    <button type="button" className="module-row-action" disabled={index === moduleBlocks.length - 1} onClick={() => void moveBlock(block.id, 1)}>Turun</button>
+                    <button type="button" className="module-row-action" onClick={() => startEditBlock(block)}>Edit</button>
+                    <button type="button" className="module-row-action" onClick={() => void deleteBlock(block)}>Hapus</button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
         </section>
       ) : null}
 
@@ -1432,15 +1895,29 @@ export default function GuruPage() {
       </section>
 
       {selectedWorksheetId ? (
-        <section className="wizard-step-panel selected-resource-panel" data-active={guruStep === 1} style={styles.panel}>
+        <section id="panel-soal-lkpd" className="wizard-step-panel selected-resource-panel" data-active={guruStep === 1} style={styles.panel}>
           <div className="selected-resource-heading">
             <div>
               <p className="module-section-summary">LKPD terpilih</p>
-              <h2 style={styles.sectionTitle}>Tambah soal LKPD</h2>
+              <h2 style={styles.sectionTitle}>{editingItem ? "Edit soal LKPD" : "Tambah soal LKPD"}</h2>
             </div>
+            {!editingWorksheetMeta ? (
+              <button type="button" className="module-row-action" onClick={startEditWorksheetMeta}>Edit LKPD</button>
+            ) : null}
           </div>
-          <form onSubmit={addWorksheetItem} style={styles.form}>
-            <select value={itemType} onChange={(event) => setItemType(event.target.value as typeof itemType)} style={styles.input}>
+          {editingWorksheetMeta ? (
+            <form onSubmit={saveWorksheetMeta} style={styles.form}>
+              <input required value={editWorksheetTitle} onChange={(event) => setEditWorksheetTitle(event.target.value)} placeholder="Judul LKPD" style={styles.input} />
+              <textarea value={editWorksheetInstructions} onChange={(event) => setEditWorksheetInstructions(event.target.value)} placeholder="Petunjuk pengerjaan" rows={3} style={styles.textarea} />
+              <button type="submit" style={styles.primaryButton}>Simpan data LKPD</button>
+              <button type="button" onClick={() => setEditingWorksheetMeta(false)} style={styles.secondaryButton}>Batal</button>
+            </form>
+          ) : null}
+          {editingItem ? (
+            <p style={styles.message}>Mode edit: mengubah butir {WORKSHEET_ITEM_TYPE_LABELS[editingItem.item_type] ?? editingItem.item_type}. Jenis butir terkunci — untuk mengganti jenis, hapus butir ini lalu buat butir baru.</p>
+          ) : null}
+          <form onSubmit={editingItem ? updateWorksheetItem : addWorksheetItem} style={styles.form}>
+            <select value={itemType} disabled={editingItem !== null} onChange={(event) => setItemType(event.target.value as typeof itemType)} style={styles.input}>
               <option value="pilihan_ganda">Pilihan ganda</option>
               <option value="isian_singkat">Isian singkat</option>
               <option value="uraian">Uraian</option>
@@ -1491,8 +1968,32 @@ export default function GuruPage() {
             ) : null}
             <textarea value={itemExplanation} onChange={(event) => setItemExplanation(event.target.value)} placeholder="Pembahasan (opsional, tampil untuk murid setelah mengumpulkan)" rows={3} style={styles.textarea} />
             <input type="number" min={0} max={1000} value={itemPoints} onChange={(event) => setItemPoints(event.target.value)} placeholder={itemType === "refleksi" ? "Poin (refleksi biasanya 0)" : "Poin"} style={styles.input} />
-            <button type="submit" style={styles.primaryButton}>Tambahkan soal</button>
+            <button type="submit" style={styles.primaryButton}>{editingItem ? "Simpan perubahan" : "Tambahkan soal"}</button>
+            {editingItem ? (
+              <button type="button" onClick={cancelEditItem} style={styles.secondaryButton}>Batal</button>
+            ) : null}
           </form>
+          <h3 style={styles.contentListTitle}>Soal saat ini</h3>
+          {worksheetItems.length === 0 ? (
+            <p style={styles.empty}>Belum ada soal pada LKPD ini. Tambahkan soal pertama lewat panel di atas.</p>
+          ) : (
+            <div className="module-list">
+              {worksheetItems.map((item, index) => (
+                <article key={item.id} className={`module-row content-row ${editingItem?.id === item.id ? "is-selected" : ""}`}>
+                  <div className="content-row-main">
+                    <strong>{index + 1}. {truncateText(item.prompt, 70) || "Soal"}</strong>
+                    <span>{WORKSHEET_ITEM_TYPE_LABELS[item.item_type] ?? item.item_type} · {item.points} poin</span>
+                  </div>
+                  <div className="content-row-actions">
+                    <button type="button" className="module-row-action" disabled={index === 0} onClick={() => void moveItem(item.id, -1)}>Naik</button>
+                    <button type="button" className="module-row-action" disabled={index === worksheetItems.length - 1} onClick={() => void moveItem(item.id, 1)}>Turun</button>
+                    <button type="button" className="module-row-action" onClick={() => startEditItem(item)}>Edit</button>
+                    <button type="button" className="module-row-action" onClick={() => void deleteItem(item)}>Hapus</button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
         </section>
       ) : null}
 
@@ -1903,6 +2404,42 @@ function PreviewBlock({ block, moduleId }: { block: ModuleBlock; moduleId: numbe
   return null;
 }
 
+const BLOCK_TYPE_LABELS: Record<ModuleBlock["type"], string> = {
+  teks: "Teks",
+  sub_bab: "Sub-bab",
+  video: "Video",
+  gambar: "Gambar",
+  berkas: "Berkas",
+};
+
+function stripHtmlToText(html: string) {
+  return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function truncateText(value: string, max = 90) {
+  return value.length > max ? `${value.slice(0, max).trimEnd()}…` : value;
+}
+
+function blockStringField(block: ModuleBlock, field: string) {
+  const value = block.content[field];
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function blockSnippet(block: ModuleBlock): string {
+  if (block.type === "teks") {
+    const raw = typeof block.content.markdown === "string" ? block.content.markdown : stripHtmlToText(String(block.content.html ?? ""));
+    return truncateText(raw) || "Blok teks kosong";
+  }
+  if (block.type === "sub_bab") return blockStringField(block, "title") || "Sub-bab";
+  if (block.type === "video") return blockStringField(block, "caption") || blockStringField(block, "youtubeUrl") || "Video";
+  if (block.type === "gambar") return blockStringField(block, "caption") || "Gambar terlampir";
+  return blockStringField(block, "label") || "Berkas terlampir";
+}
+
+function attachmentDisplayName(block: ModuleBlock) {
+  return blockStringField(block, "caption") || blockStringField(block, "label") || block.attachment_key || "Lampiran saat ini";
+}
+
 const WORKSHEET_ITEM_TYPE_LABELS: Record<string, string> = {
   pilihan_ganda: "Pilihan ganda",
   isian_singkat: "Isian singkat",
@@ -2083,6 +2620,7 @@ const styles = {
   message: { background: "#eff8ff", color: "#175cd3", padding: 12, borderRadius: 8 },
   panel: { border: "1px solid #eaecf0", borderRadius: 12, padding: 18, marginTop: 24 },
   sectionTitle: { fontSize: 20, margin: "28px 0 12px" },
+  contentListTitle: { fontSize: 16, margin: "22px 0 10px" },
   form: { display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 10 },
   input: { border: "1px solid #d0d5dd", borderRadius: 8, padding: 11, width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box" as const },
   textarea: { border: "1px solid #d0d5dd", borderRadius: 8, padding: 11, fontFamily: "inherit", resize: "vertical" as const, width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box" as const },

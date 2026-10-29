@@ -1396,6 +1396,38 @@ a {
   white-space: nowrap;
 }
 
+.content-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.content-row-main {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  color: var(--color-ink);
+  text-align: left;
+}
+
+.content-row-main span {
+  overflow: hidden;
+  color: var(--color-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.content-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.module-row-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .module-status {
   border-radius: 999px;
   padding: 4px 8px;

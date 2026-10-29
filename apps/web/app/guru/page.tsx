@@ -245,6 +245,21 @@ export default function GuruPage() {
   const [assignmentDueAt, setAssignmentDueAt] = useState(() => toDateTimeLocal(new Date(Date.now() + 24 * 60 * 60 * 1000)));
   const [assignmentClassIds, setAssignmentClassIds] = useState<number[]>([]);
   const [assignmentRuasUrl, setAssignmentRuasUrl] = useState("");
+  const [editingAssignment, setEditingAssignment] = useState<AssignmentSummary | null>(null);
+  // Jepretan keadaan formulir penugasan + pilihan editor (Langkah 1–2) sebelum
+  // masuk mode edit penugasan; dipulihkan saat keluar agar mode edit tidak
+  // merusak pilihan materi/LKPD yang sedang aktif (temuan audit K4).
+  const assignmentEditSnapshot = useRef<{
+    selectedId: number | null;
+    selectedWorksheetId: number | null;
+    title: string;
+    instructions: string;
+    opensAt: string;
+    dueAt: string;
+    ruasUrl: string;
+    classIds: number[];
+  } | null>(null);
+  const assignmentFormRef = useRef<HTMLDetailsElement | null>(null);
   const [attempts, setAttempts] = useState<WorksheetAttemptSummary[]>([]);
   const [selectedAttemptId, setSelectedAttemptId] = useState<number | null>(null);
   const [attemptDetail, setAttemptDetail] = useState<WorksheetAttemptDetail | null>(null);
@@ -1476,6 +1491,77 @@ export default function GuruPage() {
     }
   }
 
+  function startEditAssignment(assignment: AssignmentSummary) {
+    assignmentEditSnapshot.current = {
+      selectedId,
+      selectedWorksheetId,
+      title: assignmentTitle,
+      instructions: assignmentInstructions,
+      opensAt: assignmentOpensAt,
+      dueAt: assignmentDueAt,
+      ruasUrl: assignmentRuasUrl,
+      classIds: assignmentClassIds,
+    };
+    setEditingAssignment(assignment);
+    setAssignmentTitle(assignment.title);
+    setAssignmentInstructions(assignment.instructions ?? "");
+    setSelectedId(assignment.module_id);
+    setSelectedWorksheetId(assignment.worksheet_id);
+    setAssignmentClassIds(assignment.classes.map((kelas) => kelas.id));
+    setAssignmentOpensAt(toDateTimeLocal(new Date(assignment.opens_at)));
+    setAssignmentDueAt(toDateTimeLocal(new Date(assignment.due_at)));
+    setAssignmentRuasUrl(assignment.ruas_quiz_url ?? "");
+    if (assignmentFormRef.current) {
+      assignmentFormRef.current.open = true;
+      assignmentFormRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
+  function exitAssignmentEdit() {
+    const snapshot = assignmentEditSnapshot.current;
+    if (snapshot) {
+      setSelectedId(snapshot.selectedId);
+      setSelectedWorksheetId(snapshot.selectedWorksheetId);
+      setAssignmentTitle(snapshot.title);
+      setAssignmentInstructions(snapshot.instructions);
+      setAssignmentOpensAt(snapshot.opensAt);
+      setAssignmentDueAt(snapshot.dueAt);
+      setAssignmentRuasUrl(snapshot.ruasUrl);
+      setAssignmentClassIds(snapshot.classIds);
+    }
+    assignmentEditSnapshot.current = null;
+    setEditingAssignment(null);
+  }
+
+  async function saveAssignmentEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingAssignment) return;
+    if (!selectedId || !selectedWorksheetId || assignmentClassIds.length === 0) {
+      setMessage("Pilih modul, LKPD, dan minimal satu kelas tujuan.");
+      return;
+    }
+    try {
+      await apiRequest(`/assignments/${editingAssignment.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          moduleId: selectedId,
+          worksheetId: selectedWorksheetId,
+          title: assignmentTitle,
+          instructions: assignmentInstructions || undefined,
+          opensAt: new Date(assignmentOpensAt).toISOString(),
+          dueAt: new Date(assignmentDueAt).toISOString(),
+          ruasQuizUrl: assignmentRuasUrl || undefined,
+          classIds: assignmentClassIds,
+        }),
+      });
+      setMessage("Perubahan penugasan disimpan.");
+      exitAssignmentEdit();
+      await loadModules();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Perubahan penugasan belum dapat disimpan.");
+    }
+  }
+
   async function changeAssignmentStatus(assignment: AssignmentSummary) {
     const status = assignment.status === "terbit" ? "ditutup" : "terbit";
     if (status === "ditutup" && !(await confirmDialog("Tutup penugasan ini? Murid tidak dapat lagi membukanya atau mengumpulkan.", { confirmLabel: "Tutup penugasan" }))) return;
@@ -2018,9 +2104,9 @@ export default function GuruPage() {
             <p className="module-section-summary">{assignmentStatusFilter === "semua" ? `${assignments.length} penugasan · pilih aksi dari daftar` : `Menampilkan ${visibleAssignments.length} dari ${assignments.length} penugasan`}</p>
           </div>
         </div>
-        <details className="guru-collapsible">
-          <summary>+ Buat penugasan</summary>
-          <form onSubmit={createAssignment} style={styles.form}>
+        <details className="guru-collapsible" ref={assignmentFormRef}>
+          <summary>{editingAssignment ? "Edit penugasan" : "+ Buat penugasan"}</summary>
+          <form onSubmit={editingAssignment ? saveAssignmentEdit : createAssignment} style={styles.form}>
             <input required value={assignmentTitle} onChange={(event) => setAssignmentTitle(event.target.value)} placeholder="Judul penugasan" style={styles.input} />
             <textarea value={assignmentInstructions} onChange={(event) => setAssignmentInstructions(event.target.value)} placeholder="Petunjuk penugasan" rows={3} style={styles.textarea} />
             <label style={styles.label}>Modul
@@ -2042,7 +2128,9 @@ export default function GuruPage() {
             <label style={styles.label}>Dibuka pada<input type="datetime-local" value={assignmentOpensAt} onChange={(event) => setAssignmentOpensAt(event.target.value)} style={styles.input} /></label>
             <label style={styles.label}>Batas pengumpulan<input type="datetime-local" value={assignmentDueAt} onChange={(event) => setAssignmentDueAt(event.target.value)} style={styles.input} /></label>
             <input type="url" value={assignmentRuasUrl} onChange={(event) => setAssignmentRuasUrl(event.target.value)} placeholder="Tautan kuis RUAS (opsional)" style={styles.input} />
-            <button type="submit" style={styles.primaryButton}>Buat draf penugasan</button>
+            {editingAssignment?.status === "terbit" ? <p style={styles.message}>Modul, LKPD, dan kelas tujuan terkunci bila sudah ada murid yang mengerjakan.</p> : null}
+            <button type="submit" style={styles.primaryButton}>{editingAssignment ? "Simpan perubahan" : "Buat draf penugasan"}</button>
+            {editingAssignment ? <button type="button" onClick={exitAssignmentEdit} style={styles.secondaryButton}>Batal</button> : null}
           </form>
         </details>
         {assignments.length > 0 ? (
@@ -2056,7 +2144,7 @@ export default function GuruPage() {
         ) : null}
         {assignments.length === 0 ? <p style={styles.empty}>Belum ada penugasan.</p> : visibleAssignments.length === 0 ? (
           <p style={styles.empty}>Tidak ada penugasan berstatus {activeAssignmentFilterLabel}.</p>
-        ) : <div className="module-list">{visibleAssignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><div className="resource-row-actions"><button type="button" onClick={() => void changeAssignmentStatus(assignment)} style={styles.secondaryButton}>{assignment.status === "terbit" ? "Tutup" : "Terbitkan"}</button>{assignment.status === "terbit" ? <a href={`https://wa.me/?text=${encodeURIComponent(buildWhatsAppShareMessage(assignment, typeof window !== "undefined" ? window.location.origin : ""))}`} target="_blank" rel="noreferrer" style={{ ...styles.secondaryButton, color: "inherit", textDecoration: "none" }}>Bagikan WA</a> : null}</div></article>)}</div>}
+        ) : <div className="module-list">{visibleAssignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><div className="resource-row-actions">{assignment.status !== "ditutup" ? <button type="button" onClick={() => startEditAssignment(assignment)} style={styles.secondaryButton}>Edit</button> : null}<button type="button" onClick={() => void changeAssignmentStatus(assignment)} style={styles.secondaryButton}>{assignment.status === "terbit" ? "Tutup" : "Terbitkan"}</button>{assignment.status === "terbit" ? <a href={`https://wa.me/?text=${encodeURIComponent(buildWhatsAppShareMessage(assignment, typeof window !== "undefined" ? window.location.origin : ""))}`} target="_blank" rel="noreferrer" style={{ ...styles.secondaryButton, color: "inherit", textDecoration: "none" }}>Bagikan WA</a> : null}</div></article>)}</div>}
       </section>
 
       <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 4} style={styles.panel}>

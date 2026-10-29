@@ -1583,6 +1583,81 @@ a {
   gap: 8px;
 }
 
+/* Tombol aksi baris guru (penugasan Langkah 4 + pemicu panel Langkah 5):
+   hierarki visual agar aksi utama terbaca sekali pandang, plus keadaan
+   aktif menetap untuk tombol pemicu panel yang sedang terbuka. */
+.row-action-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 8px 13px;
+  border-radius: var(--radius-sm);
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.row-action-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.row-action-button.is-primary {
+  border: 1px solid var(--color-brand-700);
+  background: var(--color-brand-700);
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.row-action-button.is-primary:hover {
+  border-color: var(--color-brand-800);
+  background: var(--color-brand-800);
+}
+
+.row-action-button.is-outline {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+
+.row-action-button.is-outline:hover {
+  border-color: var(--color-brand-700);
+  color: var(--color-brand-800);
+}
+
+.row-action-button.is-whatsapp {
+  border: 1px solid #25d366;
+  background: var(--color-surface);
+  color: #0b7a43;
+}
+
+.row-action-button.is-whatsapp:hover {
+  background: #e9fbf0;
+}
+
+/* Panel pemicu (rekap / exit ticket) yang sedang terbuka: terisi brand
+   seperti chip saringan aktif, menetap selama panelnya tampil. */
+.row-action-button.is-active {
+  border-color: var(--color-brand-700);
+  background: var(--color-brand-50);
+  color: var(--color-brand-800);
+  font-weight: 750;
+}
+
+.row-action-button.is-active:hover {
+  background: var(--color-brand-50);
+}
+
+.row-action-button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
 .integrity-alert-row {
   align-items: start;
 }

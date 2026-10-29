@@ -260,6 +260,8 @@ export default function GuruPage() {
     classIds: number[];
   } | null>(null);
   const assignmentFormRef = useRef<HTMLDetailsElement | null>(null);
+  const sessionReportPanelRef = useRef<HTMLElement | null>(null);
+  const exitTicketPanelRef = useRef<HTMLElement | null>(null);
   const [attempts, setAttempts] = useState<WorksheetAttemptSummary[]>([]);
   const [selectedAttemptId, setSelectedAttemptId] = useState<number | null>(null);
   const [attemptDetail, setAttemptDetail] = useState<WorksheetAttemptDetail | null>(null);
@@ -729,6 +731,21 @@ export default function GuruPage() {
     }
     void loadWorksheetItems(selectedWorksheetId);
   }, [selectedWorksheetId]);
+
+  // Umpan balik klik pemicu panel Langkah 5: sesudah data termuat dan panel
+  // ter-render, gulirkan panel masuk layar — panel bisa berada jauh di bawah
+  // daftar sehingga klik terasa tidak bereaksi bila tidak digulirkan.
+  useEffect(() => {
+    if (selectedReportAssignmentId && sessionReport && !sessionReportLoading) {
+      scrollPanelIntoView(sessionReportPanelRef.current);
+    }
+  }, [selectedReportAssignmentId, sessionReport, sessionReportLoading]);
+
+  useEffect(() => {
+    if (selectedAssignmentId && assignmentSummary && !assignmentSummaryLoading) {
+      scrollPanelIntoView(exitTicketPanelRef.current);
+    }
+  }, [selectedAssignmentId, assignmentSummary, assignmentSummaryLoading]);
 
   async function createModule(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -2144,7 +2161,7 @@ export default function GuruPage() {
         ) : null}
         {assignments.length === 0 ? <p style={styles.empty}>Belum ada penugasan.</p> : visibleAssignments.length === 0 ? (
           <p style={styles.empty}>Tidak ada penugasan berstatus {activeAssignmentFilterLabel}.</p>
-        ) : <div className="module-list">{visibleAssignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><div className="resource-row-actions">{assignment.status !== "ditutup" ? <button type="button" onClick={() => startEditAssignment(assignment)} style={styles.secondaryButton}>Edit</button> : null}<button type="button" onClick={() => void changeAssignmentStatus(assignment)} style={styles.secondaryButton}>{assignment.status === "terbit" ? "Tutup" : "Terbitkan"}</button>{assignment.status === "terbit" ? <a href={`https://wa.me/?text=${encodeURIComponent(buildWhatsAppShareMessage(assignment, typeof window !== "undefined" ? window.location.origin : ""))}`} target="_blank" rel="noreferrer" style={{ ...styles.secondaryButton, color: "inherit", textDecoration: "none" }}>Bagikan WA</a> : null}</div></article>)}</div>}
+        ) : <div className="module-list">{visibleAssignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><div className="resource-row-actions">{assignment.status !== "ditutup" ? <button type="button" onClick={() => startEditAssignment(assignment)} className="row-action-button is-outline"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>Edit</button> : null}<button type="button" onClick={() => void changeAssignmentStatus(assignment)} className={assignment.status === "terbit" ? "row-action-button is-outline" : "row-action-button is-primary"}>{assignment.status === "terbit" ? <><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>Tutup</> : "Terbitkan"}</button>{assignment.status === "terbit" ? <a href={`https://wa.me/?text=${encodeURIComponent(buildWhatsAppShareMessage(assignment, typeof window !== "undefined" ? window.location.origin : ""))}`} target="_blank" rel="noreferrer" className="row-action-button is-whatsapp"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.6L3 21l1.9-5.6A8.5 8.5 0 1 1 21 11.5Z" /></svg>Bagikan WA</a> : null}</div></article>)}</div>}
       </section>
 
       <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 4} style={styles.panel}>
@@ -2256,11 +2273,11 @@ export default function GuruPage() {
             <p className="module-section-summary">{assignments.length} penugasan · pilih penugasan untuk melihat rekap dan exit ticket</p>
           </div>
         </div>
-        {assignments.length > 0 ? <div className="module-list">{assignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><div className="resource-row-actions"><button type="button" onClick={() => void loadSessionReport(assignment.id)} style={styles.secondaryButton}>{selectedReportAssignmentId === assignment.id ? "Segarkan rekap" : "Lihat rekap"}</button><button type="button" onClick={() => void loadAssignmentSummary(assignment.id)} style={styles.secondaryButton}>{selectedAssignmentId === assignment.id ? "Segarkan exit ticket" : "Lihat exit ticket"}</button></div></article>)}</div> : <p style={styles.empty}>Belum ada penugasan.</p>}
+        {assignments.length > 0 ? <div className="module-list">{assignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><div className="resource-row-actions"><button type="button" onClick={() => void loadSessionReport(assignment.id)} className={`row-action-button is-outline${selectedReportAssignmentId === assignment.id ? " is-active" : ""}`} aria-pressed={selectedReportAssignmentId === assignment.id} disabled={sessionReportLoading && selectedReportAssignmentId === assignment.id}><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18" /><path d="M10 10v10" /></svg>{sessionReportLoading && selectedReportAssignmentId === assignment.id ? "Memuat…" : selectedReportAssignmentId === assignment.id ? "Segarkan rekap" : "Lihat rekap"}</button><button type="button" onClick={() => void loadAssignmentSummary(assignment.id)} className={`row-action-button is-outline${selectedAssignmentId === assignment.id ? " is-active" : ""}`} aria-pressed={selectedAssignmentId === assignment.id} disabled={assignmentSummaryLoading && selectedAssignmentId === assignment.id}><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 8h6" /><path d="M9 12h6" /></svg>{assignmentSummaryLoading && selectedAssignmentId === assignment.id ? "Memuat…" : selectedAssignmentId === assignment.id ? "Segarkan exit ticket" : "Lihat exit ticket"}</button></div></article>)}</div> : <p style={styles.empty}>Belum ada penugasan.</p>}
       </section>
 
       {selectedReportAssignmentId ? (
-        <section className="wizard-step-panel" data-active={guruStep === 4} style={styles.panel}>
+        <section ref={sessionReportPanelRef} className="wizard-step-panel" data-active={guruStep === 4} style={styles.panel}>
           <h2 style={styles.sectionTitle}>Rekap sesi</h2>
           {sessionReportLoading ? <p style={styles.muted}>Memuat rekap sesi...</p> : null}
           {!sessionReportLoading && sessionReport ? (
@@ -2298,7 +2315,7 @@ export default function GuruPage() {
       ) : null}
 
       {selectedAssignmentId ? (
-        <section className="wizard-step-panel" data-active={guruStep === 4} style={styles.panel}>
+        <section ref={exitTicketPanelRef} className="wizard-step-panel" data-active={guruStep === 4} style={styles.panel}>
           <h2 style={styles.sectionTitle}>Ringkasan exit ticket</h2>
           {assignmentSummaryLoading ? <p style={styles.muted}>Memuat jawaban exit ticket...</p> : null}
           {!assignmentSummaryLoading && assignmentSummary?.students.every((student) => !student.exit_ticket) ? <p style={styles.empty}>Belum ada murid yang mengirim exit ticket untuk penugasan ini.</p> : null}
@@ -2846,6 +2863,14 @@ function parseRuasCsv(value: string) {
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+// Gulirkan panel hasil (rekap sesi / exit ticket) masuk layar sesudah
+// ter-render. Gerak halus dimatikan bila pengguna meminta pengurangan gerak.
+function scrollPanelIntoView(element: HTMLElement | null) {
+  if (!element) return;
+  const reduceMotion = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  element.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
 }
 
 function buildWhatsAppShareMessage(assignment: AssignmentSummary, origin: string) {

@@ -217,6 +217,7 @@ export default function GuruPage() {
   const [classSubject, setClassSubject] = useState("");
   const [classAcademicYear, setClassAcademicYear] = useState("2026/2027");
   const [assignments, setAssignments] = useState<AssignmentSummary[]>([]);
+  const [assignmentStatusFilter, setAssignmentStatusFilter] = useState<"semua" | "draf" | "terbit" | "ditutup">("semua");
   const [selectedWorksheetId, setSelectedWorksheetId] = useState<number | null>(null);
   const [worksheetTitle, setWorksheetTitle] = useState("");
   const [worksheetInstructions, setWorksheetInstructions] = useState("");
@@ -387,6 +388,19 @@ export default function GuruPage() {
     setWorksheetArchiveOpen(false);
     setWorksheetArchiveClosedAtQuery(null);
   }
+
+  // Saringan status daftar penugasan (Langkah 4): hitungan per status dari
+  // data yang sudah termuat; daftar tampil diturunkan murni di sisi klien.
+  const assignmentStatusCounts: Record<"semua" | "draf" | "terbit" | "ditutup", number> = {
+    semua: assignments.length,
+    terbit: assignments.filter((assignment) => assignment.status === "terbit").length,
+    draf: assignments.filter((assignment) => assignment.status === "draf").length,
+    ditutup: assignments.filter((assignment) => assignment.status === "ditutup").length,
+  };
+  const visibleAssignments = assignmentStatusFilter === "semua"
+    ? assignments
+    : assignments.filter((assignment) => assignment.status === assignmentStatusFilter);
+  const activeAssignmentFilterLabel = ASSIGNMENT_STATUS_FILTER_OPTIONS.find((option) => option.value === assignmentStatusFilter)?.label ?? "";
 
   // Partisi daftar LKPD: sama seperti modul — aktif dan arsip, hanya
   // dipakai saat saringan status "semua".
@@ -2001,7 +2015,7 @@ export default function GuruPage() {
         <div className="module-section-heading">
           <div>
             <h2 style={styles.sectionTitle}>Penugasan ke kelas</h2>
-            <p className="module-section-summary">{assignments.length} penugasan · pilih aksi dari daftar</p>
+            <p className="module-section-summary">{assignmentStatusFilter === "semua" ? `${assignments.length} penugasan · pilih aksi dari daftar` : `Menampilkan ${visibleAssignments.length} dari ${assignments.length} penugasan`}</p>
           </div>
         </div>
         <details className="guru-collapsible">
@@ -2031,7 +2045,18 @@ export default function GuruPage() {
             <button type="submit" style={styles.primaryButton}>Buat draf penugasan</button>
           </form>
         </details>
-        {assignments.length > 0 ? <div className="module-list">{assignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><div className="resource-row-actions"><button type="button" onClick={() => void changeAssignmentStatus(assignment)} style={styles.secondaryButton}>{assignment.status === "terbit" ? "Tutup" : "Terbitkan"}</button>{assignment.status === "terbit" ? <a href={`https://wa.me/?text=${encodeURIComponent(buildWhatsAppShareMessage(assignment, typeof window !== "undefined" ? window.location.origin : ""))}`} target="_blank" rel="noreferrer" style={{ ...styles.secondaryButton, color: "inherit", textDecoration: "none" }}>Bagikan WA</a> : null}</div></article>)}</div> : <p style={styles.empty}>Belum ada penugasan.</p>}
+        {assignments.length > 0 ? (
+          <div className="assignment-status-filter" role="group" aria-label="Saring status penugasan">
+            {ASSIGNMENT_STATUS_FILTER_OPTIONS.map((option) => (
+              <button key={option.value} type="button" className={`filter-chip${assignmentStatusFilter === option.value ? " is-active" : ""}`} aria-pressed={assignmentStatusFilter === option.value} onClick={() => setAssignmentStatusFilter(option.value)}>
+                {option.label} ({assignmentStatusCounts[option.value]})
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {assignments.length === 0 ? <p style={styles.empty}>Belum ada penugasan.</p> : visibleAssignments.length === 0 ? (
+          <p style={styles.empty}>Tidak ada penugasan berstatus {activeAssignmentFilterLabel}.</p>
+        ) : <div className="module-list">{visibleAssignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><div className="resource-row-actions"><button type="button" onClick={() => void changeAssignmentStatus(assignment)} style={styles.secondaryButton}>{assignment.status === "terbit" ? "Tutup" : "Terbitkan"}</button>{assignment.status === "terbit" ? <a href={`https://wa.me/?text=${encodeURIComponent(buildWhatsAppShareMessage(assignment, typeof window !== "undefined" ? window.location.origin : ""))}`} target="_blank" rel="noreferrer" style={{ ...styles.secondaryButton, color: "inherit", textDecoration: "none" }}>Bagikan WA</a> : null}</div></article>)}</div>}
       </section>
 
       <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 4} style={styles.panel}>
@@ -2449,6 +2474,13 @@ function blockSnippet(block: ModuleBlock): string {
 function attachmentDisplayName(block: ModuleBlock) {
   return blockStringField(block, "caption") || blockStringField(block, "label") || block.attachment_key || "Lampiran saat ini";
 }
+
+const ASSIGNMENT_STATUS_FILTER_OPTIONS = [
+  { value: "semua", label: "Semua" },
+  { value: "terbit", label: "Terbit" },
+  { value: "draf", label: "Draf" },
+  { value: "ditutup", label: "Ditutup" },
+] as const;
 
 const WORKSHEET_ITEM_TYPE_LABELS: Record<string, string> = {
   pilihan_ganda: "Pilihan ganda",

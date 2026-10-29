@@ -6,6 +6,8 @@ import {
   createWorksheetItemSchema,
   createWorksheetSchema,
   gradeWorksheetSchema,
+  reorderWorksheetItemsSchema,
+  updateWorksheetItemSchema,
   updateWorksheetSchema,
 } from "@simak/shared";
 import { requireRole } from "../middleware/auth";
@@ -318,3 +320,96 @@ worksheetRoutes.post(
     return c.json({ ok: true, data: serializeItem(item!) }, 201);
   },
 );
+
+// Route "/order" didaftarkan sebelum "/:itemId" agar segmen "order" tidak
+// tertangkap sebagai id butir.
+worksheetRoutes.patch(
+  "/:id/items/order",
+  requireRole("guru"),
+  zValidator("json", reorderWorksheetItemsSchema),
+  async (c) => {
+    const user = c.get("user")!;
+    const worksheetId = Number(c.req.param("id"));
+    if (!Number.isInteger(worksheetId) || worksheetId <= 0) return c.json({ ok: false, message: "ID LKPD tidak valid." }, 400);
+    if (!(await ownedWorksheet(user.userId, worksheetId))) return c.json({ ok: false, message: "LKPD tidak ditemukan." }, 404);
+    const input = c.req.valid("json");
+    const existing = await db.select({ id: worksheetItems.id }).from(worksheetItems).where(eq(worksheetItems.worksheetId, worksheetId));
+    const existingIds = new Set(existing.map((row) => row.id));
+    const requestedIds = new Set(input.itemIds);
+    if (
+      input.itemIds.length !== existingIds.size
+      || requestedIds.size !== input.itemIds.length
+      || input.itemIds.some((itemId) => !existingIds.has(itemId))
+    ) {
+      return c.json({ ok: false, message: "Daftar urutan butir harus memuat semua butir LKPD ini tepat satu kali." }, 400);
+    }
+    for (const [index, itemId] of input.itemIds.entries()) {
+      await db.update(worksheetItems).set({ sortOrder: index }).where(eq(worksheetItems.id, itemId));
+    }
+    const rows = await db.select().from(worksheetItems).where(eq(worksheetItems.worksheetId, worksheetId)).orderBy(asc(worksheetItems.sortOrder));
+    return c.json({ ok: true, data: rows.map((item) => serializeItem(item)) });
+  },
+);
+
+worksheetRoutes.patch(
+  "/:id/items/:itemId",
+  requireRole("guru"),
+  zValidator("json", updateWorksheetItemSchema),
+  async (c) => {
+    const user = c.get("user")!;
+    const worksheetId = Number(c.req.param("id"));
+    const itemId = Number(c.req.param("itemId"));
+    if (![worksheetId, itemId].every((value) => Number.isInteger(value) && value > 0)) {
+      return c.json({ ok: false, message: "ID LKPD atau butir tidak valid." }, 400);
+    }
+    if (!(await ownedWorksheet(user.userId, worksheetId))) return c.json({ ok: false, message: "LKPD tidak ditemukan." }, 404);
+    const [item] = await db
+      .select()
+      .from(worksheetItems)
+      .where(and(eq(worksheetItems.id, itemId), eq(worksheetItems.worksheetId, worksheetId)))
+      .limit(1);
+    if (!item) return c.json({ ok: false, message: "Butir tidak ditemukan." }, 404);
+    const input = c.req.valid("json");
+    if (input.itemType !== item.itemType) {
+      return c.json({ ok: false, message: "Jenis butir tidak dapat diubah. Hapus butir ini lalu buat butir baru bila ingin mengganti jenisnya." }, 400);
+    }
+    await db.update(worksheetItems).set({
+      ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {}),
+      prompt: input.prompt,
+      optionsJson: input.options ?? null,
+      answerKey: input.answerKey ?? null,
+      explanation: input.explanation ?? null,
+      points: input.points,
+    }).where(eq(worksheetItems.id, itemId));
+    const [updated] = await db.select().from(worksheetItems).where(eq(worksheetItems.id, itemId)).limit(1);
+    return c.json({ ok: true, data: serializeItem(updated!) });
+  },
+);
+
+worksheetRoutes.delete("/:id/items/:itemId", requireRole("guru"), async (c) => {
+  const user = c.get("user")!;
+  const worksheetId = Number(c.req.param("id"));
+  const itemId = Number(c.req.param("itemId"));
+  if (![worksheetId, itemId].every((value) => Number.isInteger(value) && value > 0)) {
+    return c.json({ ok: false, message: "ID LKPD atau butir tidak valid." }, 400);
+  }
+  if (!(await ownedWorksheet(user.userId, worksheetId))) return c.json({ ok: false, message: "LKPD tidak ditemukan." }, 404);
+  const [item] = await db
+    .select({ id: worksheetItems.id })
+    .from(worksheetItems)
+    .where(and(eq(worksheetItems.id, itemId), eq(worksheetItems.worksheetId, worksheetId)))
+    .limit(1);
+  if (!item) return c.json({ ok: false, message: "Butir tidak ditemukan." }, 404);
+  // Butir yang sudah dijawab murid adalah bagian dari riwayat penilaian;
+  // menghapusnya akan merusak jawaban dan skor yang sudah tercatat.
+  const [answer] = await db
+    .select({ id: worksheetAnswers.id })
+    .from(worksheetAnswers)
+    .where(eq(worksheetAnswers.worksheetItemId, itemId))
+    .limit(1);
+  if (answer) {
+    return c.json({ ok: false, message: "Butir ini sudah memiliki jawaban murid dan tidak dapat dihapus." }, 409);
+  }
+  await db.delete(worksheetItems).where(eq(worksheetItems.id, itemId));
+  return c.json({ ok: true, data: { id: itemId } });
+});

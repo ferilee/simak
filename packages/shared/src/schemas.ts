@@ -140,6 +140,16 @@ export const createModuleBlockSchema = z.object({
   attachmentKey: z.string().max(512).optional(),
 });
 
+// Ubah blok memakai bentuk yang sama dengan buat blok (penggantian penuh);
+// aturan "jenis blok tidak boleh berubah" ditegakkan di route dari blok tersimpan.
+export const updateModuleBlockSchema = createModuleBlockSchema;
+
+// Daftar LENGKAP id blok sebuah modul dalam urutan baru; kelengkapan dan
+// kepemilikan himpunan id divalidasi di route terhadap isi modul.
+export const reorderModuleBlocksSchema = z.object({
+  blockIds: z.array(z.number().int().positive()).max(500),
+});
+
 export const joinClassSchema = z.object({
   joinCode: z.string().trim().min(1).max(12),
 });
@@ -181,6 +191,16 @@ export const createWorksheetItemSchema = z.object({
   answerKey: z.string().max(10_000).optional(),
   explanation: z.string().max(10_000).optional(),
   points: z.number().int().min(0).max(1000).default(10),
+});
+
+// Ubah butir memakai bentuk yang sama dengan buat butir (penggantian penuh);
+// aturan "jenis butir tidak boleh berubah" ditegakkan di route dari butir tersimpan.
+export const updateWorksheetItemSchema = createWorksheetItemSchema;
+
+// Daftar LENGKAP id butir sebuah LKPD dalam urutan baru; kelengkapan dan
+// kepemilikan himpunan id divalidasi di route terhadap isi LKPD.
+export const reorderWorksheetItemsSchema = z.object({
+  itemIds: z.array(z.number().int().positive()).max(500),
 });
 
 export const worksheetAnswerSchema = z.object({

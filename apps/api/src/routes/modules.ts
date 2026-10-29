@@ -2,7 +2,13 @@ import { Hono } from "hono";
 import { eq, and, asc, sql } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
 import { db, schema } from "@simak/db";
-import { createModuleBlockSchema, createModuleSchema, updateModuleSchema } from "@simak/shared";
+import {
+  createModuleBlockSchema,
+  createModuleSchema,
+  reorderModuleBlocksSchema,
+  updateModuleBlockSchema,
+  updateModuleSchema,
+} from "@simak/shared";
 import { requireRole } from "../middleware/auth";
 
 // Modul materi + bloknya (Tahap 1). Isi content_json wajib lolos skema Zod
@@ -135,4 +141,80 @@ moduleRoutes.post("/:id/blocks", requireRole("guru"), zValidator("json", createM
     .$returningId();
   const [block] = await db.select().from(moduleBlocks).where(eq(moduleBlocks.id, created!.id)).limit(1);
   return c.json({ ok: true, data: serializeBlock(block!) }, 201);
+});
+
+// Route "/order" didaftarkan sebelum "/:blockId" agar segmen "order" tidak
+// tertangkap sebagai id blok.
+moduleRoutes.patch("/:id/blocks/order", requireRole("guru"), zValidator("json", reorderModuleBlocksSchema), async (c) => {
+  const user = c.get("user")!;
+  const moduleId = Number(c.req.param("id"));
+  if (!Number.isInteger(moduleId) || moduleId <= 0) return c.json({ ok: false, message: "ID modul tidak valid." }, 400);
+  const module = await ownedModule(user.userId, moduleId);
+  if (!module) return c.json({ ok: false, message: "Modul tidak ditemukan." }, 404);
+  const input = c.req.valid("json");
+  const existing = await db.select({ id: moduleBlocks.id }).from(moduleBlocks).where(eq(moduleBlocks.moduleId, moduleId));
+  const existingIds = new Set(existing.map((row) => row.id));
+  const requestedIds = new Set(input.blockIds);
+  if (
+    input.blockIds.length !== existingIds.size
+    || requestedIds.size !== input.blockIds.length
+    || input.blockIds.some((blockId) => !existingIds.has(blockId))
+  ) {
+    return c.json({ ok: false, message: "Daftar urutan blok harus memuat semua blok modul ini tepat satu kali." }, 400);
+  }
+  for (const [index, blockId] of input.blockIds.entries()) {
+    await db.update(moduleBlocks).set({ sortOrder: index }).where(eq(moduleBlocks.id, blockId));
+  }
+  const rows = await db.select().from(moduleBlocks).where(eq(moduleBlocks.moduleId, moduleId)).orderBy(asc(moduleBlocks.sortOrder));
+  return c.json({ ok: true, data: rows.map(serializeBlock) });
+});
+
+moduleRoutes.patch("/:id/blocks/:blockId", requireRole("guru"), zValidator("json", updateModuleBlockSchema), async (c) => {
+  const user = c.get("user")!;
+  const moduleId = Number(c.req.param("id"));
+  const blockId = Number(c.req.param("blockId"));
+  if (![moduleId, blockId].every((value) => Number.isInteger(value) && value > 0)) {
+    return c.json({ ok: false, message: "ID modul atau blok tidak valid." }, 400);
+  }
+  const module = await ownedModule(user.userId, moduleId);
+  if (!module) return c.json({ ok: false, message: "Modul tidak ditemukan." }, 404);
+  const [block] = await db
+    .select()
+    .from(moduleBlocks)
+    .where(and(eq(moduleBlocks.id, blockId), eq(moduleBlocks.moduleId, moduleId)))
+    .limit(1);
+  if (!block) return c.json({ ok: false, message: "Blok tidak ditemukan." }, 404);
+  const input = c.req.valid("json");
+  if (input.content.type !== block.type) {
+    return c.json({ ok: false, message: "Jenis blok tidak dapat diubah. Hapus blok ini lalu buat blok baru bila ingin mengganti jenisnya." }, 400);
+  }
+  const update: Partial<typeof moduleBlocks.$inferInsert> = { contentJson: input.content };
+  if (input.sortOrder !== undefined) update.sortOrder = input.sortOrder;
+  // Kolom attachment_key tingkat blok mengikuti lampiran pada isi blok
+  // (gambar/berkas) bila body tidak mengirimkannya secara eksplisit.
+  const contentAttachmentKey = "attachmentKey" in input.content ? input.content.attachmentKey : undefined;
+  const attachmentKey = input.attachmentKey ?? contentAttachmentKey;
+  if (attachmentKey !== undefined) update.attachmentKey = attachmentKey;
+  await db.update(moduleBlocks).set(update).where(eq(moduleBlocks.id, blockId));
+  const [updated] = await db.select().from(moduleBlocks).where(eq(moduleBlocks.id, blockId)).limit(1);
+  return c.json({ ok: true, data: serializeBlock(updated!) });
+});
+
+moduleRoutes.delete("/:id/blocks/:blockId", requireRole("guru"), async (c) => {
+  const user = c.get("user")!;
+  const moduleId = Number(c.req.param("id"));
+  const blockId = Number(c.req.param("blockId"));
+  if (![moduleId, blockId].every((value) => Number.isInteger(value) && value > 0)) {
+    return c.json({ ok: false, message: "ID modul atau blok tidak valid." }, 400);
+  }
+  const module = await ownedModule(user.userId, moduleId);
+  if (!module) return c.json({ ok: false, message: "Modul tidak ditemukan." }, 404);
+  const [block] = await db
+    .select({ id: moduleBlocks.id })
+    .from(moduleBlocks)
+    .where(and(eq(moduleBlocks.id, blockId), eq(moduleBlocks.moduleId, moduleId)))
+    .limit(1);
+  if (!block) return c.json({ ok: false, message: "Blok tidak ditemukan." }, 404);
+  await db.delete(moduleBlocks).where(eq(moduleBlocks.id, blockId));
+  return c.json({ ok: true, data: { id: blockId } });
 });

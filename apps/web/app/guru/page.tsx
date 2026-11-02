@@ -8,7 +8,8 @@ import { submissionStatusLabel } from "../lib/labels";
 import { Toast } from "../../components/Toast";
 import { useConfirm } from "../../components/ConfirmDialog";
 import { MarkdownHtml, MathHtml, MathText } from "../../components/MathContent";
-import { markdownToHtml } from "../../components/markdown";
+import { markdownToHtml, htmlToMarkdown } from "../../components/markdown";
+import { RichTextEditor, sanitizeBlockHtml } from "../../components/RichTextEditor";
 
 type ModuleSummary = {
   id: number;
@@ -201,7 +202,14 @@ export default function GuruPage() {
   const [title, setTitle] = useState("");
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
-  const [blockHtml, setBlockHtml] = useState("");
+  // Blok teks punya dua mode sunting yang berbagi satu isi: Rich Text (bawaan)
+  // menyimpan HTML tersanitasi, Markdown menyimpan HTML + sumber markdown-nya.
+  // textEditedSideRef mengingat mode yang terakhir menyunting agar berpindah
+  // tab mengonversi dari sisi aktif itu, bukan menimpa suntingan terakhir.
+  const [textEditorMode, setTextEditorMode] = useState<"rich" | "markdown">("rich");
+  const [blockRichHtml, setBlockRichHtml] = useState("");
+  const [blockMarkdown, setBlockMarkdown] = useState("");
+  const textEditedSideRef = useRef<"rich" | "markdown">("rich");
   const [blockType, setBlockType] = useState<"teks" | "sub_bab" | "video" | "lampiran">("teks");
   const [attachment, setAttachment] = useState<File | null>(null);
   const [moduleBlocks, setModuleBlocks] = useState<ModuleBlock[]>([]);
@@ -214,7 +222,6 @@ export default function GuruPage() {
   const [editWorksheetTitle, setEditWorksheetTitle] = useState("");
   const [editWorksheetInstructions, setEditWorksheetInstructions] = useState("");
   const [editingBlock, setEditingBlock] = useState<ModuleBlock | null>(null);
-  const [editingTextAsHtml, setEditingTextAsHtml] = useState(false);
   const [editingItem, setEditingItem] = useState<WorksheetPreviewItem | null>(null);
   const blockFirstFieldRef = useRef<HTMLElement | null>(null);
   const [worksheets, setWorksheets] = useState<WorksheetSummary[]>([]);
@@ -771,7 +778,7 @@ export default function GuruPage() {
   // agar formulir tidak mengubah data milik pilihan sebelumnya.
   useEffect(() => {
     setEditingBlock(null);
-    setEditingTextAsHtml(false);
+    resetTextEditor();
     setEditingModuleMeta(false);
     if (!selectedId) {
       setModuleBlocks([]);
@@ -967,6 +974,53 @@ export default function GuruPage() {
     blockFirstFieldRef.current = element;
   }
 
+  function resetTextEditor() {
+    setTextEditorMode("rich");
+    setBlockRichHtml("");
+    setBlockMarkdown("");
+    textEditedSideRef.current = "rich";
+  }
+
+  function handleRichTextChange(html: string) {
+    setBlockRichHtml(html);
+    textEditedSideRef.current = "rich";
+  }
+
+  function handleMarkdownChange(markdown: string) {
+    setBlockMarkdown(markdown);
+    textEditedSideRef.current = "markdown";
+  }
+
+  function switchTextEditorMode(mode: "rich" | "markdown") {
+    if (mode === textEditorMode) return;
+    // Sinkronkan dari mode yang terakhir menyunting: rich -> markdown lewat
+    // konverter balik, markdown -> rich lewat konverter yang biasa.
+    if (mode === "markdown" && textEditedSideRef.current === "rich") {
+      setBlockMarkdown(htmlToMarkdown(blockRichHtml));
+    }
+    if (mode === "rich" && textEditedSideRef.current === "markdown") {
+      setBlockRichHtml(markdownToHtml(blockMarkdown));
+    }
+    setTextEditorMode(mode);
+  }
+
+  function textBlockIsEmpty() {
+    return textEditorMode === "markdown"
+      ? !blockMarkdown.trim()
+      : !stripHtmlToText(sanitizeBlockHtml(blockRichHtml));
+  }
+
+  // Muatan simpan blok teks mengikuti mode aktif: mode Markdown menyimpan
+  // HTML hasil konversi PLUS sumber markdown-nya; mode Rich Text menyimpan
+  // HTML tersanitasi saja (sumber markdown lama yang basi ikut terbuang
+  // karena API mengganti isi blok secara penuh).
+  function textBlockContent() {
+    if (textEditorMode === "markdown") {
+      return { type: "teks", html: markdownToHtml(blockMarkdown), markdown: blockMarkdown, format: "markdown" } as const;
+    }
+    return { type: "teks", html: sanitizeBlockHtml(blockRichHtml) } as const;
+  }
+
   async function addBlock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const saved = editingBlock
@@ -995,21 +1049,20 @@ export default function GuruPage() {
   }
 
   async function updateTextBlock() {
-    if (!selectedId || !editingBlock || !blockHtml.trim()) return false;
+    if (!selectedId || !editingBlock) return false;
+    if (textBlockIsEmpty()) {
+      setMessage("Isi teks masih kosong.");
+      return false;
+    }
     try {
       await apiRequest(`/modules/${selectedId}/blocks/${editingBlock.id}`, {
         method: "PATCH",
         body: JSON.stringify({
-          // Jalur simpan bercabang mengikuti bentuk tersimpan blok: blok HTML
-          // disimpan kembali apa adanya sebagai HTML (tanpa konverter Markdown
-          // yang akan merusaknya), blok Markdown melewati konverter yang sama
-          // seperti saat dibuat.
-          content: { type: "teks", html: editingTextAsHtml ? blockHtml : markdownToHtml(blockHtml) },
+          content: textBlockContent(),
         }),
       });
-      setBlockHtml("");
+      resetTextEditor();
       setEditingBlock(null);
-      setEditingTextAsHtml(false);
       setMessage("Blok materi diperbarui.");
       return true;
     } catch (error) {
@@ -1123,12 +1176,19 @@ export default function GuruPage() {
     setAttachment(null);
     if (block.type === "teks") {
       setBlockType("teks");
+      setTextEditorMode("rich");
       if (typeof block.content.markdown === "string") {
-        setEditingTextAsHtml(false);
-        setBlockHtml(block.content.markdown);
+        // Blok bersumber Markdown: rich text diisi hasil konversinya, tab
+        // Markdown menampilkan sumber aslinya apa adanya.
+        setBlockMarkdown(block.content.markdown);
+        setBlockRichHtml(markdownToHtml(block.content.markdown));
+        textEditedSideRef.current = "markdown";
       } else {
-        setEditingTextAsHtml(true);
-        setBlockHtml(typeof block.content.html === "string" ? block.content.html : "");
+        // Blok HTML warisan: rich text diisi HTML-nya; tab Markdown diisi
+        // belakangan lewat konversi balik saat pertama kali dibuka.
+        setBlockMarkdown("");
+        setBlockRichHtml(typeof block.content.html === "string" ? block.content.html : "");
+        textEditedSideRef.current = "rich";
       }
     } else if (block.type === "sub_bab") {
       setBlockType("sub_bab");
@@ -1145,8 +1205,7 @@ export default function GuruPage() {
 
   function cancelEditBlock() {
     setEditingBlock(null);
-    setEditingTextAsHtml(false);
-    setBlockHtml("");
+    resetTextEditor();
     setSubBabTitle("");
     setVideoUrl("");
     setVideoCaption("");
@@ -1186,18 +1245,20 @@ export default function GuruPage() {
 
   async function addTextBlock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedId || !blockHtml.trim()) return false;
+    if (!selectedId) return false;
+    if (textBlockIsEmpty()) {
+      setMessage("Isi teks masih kosong.");
+      return false;
+    }
     try {
       await apiRequest(`/modules/${selectedId}/blocks`, {
         method: "POST",
         body: JSON.stringify({
-          // Skema API blok teks berbentuk tetap {type, html} dan field lain dibuang
-          // validator, jadi Markdown dikonversi ke HTML di sini sebelum disimpan.
-          content: { type: "teks", html: markdownToHtml(blockHtml) },
+          content: textBlockContent(),
           sortOrder: 0,
         }),
       });
-      setBlockHtml("");
+      resetTextEditor();
       setMessage("Blok materi ditambahkan.");
       return true;
     } catch (error) {
@@ -1883,19 +1944,40 @@ export default function GuruPage() {
           <form onSubmit={addBlock} style={styles.form}>
             {blockType === "teks" ? (
               <>
-                <textarea
-                  ref={setBlockFirstField}
-                  required
-                  value={blockHtml}
-                  onChange={(event) => setBlockHtml(event.target.value)}
-                  placeholder="Tulis isi materi… (Markdown)"
-                  rows={6}
-                  style={styles.textarea}
-                />
-                {editingBlock && editingTextAsHtml ? (
-                  <small style={styles.muted}>Blok ini tersimpan sebagai HTML, jadi disunting dan disimpan kembali sebagai HTML langsung (tanpa konversi Markdown).</small>
+                <div style={styles.blockTypeRow} role="group" aria-label="Mode editor teks">
+                  {([
+                    { value: "rich", label: "Rich Text" },
+                    { value: "markdown", label: "Markdown" },
+                  ] as const).map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={textEditorMode === option.value}
+                      onClick={() => switchTextEditorMode(option.value)}
+                      style={textEditorMode === option.value ? styles.blockTypeButtonActive : styles.blockTypeButton}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                {textEditorMode === "rich" ? (
+                  <>
+                    <RichTextEditor value={blockRichHtml} onChange={handleRichTextChange} inputRef={setBlockFirstField} />
+                    <small style={styles.muted}>Sunting teks persis seperti yang akan dilihat murid; gunakan tombol format di atas editor. Rumus tetap ditulis sebagai teks $$ … $$ di dalam paragraf.</small>
+                  </>
                 ) : (
-                  <small style={styles.muted}>Markdown: ## Judul sub-bab · **tebal** · $$ rumus $$ di baris sendiri = rumus besar di tengah · awali baris dengan &gt; untuk kotak rumus (baris pertama jadi labelnya).</small>
+                  <>
+                    <textarea
+                      ref={setBlockFirstField}
+                      required
+                      value={blockMarkdown}
+                      onChange={(event) => handleMarkdownChange(event.target.value)}
+                      placeholder="Tulis isi materi… (Markdown)"
+                      rows={6}
+                      style={styles.textarea}
+                    />
+                    <small style={styles.muted}>Markdown: ## Judul sub-bab · **tebal** · $$ rumus $$ di baris sendiri = rumus besar di tengah · awali baris dengan &gt; untuk kotak rumus (baris pertama jadi labelnya). Sumber Markdown ikut disimpan, jadi blok ini selalu bisa dibuka lagi di mode ini.</small>
+                  </>
                 )}
               </>
             ) : null}

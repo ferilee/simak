@@ -135,3 +135,143 @@ export function markdownToHtml(markdown: string): string {
     (_match, index: string) => mathSegments[Number(index)] ?? "",
   );
 }
+
+// ---------- Konverter balik HTML -> Markdown ----------
+// Dipakai editor guru untuk membuka blok teks warisan yang hanya tersimpan
+// sebagai HTML di mode Markdown. Berbasis DOMParser (hanya dijalankan di
+// peramban) dan hanya mengenal kosakata yang sama dengan keluaran
+// markdownToHtml di atas; elemen di luar kosakata diturunkan menjadi teksnya.
+
+function collapseInlineSpaces(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+/g, " ").trim())
+    .join("\n")
+    .trim();
+}
+
+function childrenToInline(element: Element): string {
+  let result = "";
+  element.childNodes.forEach((child) => {
+    result += nodeToInline(child);
+  });
+  return result;
+}
+
+function wrapInlineMarker(marker: string, inner: string): string {
+  const core = inner.trim();
+  if (!core) return inner;
+  const lead = /^\s/.test(inner) ? " " : "";
+  const trail = /\s$/.test(inner) ? " " : "";
+  return `${lead}${marker}${core}${marker}${trail}`;
+}
+
+function nodeToInline(node: ChildNode): string {
+  if (node.nodeType === 3) return (node.textContent ?? "").replace(/\s+/g, " ");
+  if (node.nodeType !== 1) return "";
+  const element = node as Element;
+  const tag = element.tagName.toLowerCase();
+  switch (tag) {
+    case "strong":
+    case "b":
+      return wrapInlineMarker("**", childrenToInline(element));
+    case "em":
+    case "i":
+      return wrapInlineMarker("*", childrenToInline(element));
+    case "code":
+      return `\`${(element.textContent ?? "").replace(/\s+/g, " ").trim()}\``;
+    case "a": {
+      const inner = childrenToInline(element);
+      const href = element.getAttribute("href") ?? "";
+      return href ? `[${inner.trim()}](${href})` : inner;
+    }
+    case "br":
+      return "\n";
+    default:
+      return childrenToInline(element);
+  }
+}
+
+function listToMarkdown(list: Element, ordered: boolean): string {
+  const items: string[] = [];
+  let position = 0;
+  list.childNodes.forEach((child) => {
+    if (child.nodeType !== 1) return;
+    const item = child as Element;
+    if (item.tagName.toLowerCase() !== "li") return;
+    position += 1;
+    let nested = "";
+    let inlinePart = "";
+    item.childNodes.forEach((part) => {
+      if (part.nodeType === 1 && ["ul", "ol"].includes((part as Element).tagName.toLowerCase())) {
+        nested += `\n${listToMarkdown(part as Element, (part as Element).tagName.toLowerCase() === "ol")}`;
+      } else {
+        inlinePart += nodeToInline(part as ChildNode);
+      }
+    });
+    const text = collapseInlineSpaces(inlinePart);
+    items.push(`${ordered ? `${position}.` : "-"} ${text}${nested}`);
+  });
+  return items.join("\n");
+}
+
+const BLOCK_CONTAINER_TAGS = new Set(["div", "section", "article", "main", "figure", "figcaption", "table", "thead", "tbody", "tr", "td", "th"]);
+
+function nodeToBlocks(node: ChildNode, blocks: string[]): void {
+  if (node.nodeType === 3) {
+    const text = collapseInlineSpaces(node.textContent ?? "");
+    if (text) blocks.push(text);
+    return;
+  }
+  if (node.nodeType !== 1) return;
+  const element = node as Element;
+  const tag = element.tagName.toLowerCase();
+  const heading = tag.match(/^h([1-4])$/);
+  if (heading) {
+    const text = collapseInlineSpaces(childrenToInline(element));
+    if (text) blocks.push(`${"#".repeat(Number(heading[1]))} ${text}`);
+    return;
+  }
+  switch (tag) {
+    case "p": {
+      const text = collapseInlineSpaces(childrenToInline(element));
+      if (text) blocks.push(text);
+      return;
+    }
+    case "ul":
+      blocks.push(listToMarkdown(element, false));
+      return;
+    case "ol":
+      blocks.push(listToMarkdown(element, true));
+      return;
+    case "blockquote": {
+      const inner: string[] = [];
+      element.childNodes.forEach((child) => nodeToBlocks(child, inner));
+      const quoted = inner
+        .join("\n\n")
+        .split("\n")
+        .map((line) => (line ? `> ${line}` : ">"))
+        .join("\n");
+      if (quoted.trim()) blocks.push(quoted);
+      return;
+    }
+    case "hr":
+      blocks.push("---");
+      return;
+    default:
+      if (BLOCK_CONTAINER_TAGS.has(tag)) {
+        element.childNodes.forEach((child) => nodeToBlocks(child, blocks));
+      } else {
+        const text = collapseInlineSpaces(childrenToInline(element));
+        if (text) blocks.push(text);
+      }
+  }
+}
+
+export function htmlToMarkdown(html: string): string {
+  if (!html.trim() || typeof DOMParser === "undefined") return "";
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const blocks: string[] = [];
+  doc.body.childNodes.forEach((child) => nodeToBlocks(child, blocks));
+  return blocks.filter((block) => block.trim() !== "").join("\n\n");
+}

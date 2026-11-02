@@ -8,13 +8,28 @@ import { prepareImageForUpload } from "../../lib/prepare-image";
 import { buildWhatsAppShareMessage } from "../../lib/wa-share";
 import {
   countGradingAttempts,
+  distinctGradingClasses,
+  filterGradingAttemptsByClass,
   formatScoreValue,
+  gradingClassFilterValue,
+  GRADING_PAGE_SIZE,
+  isUngradedAttempt,
+  matchesGradingClassFilter,
   matchesGradingStatusFilter,
+  nextRevealedCount,
   pickNextUngradedAttempt,
   quickScoreDrafts,
+  revealedCountForIndex,
+  revealedSliceCount,
   runningTotal,
   sortGradingAttempts,
 } from "../../lib/grading-helpers";
+import {
+  distinctIntegrityAssignments,
+  filterAssignmentsByQuery,
+  filterIntegrityAlerts,
+  sortIntegrityAlerts,
+} from "../../lib/hasil-helpers";
 import { submissionStatusLabel } from "../lib/labels";
 import { Toast } from "../../components/Toast";
 import { useConfirm } from "../../components/ConfirmDialog";
@@ -92,6 +107,8 @@ type WorksheetAttemptSummary = {
   submitted_at: string | null;
   total_score: number | null;
   updated_at: string;
+  class_id: number | null;
+  class_name: string | null;
 };
 type WorksheetAttemptsResponse = { ok: true; data: WorksheetAttemptSummary[] };
 type GradingAttemptSummary = WorksheetAttemptSummary & {
@@ -100,6 +117,7 @@ type GradingAttemptSummary = WorksheetAttemptSummary & {
 };
 type GradingAttemptsResponse = { ok: true; data: GradingAttemptSummary[] };
 type GradingStatusFilter = "semua" | "draf" | "terkumpul" | "belum_dinilai" | "sudah_dinilai";
+type HasilTab = "nilai" | "rekap" | "rentang" | "impor" | "integritas";
 type ExitTicketSummary = {
   understood_3: string;
   examples_2: string;
@@ -299,6 +317,14 @@ export default function GuruPage() {
   const [allAttempts, setAllAttempts] = useState<GradingAttemptSummary[]>([]);
   const [gradingSource, setGradingSource] = useState<number | "semua">("semua");
   const [gradingStatusFilter, setGradingStatusFilter] = useState<GradingStatusFilter>("semua");
+  const [gradingClassFilter, setGradingClassFilter] = useState("semua");
+  // Tampilkan bertahap daftar pengumpulan: jumlah item yang sudah dibuka
+  // (kelipatan GRADING_PAGE_SIZE); diatur ulang setiap saringan berubah.
+  const [gradingRevealedCount, setGradingRevealedCount] = useState(GRADING_PAGE_SIZE);
+  const [integrityAssignmentFilter, setIntegrityAssignmentFilter] = useState<number | "semua">("semua");
+  const [integrityRiskFilter, setIntegrityRiskFilter] = useState("semua");
+  const [integrityQuery, setIntegrityQuery] = useState("");
+  const [rekapQuery, setRekapQuery] = useState("");
   // Penanda bahwa perubahan selectedWorksheetId berasal dari klik baris pada
   // mode gabungan panel Pengumpulan: pemilih sumber tidak boleh ikut beralih
   // ke mode satu LKPD hanya karena rincian attempt dibuka dari daftar gabungan.
@@ -320,6 +346,9 @@ export default function GuruPage() {
   const [ruasImportLoading, setRuasImportLoading] = useState(false);
   const [ruasImportResult, setRuasImportResult] = useState<RuasImportResponse["data"] | null>(null);
   const [integrityAlerts, setIntegrityAlerts] = useState<IntegrityAlert[]>([]);
+  // Langkah 5 ("Pantau hasil") tampil satu seksi per tab; tab aktif menentukan
+  // panel mana yang terlihat agar halaman tidak menjadi satu guliran panjang.
+  const [hasilTab, setHasilTab] = useState<HasilTab>("nilai");
   const [scoreDrafts, setScoreDrafts] = useState<Record<number, string>>({});
   const [noteDrafts, setNoteDrafts] = useState<Record<number, string>>({});
   const [teacherComment, setTeacherComment] = useState("");
@@ -509,19 +538,41 @@ export default function GuruPage() {
   const selectedWorksheet = worksheets.find((worksheet) => worksheet.id === selectedWorksheetId) ?? null;
 
   // Daftar yang ditampilkan panel Pengumpulan LKPD: gabungan semua LKPD
-  // (mode "Semua LKPD") atau daftar per-LKPD yang sedang aktif. Urutan
-  // tampilan adalah antrean kerja: yang belum dinilai dulu, lalu draf,
-  // terakhir yang sudah dinilai (stabil di dalam kelompok). Saringan
-  // status diterapkan di klien untuk kedua mode: "belum dinilai" berarti
-  // sudah terkumpul tetapi belum punya nilai, "sudah dinilai" berarti
-  // total nilai sudah terisi. Hitungan ringkas dihitung dari daftar penuh
-  // sumber aktif, sebelum saringan status diterapkan.
+  // (mode "Semua LKPD") atau daftar per-LKPD yang sedang aktif. Rantai
+  // saringannya: sumber → kelas → status. Urutan tampilan adalah antrean
+  // kerja: yang belum dinilai dulu, lalu draf, terakhir yang sudah dinilai
+  // (stabil di dalam kelompok). Saringan status diterapkan di klien untuk
+  // kedua mode: "belum dinilai" berarti sudah terkumpul tetapi belum punya
+  // nilai, "sudah dinilai" berarti total nilai sudah terisi. Hitungan
+  // ringkas dihitung sesudah saringan kelas, sebelum saringan status.
   const gradingCombined = gradingSource === "semua";
   const gradingAttempts: (WorksheetAttemptSummary & { worksheet_id?: number; worksheet_title?: string })[] = gradingCombined ? allAttempts : attempts;
-  const gradingCounts = countGradingAttempts(gradingAttempts);
-  const visibleGradingAttempts = sortGradingAttempts(gradingAttempts)
+  const gradingClassOptions = distinctGradingClasses(gradingAttempts);
+  // Pilihan kelas yang tersimpan bisa hilang dari sumber baru (mis. ganti
+  // LKPD): selama kelasnya tidak ada di sumber aktif, saringan berlaku
+  // sebagai "semua" tanpa menghapus pilihan tersimpan.
+  const gradingClassFilterActive = gradingClassFilter === "semua"
+    || gradingClassOptions.some((option) => gradingClassFilterValue(option) === gradingClassFilter)
+    ? gradingClassFilter
+    : "semua";
+  const classFilteredAttempts = filterGradingAttemptsByClass(gradingAttempts, gradingClassFilterActive);
+  const gradingCounts = countGradingAttempts(classFilteredAttempts);
+  const visibleGradingAttempts = sortGradingAttempts(classFilteredAttempts)
     .filter((attempt) => matchesGradingStatusFilter(attempt, gradingStatusFilter));
   const runningTotalDraft = attemptDetail ? runningTotal(attemptDetail.items, scoreDrafts) : null;
+  // Lencana tab "Nilai": antrean belum dinilai dari data gabungan yang
+  // sudah termuat (nol/ kosong berarti lencana tidak ditampilkan).
+  const ungradedBadgeCount = allAttempts.filter(isUngradedAttempt).length;
+  // Indikasi integritas: semua saringan di klien; urutan tampil ditegakkan
+  // di sini (risiko terberat dulu), bukan mengikuti urutan API.
+  const integrityAssignmentOptions = distinctIntegrityAssignments(integrityAlerts);
+  const visibleIntegrityAlerts = sortIntegrityAlerts(filterIntegrityAlerts(integrityAlerts, {
+    assignmentId: integrityAssignmentFilter,
+    risk: integrityRiskFilter,
+    query: integrityQuery,
+  }));
+  // Rekap penugasan: pencarian teks pada judul dan nama kelas.
+  const visibleRekapAssignments = filterAssignmentsByQuery(assignments, rekapQuery);
 
   async function loadModules() {
     try {
@@ -780,6 +831,12 @@ export default function GuruPage() {
     if (loading || gradingSource !== "semua") return;
     void loadAllAttempts();
   }, [gradingSource, loading]);
+
+  // Daftar pengumpulan kembali ke halaman pertama setiap kali sumber atau
+  // saringan berubah — jumlah yang sudah dibuka tidak dibawa ke daftar baru.
+  useEffect(() => {
+    setGradingRevealedCount(GRADING_PAGE_SIZE);
+  }, [gradingSource, gradingClassFilterActive, gradingStatusFilter]);
 
   useEffect(() => {
     if (selectedWorksheetId && selectedAttemptId) void loadAttemptDetail(selectedWorksheetId, selectedAttemptId);
@@ -1752,10 +1809,17 @@ export default function GuruPage() {
       const freshAllAttempts = gradingCombined ? await loadAllAttempts() : null;
       const sourceAttempts: (WorksheetAttemptSummary & { worksheet_id?: number; worksheet_title?: string })[] = gradingCombined ? (freshAllAttempts ?? allAttempts) : (freshAttempts ?? attempts);
       const displayAttempts = sortGradingAttempts(sourceAttempts)
+        .filter((attempt) => matchesGradingClassFilter(attempt, gradingClassFilterActive))
         .filter((attempt) => matchesGradingStatusFilter(attempt, gradingStatusFilter));
       const nextAttempt = pickNextUngradedAttempt(displayAttempts, savedAttemptId);
       if (nextAttempt) {
         setMessage("Penilaian disimpan.");
+        // Tampilkan bertahap: bila target lompatan berada di luar lipatan,
+        // perluas tampilan sampai targetnya ikut terlihat.
+        const nextIndex = displayAttempts.findIndex((attempt) => attempt.id === nextAttempt.id);
+        if (nextIndex >= gradingRevealedCount) {
+          setGradingRevealedCount(revealedCountForIndex(nextIndex));
+        }
         if (gradingCombined && nextAttempt.worksheet_id && nextAttempt.worksheet_id !== savedWorksheetId) {
           gradingPickRef.current = true;
           setSelectedWorksheetId(nextAttempt.worksheet_id);
@@ -2504,7 +2568,30 @@ export default function GuruPage() {
         ) : <div className="module-list">{visibleAssignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><div className="resource-row-actions">{assignment.status !== "ditutup" ? <button type="button" onClick={() => startEditAssignment(assignment)} className="row-action-button is-outline"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>Edit</button> : null}<button type="button" onClick={() => void changeAssignmentStatus(assignment)} className={assignment.status === "terbit" ? "row-action-button is-outline" : "row-action-button is-primary"}>{assignment.status === "terbit" ? <><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>Tutup</> : "Terbitkan"}</button>{assignment.status === "terbit" ? <a href={`https://wa.me/?text=${encodeURIComponent(buildWhatsAppShareMessage(assignment, typeof window !== "undefined" ? window.location.origin : ""))}`} target="_blank" rel="noreferrer" className="row-action-button is-whatsapp"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.6L3 21l1.9-5.6A8.5 8.5 0 1 1 21 11.5Z" /></svg>Bagikan WA</a> : null}</div></article>)}</div>}
       </section>
 
-      <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 4} style={styles.panel}>
+      {guruStep === 4 ? (
+        <nav className="hasil-tabs" aria-label="Bagian pantau hasil">
+          {([
+            { key: "nilai", label: "Nilai", badge: ungradedBadgeCount },
+            { key: "rekap", label: "Rekap", badge: 0 },
+            { key: "rentang", label: "Rentang", badge: 0 },
+            { key: "impor", label: "Impor", badge: 0 },
+            { key: "integritas", label: "Integritas", badge: integrityAlerts.length },
+          ] as { key: HasilTab; label: string; badge: number }[]).map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              className={`hasil-tab${hasilTab === tab.key ? " is-active" : ""}`}
+              aria-pressed={hasilTab === tab.key}
+              onClick={() => setHasilTab(tab.key)}
+            >
+              {tab.label}
+              {tab.badge > 0 ? <span className="hasil-tab-badge">{tab.badge}</span> : null}
+            </button>
+          ))}
+        </nav>
+      ) : null}
+
+      <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 4 && hasilTab === "integritas"} style={styles.panel}>
         <div className="module-section-heading">
           <div>
             <h2 style={styles.sectionTitle}>Indikasi integritas</h2>
@@ -2513,22 +2600,65 @@ export default function GuruPage() {
           <span className="module-section-count">{integrityAlerts.length} siswa</span>
         </div>
         {integrityAlerts.length === 0 ? <p style={styles.empty}>Belum ada indikasi integritas yang perlu ditinjau.</p> : (
-          <div className="module-list">
-            {integrityAlerts.map((alert) => (
-              <article key={`${alert.assignment_id}:${alert.student_id}`} className="resource-row integrity-alert-row">
-                <div className="module-row-main">
-                  <strong>{alert.student_name} <span className="integrity-username">({alert.username})</span></strong>
-                  <span>{alert.assignment_title} · {alert.total_events} kejadian · terakhir {formatDate(alert.last_event)}</span>
-                  <span>{alert.events.map((event) => `${integrityEventLabel(event.event)} ${event.count}×`).join(" · ")}</span>
-                </div>
-                <span className={`integrity-risk integrity-risk-${alert.risk}`}>{integrityRiskLabel(alert.risk)}</span>
-              </article>
-            ))}
-          </div>
+          <>
+            <div style={styles.moduleToolbar}>
+              <select
+                value={integrityAssignmentFilter === "semua" ? "semua" : String(integrityAssignmentFilter)}
+                onChange={(event) => setIntegrityAssignmentFilter(event.target.value === "semua" ? "semua" : Number(event.target.value))}
+                aria-label="Saring penugasan indikasi integritas"
+                style={{ ...styles.input, ...styles.moduleFilterSelect }}
+              >
+                <option value="semua">Semua penugasan</option>
+                {integrityAssignmentOptions.map((option) => (
+                  <option key={option.id} value={String(option.id)}>{option.title}</option>
+                ))}
+              </select>
+              <input
+                type="search"
+                value={integrityQuery}
+                onChange={(event) => setIntegrityQuery(event.target.value)}
+                placeholder="Cari nama atau username murid"
+                aria-label="Cari murid pada indikasi integritas"
+                style={{ ...styles.input, ...styles.moduleSearchInput }}
+              />
+            </div>
+            <div style={styles.blockTypeRow} role="group" aria-label="Saring tingkat risiko indikasi integritas">
+              {([
+                { value: "semua", label: "Semua" },
+                { value: "perlu_ditinjau", label: "Perlu ditinjau" },
+                { value: "peringatan", label: "Peringatan" },
+              ] as const).map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`filter-chip${integrityRiskFilter === option.value ? " is-active" : ""}`}
+                  aria-pressed={integrityRiskFilter === option.value}
+                  onClick={() => setIntegrityRiskFilter(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <p style={styles.muted}>Menampilkan {visibleIntegrityAlerts.length} dari {integrityAlerts.length} siswa</p>
+            {visibleIntegrityAlerts.length === 0 ? <p style={styles.empty}>Tidak ada siswa yang cocok dengan saringan ini.</p> : (
+              <div className="module-list">
+                {visibleIntegrityAlerts.map((alert) => (
+                  <article key={`${alert.assignment_id}:${alert.student_id}`} className="resource-row integrity-alert-row">
+                    <div className="module-row-main">
+                      <strong>{alert.student_name} <span className="integrity-username">({alert.username})</span></strong>
+                      <span>{alert.assignment_title} · {alert.total_events} kejadian · terakhir {formatDate(alert.last_event)}</span>
+                      <span>{alert.events.map((event) => `${integrityEventLabel(event.event)} ${event.count}×`).join(" · ")}</span>
+                    </div>
+                    <span className={`integrity-risk integrity-risk-${alert.risk}`}>{integrityRiskLabel(alert.risk)}</span>
+                  </article>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </section>
 
-      <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 4} style={styles.panel}>
+      <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 4 && hasilTab === "rentang"} style={styles.panel}>
         <div className="module-section-heading">
           <div>
             <h2 style={styles.sectionTitle}>Rekap berdasarkan rentang tanggal</h2>
@@ -2580,7 +2710,7 @@ export default function GuruPage() {
         ) : null}
       </section>
 
-      <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 4} style={styles.panel}>
+      <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 4 && hasilTab === "impor"} style={styles.panel}>
         <div className="module-section-heading">
           <div>
             <h2 style={styles.sectionTitle}>Impor nilai RUAS</h2>
@@ -2606,18 +2736,30 @@ export default function GuruPage() {
         {ruasImportResult?.unmatched.length ? <div style={styles.warningBox}>Baris yang perlu diperiksa: {ruasImportResult.unmatched.map((row) => `${row.identifier} (${row.match_status})`).join(", ")}</div> : null}
       </section>
 
-      <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 4} style={styles.panel}>
+      <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 4 && hasilTab === "rekap"} style={styles.panel}>
         <div className="module-section-heading">
           <div>
             <h2 style={styles.sectionTitle}>Rekap penugasan</h2>
-            <p className="module-section-summary">{assignments.length} penugasan · pilih penugasan untuk melihat rekap dan exit ticket</p>
+            <p className="module-section-summary">{rekapQuery.trim() ? `${visibleRekapAssignments.length} dari ${assignments.length} penugasan · pilih penugasan untuk melihat rekap dan exit ticket` : `${assignments.length} penugasan · pilih penugasan untuk melihat rekap dan exit ticket`}</p>
           </div>
         </div>
-        {assignments.length > 0 ? <div className="module-list">{assignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><div className="resource-row-actions"><button type="button" onClick={() => void loadSessionReport(assignment.id)} className={`row-action-button is-outline${selectedReportAssignmentId === assignment.id ? " is-active" : ""}`} aria-pressed={selectedReportAssignmentId === assignment.id} disabled={sessionReportLoading && selectedReportAssignmentId === assignment.id}><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18" /><path d="M10 10v10" /></svg>{sessionReportLoading && selectedReportAssignmentId === assignment.id ? "Memuat…" : selectedReportAssignmentId === assignment.id ? "Segarkan rekap" : "Lihat rekap"}</button><button type="button" onClick={() => void loadAssignmentSummary(assignment.id)} className={`row-action-button is-outline${selectedAssignmentId === assignment.id ? " is-active" : ""}`} aria-pressed={selectedAssignmentId === assignment.id} disabled={assignmentSummaryLoading && selectedAssignmentId === assignment.id}><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 8h6" /><path d="M9 12h6" /></svg>{assignmentSummaryLoading && selectedAssignmentId === assignment.id ? "Memuat…" : selectedAssignmentId === assignment.id ? "Segarkan exit ticket" : "Lihat exit ticket"}</button></div></article>)}</div> : <p style={styles.empty}>Belum ada penugasan.</p>}
+        {assignments.length > 0 ? (
+          <div style={styles.moduleToolbar}>
+            <input
+              type="search"
+              value={rekapQuery}
+              onChange={(event) => setRekapQuery(event.target.value)}
+              placeholder="Cari judul penugasan atau nama kelas"
+              aria-label="Cari penugasan pada rekap"
+              style={{ ...styles.input, ...styles.moduleSearchInput }}
+            />
+          </div>
+        ) : null}
+        {assignments.length === 0 ? <p style={styles.empty}>Belum ada penugasan.</p> : visibleRekapAssignments.length === 0 ? <p style={styles.empty}>Tidak ada penugasan yang cocok dengan pencarian.</p> : <div className="module-list">{visibleRekapAssignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><div className="resource-row-actions"><button type="button" onClick={() => void loadSessionReport(assignment.id)} className={`row-action-button is-outline${selectedReportAssignmentId === assignment.id ? " is-active" : ""}`} aria-pressed={selectedReportAssignmentId === assignment.id} disabled={sessionReportLoading && selectedReportAssignmentId === assignment.id}><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18" /><path d="M10 10v10" /></svg>{sessionReportLoading && selectedReportAssignmentId === assignment.id ? "Memuat…" : selectedReportAssignmentId === assignment.id ? "Segarkan rekap" : "Lihat rekap"}</button><button type="button" onClick={() => void loadAssignmentSummary(assignment.id)} className={`row-action-button is-outline${selectedAssignmentId === assignment.id ? " is-active" : ""}`} aria-pressed={selectedAssignmentId === assignment.id} disabled={assignmentSummaryLoading && selectedAssignmentId === assignment.id}><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 8h6" /><path d="M9 12h6" /></svg>{assignmentSummaryLoading && selectedAssignmentId === assignment.id ? "Memuat…" : selectedAssignmentId === assignment.id ? "Segarkan exit ticket" : "Lihat exit ticket"}</button></div></article>)}</div>}
       </section>
 
       {selectedReportAssignmentId ? (
-        <section ref={sessionReportPanelRef} className="wizard-step-panel" data-active={guruStep === 4} style={styles.panel}>
+        <section ref={sessionReportPanelRef} className="wizard-step-panel" data-active={guruStep === 4 && hasilTab === "rekap"} style={styles.panel}>
           <h2 style={styles.sectionTitle}>Rekap sesi</h2>
           {sessionReportLoading ? <p style={styles.muted}>Memuat rekap sesi...</p> : null}
           {!sessionReportLoading && sessionReport ? (
@@ -2655,7 +2797,7 @@ export default function GuruPage() {
       ) : null}
 
       {selectedAssignmentId ? (
-        <section ref={exitTicketPanelRef} className="wizard-step-panel" data-active={guruStep === 4} style={styles.panel}>
+        <section ref={exitTicketPanelRef} className="wizard-step-panel" data-active={guruStep === 4 && hasilTab === "rekap"} style={styles.panel}>
           <h2 style={styles.sectionTitle}>Ringkasan exit ticket</h2>
           {assignmentSummaryLoading ? <p style={styles.muted}>Memuat jawaban exit ticket...</p> : null}
           {!assignmentSummaryLoading && assignmentSummary?.students.every((student) => !student.exit_ticket) ? <p style={styles.empty}>Belum ada murid yang mengirim exit ticket untuk penugasan ini.</p> : null}
@@ -2677,8 +2819,9 @@ export default function GuruPage() {
         </section>
       ) : null}
 
-        <section className="wizard-step-panel teacher-grading-section" data-active={guruStep === 4} style={styles.panel}>
+        <section className="wizard-step-panel teacher-grading-section" data-active={guruStep === 4 && hasilTab === "nilai"} style={styles.panel}>
           <h2 style={styles.sectionTitle}>Pengumpulan LKPD</h2>
+          <div className="grading-sticky-controls">
           <div style={styles.moduleToolbar}>
             <select
               value={gradingCombined ? "semua" : String(gradingSource)}
@@ -2710,10 +2853,22 @@ export default function GuruPage() {
               <option value="belum_dinilai">Belum dinilai</option>
               <option value="sudah_dinilai">Sudah dinilai</option>
             </select>
+            <select
+              value={gradingClassFilterActive}
+              onChange={(event) => setGradingClassFilter(event.target.value)}
+              aria-label="Saring kelas pengumpulan"
+              style={{ ...styles.input, ...styles.moduleFilterSelect }}
+            >
+              <option value="semua">Semua kelas</option>
+              {gradingClassOptions.map((option) => (
+                <option key={gradingClassFilterValue(option)} value={gradingClassFilterValue(option)}>{option.name}</option>
+              ))}
+            </select>
           </div>
           {gradingAttempts.length > 0 ? (
             <p style={styles.muted}>Terkumpul {gradingCounts.terkumpul} · Belum dinilai {gradingCounts.belumDinilai} · Sudah dinilai {gradingCounts.sudahDinilai}</p>
           ) : null}
+          </div>
           {attemptLoading && gradingAttempts.length === 0 ? <p style={styles.muted}>Memuat pengumpulan...</p> : null}
           {!attemptLoading && gradingAttempts.length === 0 ? (
             <p style={styles.empty}>{gradingCombined ? "Belum ada pengumpulan dari LKPD mana pun." : "Belum ada murid yang mengumpulkan LKPD ini."}</p>
@@ -2721,7 +2876,7 @@ export default function GuruPage() {
           {gradingAttempts.length > 0 ? (
             <div className="teacher-attempt-layout">
               <div className="teacher-attempt-list" style={styles.list}>
-                {visibleGradingAttempts.map((attempt) => (
+                {visibleGradingAttempts.slice(0, gradingRevealedCount).map((attempt) => (
                   <button
                     key={attempt.id}
                     type="button"
@@ -2736,11 +2891,19 @@ export default function GuruPage() {
                   >
                     <strong>{attempt.student_name}</strong>
                     {gradingCombined && attempt.worksheet_title ? <span style={styles.muted}>{attempt.worksheet_title}</span> : null}
-                    <span style={styles.muted}>{attempt.username} · {attempt.status}</span>
+                    <span style={styles.muted}>{attempt.username} · {attempt.status} · {attempt.class_name ?? "Tanpa kelas"}</span>
                     <span style={styles.muted}>{attempt.total_score === null ? "Belum dinilai" : `Nilai ${attempt.total_score}`}</span>
                   </button>
                 ))}
-                {visibleGradingAttempts.length === 0 ? <p style={styles.muted}>Tidak ada pengumpulan yang cocok dengan saringan status ini.</p> : null}
+                {visibleGradingAttempts.length === 0 ? <p style={styles.muted}>Tidak ada pengumpulan yang cocok dengan saringan yang dipilih.</p> : null}
+                {visibleGradingAttempts.length > 0 ? (
+                  <>
+                    <p style={styles.muted}>Menampilkan {revealedSliceCount(visibleGradingAttempts.length, gradingRevealedCount)} dari {visibleGradingAttempts.length} pengumpulan</p>
+                    {gradingRevealedCount < visibleGradingAttempts.length ? (
+                      <button type="button" style={styles.secondaryButton} onClick={() => setGradingRevealedCount((current) => nextRevealedCount(current))}>Tampilkan lebih banyak</button>
+                    ) : null}
+                  </>
+                ) : null}
               </div>
               {attemptDetail ? (
                 <div className="teacher-attempt-review" style={styles.review}>

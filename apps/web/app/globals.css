@@ -1323,6 +1323,89 @@ a {
   font-weight: 800;
 }
 
+/* Bilah tab Langkah 5 ("Pantau hasil"): lengket di atas saat digulir dan
+   bisa digeser menyamping di layar sempit; hanya satu seksi tampil per tab. */
+.hasil-tabs {
+  position: sticky;
+  top: 12px;
+  z-index: 10;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin-top: 24px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-lg);
+  padding: 10px 12px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+  scrollbar-width: none;
+}
+
+.hasil-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.hasil-tab {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--wizard-accent-ring);
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: var(--wizard-accent-soft);
+  color: var(--wizard-accent-dark);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.hasil-tab:hover {
+  background: var(--wizard-accent-ring);
+}
+
+.hasil-tab.is-active {
+  border-color: #175cd3;
+  background: #175cd3;
+  color: #ffffff;
+}
+
+.hasil-tab.is-active:hover {
+  background: #175cd3;
+}
+
+.hasil-tab-badge {
+  border-radius: 999px;
+  padding: 1px 7px;
+  background: #b42318;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+/* Panel Langkah 5 yang digulirkan masuk layar (Rekap sesi / exit ticket)
+   tidak boleh tertutup bilah tab yang lengket. */
+.guru-content > .hasil-tabs ~ section {
+  scroll-margin-top: 96px;
+}
+
+/* Baris saringan Pengumpulan LKPD (tab Nilai): menetap tepat di bawah
+   bilah tab (top 12px + tinggi ±60px) selama daftar pengumpulan digulir.
+   Lengketnya di dalam seksi penilaian sendiri, jadi tidak bertabrakan
+   dengan bilah tab yang lengket di dalam .guru-content. */
+.grading-sticky-controls {
+  position: sticky;
+  top: 78px;
+  z-index: 5;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--color-border-soft);
+  padding: 6px 0 10px;
+  background: var(--color-surface);
+}
+
 .module-create-trigger,
 .module-row-action {
   border: 1px solid var(--wizard-accent-ring);

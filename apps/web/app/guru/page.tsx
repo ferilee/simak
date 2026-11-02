@@ -2550,8 +2550,8 @@ export default function GuruPage() {
           <>
             <p style={styles.muted}>{rangeReport.from} s.d. {rangeReport.to}</p>
             <div style={styles.actionRow}>
-              <button type="button" onClick={() => void downloadRangeReport("csv")} style={styles.secondaryButton}>Unduh Excel (CSV)</button>
-              <button type="button" onClick={() => void downloadRangeReport("pdf")} style={styles.secondaryButton}>Unduh PDF</button>
+              <button type="button" onClick={() => void downloadRangeReport("csv")} className="download-button download-button-csv"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>Unduh Excel (CSV)</button>
+              <button type="button" onClick={() => void downloadRangeReport("pdf")} className="download-button download-button-pdf"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>Unduh PDF</button>
             </div>
             <div style={styles.reportSummary}>
               <div style={styles.reportMetric}><strong>{rangeReport.summary.assignments}</strong><span>Penugasan</span></div>
@@ -2624,8 +2624,8 @@ export default function GuruPage() {
             <>
               <p style={styles.muted}>{sessionReport.assignment.title} · batas {formatDate(sessionReport.assignment.due_at)}</p>
               <div style={styles.actionRow}>
-                <button type="button" onClick={() => void downloadSessionReport(sessionReport.assignment.id, "csv")} style={styles.secondaryButton}>Unduh Excel (CSV)</button>
-                <button type="button" onClick={() => void downloadSessionReport(sessionReport.assignment.id, "pdf")} style={styles.secondaryButton}>Unduh PDF</button>
+                <button type="button" onClick={() => void downloadSessionReport(sessionReport.assignment.id, "csv")} className="download-button download-button-csv"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>Unduh Excel (CSV)</button>
+                <button type="button" onClick={() => void downloadSessionReport(sessionReport.assignment.id, "pdf")} className="download-button download-button-pdf"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>Unduh PDF</button>
               </div>
               <div style={styles.reportSummary}>
                 <div style={styles.reportMetric}><strong>{sessionReport.summary.total_students}</strong><span>Murid</span></div>

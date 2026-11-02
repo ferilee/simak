@@ -1624,6 +1624,45 @@ a {
   flex: none;
 }
 
+/* Tombol unduh laporan (Rekap Sesi + Laporan Rentang, Langkah 5): warna
+   penuh + ikon unduh agar terbaca sebagai aksi, bukan teks mati seperti
+   tombol sekunder putih sebelumnya. Kelas (bukan gaya sebaris) supaya
+   keadaan :hover bisa bekerja. */
+.download-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.download-button-csv {
+  border-color: #067647;
+  background: #067647;
+}
+
+.download-button-csv:hover {
+  border-color: #05603a;
+  background: #05603a;
+}
+
+.download-button-pdf {
+  border-color: #b42318;
+  background: #b42318;
+}
+
+.download-button-pdf:hover {
+  border-color: #912018;
+  background: #912018;
+}
+
 .row-action-button.is-primary {
   border: 1px solid var(--color-brand-700);
   background: var(--color-brand-700);

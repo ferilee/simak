@@ -2247,10 +2247,10 @@ export default function GuruPage() {
                     <span>{blockSnippet(block)}</span>
                   </div>
                   <div className="content-row-actions">
-                    <button type="button" className="module-row-action" disabled={index === 0} onClick={() => void moveBlock(block.id, -1)}>Naik</button>
-                    <button type="button" className="module-row-action" disabled={index === moduleBlocks.length - 1} onClick={() => void moveBlock(block.id, 1)}>Turun</button>
-                    <button type="button" className="module-row-action" onClick={() => startEditBlock(block)}>Edit</button>
-                    <button type="button" className="module-row-action" onClick={() => void deleteBlock(block)}>Hapus</button>
+                    <button type="button" className="module-row-action" disabled={index === 0} onClick={() => void moveBlock(block.id, -1)}><span className="action-icon" aria-hidden="true">↑</span>Naik</button>
+                    <button type="button" className="module-row-action" disabled={index === moduleBlocks.length - 1} onClick={() => void moveBlock(block.id, 1)}><span className="action-icon" aria-hidden="true">↓</span>Turun</button>
+                    <button type="button" className="module-row-action" onClick={() => startEditBlock(block)}><span className="action-icon" aria-hidden="true">✎</span>Edit</button>
+                    <button type="button" className="module-row-action is-danger" onClick={() => void deleteBlock(block)}><span className="action-icon" aria-hidden="true">🗑</span>Hapus</button>
                   </div>
                 </article>
               ))}
@@ -2442,10 +2442,10 @@ export default function GuruPage() {
                     <span>{WORKSHEET_ITEM_TYPE_LABELS[item.item_type] ?? item.item_type} · {item.points} poin</span>
                   </div>
                   <div className="content-row-actions">
-                    <button type="button" className="module-row-action" disabled={index === 0} onClick={() => void moveItem(item.id, -1)}>Naik</button>
-                    <button type="button" className="module-row-action" disabled={index === worksheetItems.length - 1} onClick={() => void moveItem(item.id, 1)}>Turun</button>
-                    <button type="button" className="module-row-action" onClick={() => startEditItem(item)}>Edit</button>
-                    <button type="button" className="module-row-action" onClick={() => void deleteItem(item)}>Hapus</button>
+                    <button type="button" className="module-row-action" disabled={index === 0} onClick={() => void moveItem(item.id, -1)}><span className="action-icon" aria-hidden="true">↑</span>Naik</button>
+                    <button type="button" className="module-row-action" disabled={index === worksheetItems.length - 1} onClick={() => void moveItem(item.id, 1)}><span className="action-icon" aria-hidden="true">↓</span>Turun</button>
+                    <button type="button" className="module-row-action" onClick={() => startEditItem(item)}><span className="action-icon" aria-hidden="true">✎</span>Edit</button>
+                    <button type="button" className="module-row-action is-danger" onClick={() => void deleteItem(item)}><span className="action-icon" aria-hidden="true">🗑</span>Hapus</button>
                   </div>
                 </article>
               ))}

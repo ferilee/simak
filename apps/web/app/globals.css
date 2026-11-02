@@ -1423,6 +1423,23 @@ a {
   justify-content: flex-end;
 }
 
+/* Ikon tombol aksi baris isi hanya tampil di bar aksi mobile (lihat blok
+   @media di bawah); di desktop ikon disembunyikan agar tampilan tetap sama. */
+.content-row-actions .action-icon {
+  display: none;
+}
+
+/* Aksi Hapus diberi nuansa bahaya lembut di semua viewport. */
+.module-row-action.is-danger {
+  border-color: #fecdca;
+  background: #fef3f2;
+  color: #b42318;
+}
+
+.module-row-action.is-danger:hover {
+  background: #fee4e2;
+}
+
 .module-row-action:disabled {
   cursor: not-allowed;
   opacity: 0.45;
@@ -2321,6 +2338,51 @@ a {
     grid-column: 2;
     grid-row: 1 / span 2;
     align-self: center;
+  }
+
+  /* Baris isi (blok materi & soal LKPD): satu kolom di HP — teks selebar
+     penuh di atas, tombol menjadi bar aksi 4 kolom di bawahnya. Aturan
+     tombol dibatasi pada .content-row-actions agar pemakaian
+     .module-row-action di tempat lain (daftar modul/LKPD) tidak berubah. */
+  .content-row {
+    grid-template-columns: 1fr;
+  }
+
+  .content-row-main span {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+  }
+
+  .content-row-actions {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    width: 100%;
+  }
+
+  .content-row-actions .module-row-action {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    /* Batalkan penempatan grid dari aturan .module-row-action mobile di
+       atas: di dalam bar aksi, posisi tombol diatur oleh grid bar-nya. */
+    grid-column: auto;
+    grid-row: auto;
+    align-self: stretch;
+    min-height: 48px;
+    padding: 6px 2px;
+    font-size: 11px;
+    white-space: normal;
+  }
+
+  .content-row-actions .action-icon {
+    display: block;
+    font-size: 15px;
+    line-height: 1;
   }
 
   .resource-row {

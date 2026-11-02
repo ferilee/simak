@@ -12,7 +12,7 @@ const { assignmentClasses, assignments, classMembers, classes, exitTickets, modu
 
 function serializeAssignment(
   assignment: typeof assignments.$inferSelect,
-  linkedClasses: { id: number; name: string }[] = [],
+  linkedClasses: { id: number; name: string; joinCode: string }[] = [],
 ) {
   return {
     id: assignment.id,
@@ -24,7 +24,7 @@ function serializeAssignment(
     opens_at: assignment.opensAt,
     due_at: assignment.dueAt,
     status: assignment.status,
-    classes: linkedClasses.map((kelas) => ({ id: kelas.id, name: kelas.name })),
+    classes: linkedClasses.map((kelas) => ({ id: kelas.id, name: kelas.name, join_code: kelas.joinCode })),
     created_at: assignment.createdAt,
     updated_at: assignment.updatedAt,
   };
@@ -41,7 +41,7 @@ async function ownedAssignment(userId: number, assignmentId: number) {
 
 async function getLinkedClasses(assignmentId: number) {
   return db
-    .select({ id: classes.id, name: classes.name })
+    .select({ id: classes.id, name: classes.name, joinCode: classes.joinCode })
     .from(assignmentClasses)
     .innerJoin(classes, eq(classes.id, assignmentClasses.classId))
     .where(eq(assignmentClasses.assignmentId, assignmentId));
@@ -131,15 +131,15 @@ assignmentRoutes.get("/", async (c) => {
   const rows = await db.select().from(assignments).where(eq(assignments.teacherId, user.userId)).orderBy(desc(assignments.opensAt));
   const links = rows.length
     ? await db
-        .select({ assignmentId: assignmentClasses.assignmentId, id: classes.id, name: classes.name })
+        .select({ assignmentId: assignmentClasses.assignmentId, id: classes.id, name: classes.name, joinCode: classes.joinCode })
         .from(assignmentClasses)
         .innerJoin(classes, eq(classes.id, assignmentClasses.classId))
         .where(inArray(assignmentClasses.assignmentId, rows.map((row) => row.id)))
     : [];
-  const classesByAssignment = new Map<number, { id: number; name: string }[]>();
+  const classesByAssignment = new Map<number, { id: number; name: string; joinCode: string }[]>();
   for (const link of links) {
     const current = classesByAssignment.get(link.assignmentId) ?? [];
-    current.push({ id: link.id, name: link.name });
+    current.push({ id: link.id, name: link.name, joinCode: link.joinCode });
     classesByAssignment.set(link.assignmentId, current);
   }
   return c.json({ ok: true, data: rows.map((row) => serializeAssignment(row, classesByAssignment.get(row.id) ?? [])) });

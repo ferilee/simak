@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { apiRequest } from "../../../../lib/api";
+import { prepareImageForUpload } from "../../../../lib/prepare-image";
 import { Toast } from "../../../../components/Toast";
 import { useConfirm } from "../../../../components/ConfirmDialog";
 import { MathText } from "../../../../components/MathContent";
@@ -298,6 +299,9 @@ export default function WorksheetPage() {
     }
     setUploadingItemId(itemId);
     try {
+      // JPG/PNG dikonversi ke WebP lebih dulu; presign menggambar berkas
+      // hasil konversi agar kunci objeknya berakhiran .webp.
+      const prepared = await prepareImageForUpload(file);
       const presign = await apiRequest<{
         ok: true;
         data: { upload_url: string; attachment_key: string; content_type: string };
@@ -305,15 +309,15 @@ export default function WorksheetPage() {
         method: "POST",
         body: JSON.stringify({
           worksheetId: data.worksheet.id,
-          filename: file.name,
-          contentType: file.type,
-          size: file.size,
+          filename: prepared.name,
+          contentType: prepared.type,
+          size: prepared.size,
         }),
       });
       const upload = await fetch(presign.data.upload_url, {
         method: "PUT",
         headers: { "Content-Type": presign.data.content_type },
-        body: file,
+        body: prepared,
       });
       if (!upload.ok) throw new Error("Foto gagal diunggah ke penyimpanan.");
       setAttachmentKeys((current) => ({ ...current, [itemId]: presign.data.attachment_key }));

@@ -4,6 +4,7 @@ import { CSSProperties, FormEvent, ReactNode, useEffect, useRef, useState } from
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiBase, apiRequest } from "../../lib/api";
+import { prepareImageForUpload } from "../../lib/prepare-image";
 import { submissionStatusLabel } from "../lib/labels";
 import { Toast } from "../../components/Toast";
 import { useConfirm } from "../../components/ConfirmDialog";
@@ -1178,6 +1179,9 @@ export default function GuruPage() {
   // dengan lampiran blok) dan kembalikan kunci lampirannya.
   async function uploadModuleFile(moduleId: number, file: File): Promise<string> {
     if (file.size > 10 * 1024 * 1024) throw new Error("Ukuran berkas maksimal 10 MB.");
+    // JPG/PNG dikonversi ke WebP lebih dulu; presign menggambar berkas hasil
+    // konversi (nama, tipe, ukuran) agar kunci objeknya berakhiran .webp.
+    const prepared = await prepareImageForUpload(file);
     const presign = await apiRequest<{
       ok: true;
       data: { upload_url: string; attachment_key: string; content_type: string };
@@ -1185,15 +1189,15 @@ export default function GuruPage() {
       method: "POST",
       body: JSON.stringify({
         moduleId,
-        filename: file.name,
-        contentType: file.type,
-        size: file.size,
+        filename: prepared.name,
+        contentType: prepared.type,
+        size: prepared.size,
       }),
     });
     const upload = await fetch(presign.data.upload_url, {
       method: "PUT",
       headers: { "Content-Type": presign.data.content_type },
-      body: file,
+      body: prepared,
     });
     if (!upload.ok) throw new Error("Berkas gagal diunggah ke penyimpanan.");
     return presign.data.attachment_key;
@@ -1251,6 +1255,7 @@ export default function GuruPage() {
     }
     try {
       if (attachment.size > 10 * 1024 * 1024) throw new Error("Ukuran lampiran maksimal 10 MB.");
+      const prepared = await prepareImageForUpload(attachment);
       const presign = await apiRequest<{
         ok: true;
         data: { upload_url: string; attachment_key: string; content_type: string };
@@ -1258,15 +1263,15 @@ export default function GuruPage() {
         method: "POST",
         body: JSON.stringify({
           moduleId: selectedId,
-          filename: attachment.name,
-          contentType: attachment.type,
-          size: attachment.size,
+          filename: prepared.name,
+          contentType: prepared.type,
+          size: prepared.size,
         }),
       });
       const upload = await fetch(presign.data.upload_url, {
         method: "PUT",
         headers: { "Content-Type": presign.data.content_type },
-        body: attachment,
+        body: prepared,
       });
       if (!upload.ok) throw new Error("Lampiran gagal diunggah ke penyimpanan.");
 
@@ -1452,6 +1457,7 @@ export default function GuruPage() {
     setMessage("");
     try {
       if (attachment.size > 10 * 1024 * 1024) throw new Error("Ukuran lampiran maksimal 10 MB.");
+      const prepared = await prepareImageForUpload(attachment);
       const presign = await apiRequest<{
         ok: true;
         data: { upload_url: string; attachment_key: string; content_type: string };
@@ -1459,15 +1465,15 @@ export default function GuruPage() {
         method: "POST",
         body: JSON.stringify({
           moduleId: selectedId,
-          filename: attachment.name,
-          contentType: attachment.type,
-          size: attachment.size,
+          filename: prepared.name,
+          contentType: prepared.type,
+          size: prepared.size,
         }),
       });
       const upload = await fetch(presign.data.upload_url, {
         method: "PUT",
         headers: { "Content-Type": presign.data.content_type },
-        body: attachment,
+        body: prepared,
       });
       if (!upload.ok) throw new Error("Lampiran gagal diunggah ke penyimpanan.");
 

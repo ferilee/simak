@@ -405,7 +405,15 @@ export default function WorksheetPage() {
       <p style={styles.eyebrow}>SIMAK · LKPD</p>
       <h1 style={styles.title}>{data.worksheet.title}</h1>
       {data.worksheet.instructions ? <p style={styles.instructions}><MathText text={data.worksheet.instructions} /></p> : null}
-      {assignmentId ? <p style={styles.integrityNotice}>Untuk membantu guru meninjau proses belajar, SIMAK mencatat indikasi seperti berpindah halaman dan aktivitas clipboard. Ini bukan penilaian otomatis bahwa Anda melakukan kecurangan.</p> : null}
+      {assignmentId ? (
+        <div style={styles.integrityNotice}>
+          <span style={styles.integrityNoticeIcon} aria-hidden="true">ℹ️</span>
+          <div>
+            <p style={styles.integrityNoticeTitle}>Aktivitasmu di halaman ini dicatat</p>
+            <p style={styles.integrityNoticeBody}>Untuk membantu guru meninjau proses belajar, SIMAK mencatat indikasi seperti berpindah halaman dan aktivitas clipboard. Ini bukan penilaian otomatis bahwa Anda melakukan kecurangan.</p>
+          </div>
+        </div>
+      ) : null}
       {message ? <Toast message={message} onDismiss={() => setMessage("")} /> : null}
       {assignmentId && status !== "draf" ? (
         <Link href={`/murid/assignments/${assignmentId}`} style={styles.continueButton}>Kembali ke penugasan untuk melanjutkan →</Link>
@@ -714,7 +722,10 @@ const styles = {
   eyebrow: { color: "#475467", fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", margin: "32px 0 8px" },
   title: { fontSize: 34, margin: 0 },
   instructions: { color: "#667085", lineHeight: 1.6 },
-  integrityNotice: { color: "#475467", background: "#f8f9fc", border: "1px solid #eaecf0", padding: 12, borderRadius: 8, fontSize: 13, lineHeight: 1.5 },
+  integrityNotice: { display: "flex", gap: 10, alignItems: "flex-start", background: "#FFFAEB", border: "1px solid #F79009", padding: 14, borderRadius: 10 },
+  integrityNoticeIcon: { fontSize: 18, lineHeight: 1.4 },
+  integrityNoticeTitle: { margin: 0, fontSize: 15, fontWeight: 700, color: "#93370D", lineHeight: 1.4 },
+  integrityNoticeBody: { margin: "2px 0 0", fontSize: 14, color: "#93370D", lineHeight: 1.55 },
   message: { color: "#175cd3", background: "#eff8ff", padding: 12, borderRadius: 8 },
   error: { color: "#b42318", background: "#fef3f2", padding: 12, borderRadius: 8 },
   list: { display: "grid", gap: 16, marginTop: 28 },

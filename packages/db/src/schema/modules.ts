@@ -9,6 +9,9 @@ export const modules = mysqlTable("modules", {
   title: varchar("title", { length: 200 }).notNull(),
   subject: varchar("subject", { length: 100 }).notNull(),
   description: text("description"),
+  // Kunci objek sampul modul di penyimpanan (RustFS); URL unduhan bertanda
+  // tangan diterbitkan segar lewat /uploads/download seperti lampiran blok.
+  coverKey: varchar("cover_key", { length: 512 }),
   status: mysqlEnum("status", ["draf", "terbit", "arsip"]).notNull().default("draf"),
   version: int("version").notNull().default(1),
   createdAt: timestamp("created_at").notNull().defaultNow(),

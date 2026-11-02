@@ -133,6 +133,8 @@ export const createModuleSchema = z.object({
   title: z.string().min(1).max(200),
   subject: z.string().min(1).max(100),
   description: z.string().max(5000).optional(),
+  // Kunci objek sampul di penyimpanan; null pada update = hapus sampul.
+  coverKey: z.string().max(512).nullable().optional(),
 });
 
 export const updateModuleSchema = createModuleSchema.partial().extend({

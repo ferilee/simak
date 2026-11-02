@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import katex from "katex";
 
+import { apiRequest } from "../lib/api";
 import { markdownToHtml } from "./markdown";
 
 // String-level KaTeX rendering.
@@ -199,6 +200,86 @@ function renderMathInHtml(html: string): string {
     .join("");
 }
 
+// --- Gambar sisipan berkunci lampiran --------------------------------------
+// Blok teks menyimpan gambar HANYA sebagai <img data-attachment-key="...">
+// tanpa src (URL unduhan bertanda tangan kedaluwarsa). Saat dirender, tag
+// diberi src placeholder transparan; hook di bawah menukar placeholder itu
+// dengan URL segar dari /uploads/download per kunci unik — pola yang sama
+// seperti blok lampiran gambar. Kegagalan tukar membiarkan placeholder +
+// teks alt terlihat, bukan ikon gambar rusak.
+
+const TRANSPARENT_PIXEL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+const ATTACHMENT_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9/._-]*$/;
+
+function escapeAttributeValue(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function readAttribute(tagHtml: string, name: string): string {
+  const match = tagHtml.match(new RegExp(`${name}\\s*=\\s*"([^"]*)"|${name}\\s*=\\s*'([^']*)'|${name}\\s*=\\s*([^\\s>]+)`, "i"));
+  return (match?.[1] ?? match?.[2] ?? match?.[3] ?? "").trim();
+}
+
+// Bentuk satu-satunya tag <img> yang lolos sanitasi render: berkunci
+// lampiran, tanpa src tersimpan (placeholder diisi di sini), alt dibersihkan.
+function sanitizeKeyedImageTag(tagHtml: string): string {
+  const key = readAttribute(tagHtml, "data-attachment-key");
+  if (!key || key.length > 512 || !ATTACHMENT_KEY_PATTERN.test(key)) return "";
+  const alt = readAttribute(tagHtml, "alt") || "Gambar materi";
+  return `<img class="simak-inline-image" data-attachment-key="${key}" alt="${escapeAttributeValue(alt)}" src="${TRANSPARENT_PIXEL}">`;
+}
+
+const attachmentUrlCache = new Map<string, Promise<string>>();
+
+function fetchAttachmentUrl(moduleId: number, key: string): Promise<string> {
+  const cacheKey = `${moduleId}:${key}`;
+  const cached = attachmentUrlCache.get(cacheKey);
+  if (cached) return cached;
+  const pending = apiRequest<{ ok: true; data: { download_url: string } }>(
+    `/uploads/download?moduleId=${moduleId}&key=${encodeURIComponent(key)}`,
+  ).then((response) => response.data.download_url);
+  attachmentUrlCache.set(cacheKey, pending);
+  // Kegagalan tidak di-cache: render berikutnya boleh mencoba lagi.
+  pending.catch(() => attachmentUrlCache.delete(cacheKey));
+  return pending;
+}
+
+function useResolvedInlineImages(moduleId: number | undefined, html: string) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !moduleId) return;
+    const images = Array.from(container.querySelectorAll<HTMLImageElement>("img[data-attachment-key]"));
+    if (images.length === 0) return;
+    let cancelled = false;
+    const keys = [...new Set(images.map((image) => image.getAttribute("data-attachment-key")).filter((key): key is string => Boolean(key)))];
+    for (const key of keys) {
+      void fetchAttachmentUrl(moduleId, key)
+        .then((url) => {
+          if (cancelled) return;
+          images
+            .filter((image) => image.getAttribute("data-attachment-key") === key)
+            .forEach((image) => {
+              image.src = url;
+            });
+        })
+        .catch(() => {
+          // Biarkan placeholder transparan + alt: tidak ada ikon rusak.
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [moduleId, html]);
+
+  return containerRef;
+}
+
 // --- Components -------------------------------------------------------------
 
 export function MathText({ text, className }: { text: string; className?: string }) {
@@ -207,25 +288,28 @@ export function MathText({ text, className }: { text: string; className?: string
   return <span className={className} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
-export function MathHtml({ html, className }: { html: string; className?: string }) {
+export function MathHtml({ html, className, moduleId }: { html: string; className?: string; moduleId?: number }) {
   const renderedHtml = useMemo(() => renderMathInHtml(sanitizeRichText(html)), [html]);
+  const containerRef = useResolvedInlineImages(moduleId, renderedHtml);
 
-  return <div className={className} dangerouslySetInnerHTML={{ __html: renderedHtml }} />;
+  return <div ref={containerRef} className={className} dangerouslySetInnerHTML={{ __html: renderedHtml }} />;
 }
 
-export function MarkdownHtml({ markdown, className }: { markdown: string; className?: string }) {
+export function MarkdownHtml({ markdown, className, moduleId }: { markdown: string; className?: string; moduleId?: number }) {
   const renderedHtml = useMemo(() => renderMathInHtml(sanitizeRichText(markdownToHtml(markdown))), [markdown]);
+  const containerRef = useResolvedInlineImages(moduleId, renderedHtml);
 
-  return <div className={className} dangerouslySetInnerHTML={{ __html: renderedHtml }} />;
+  return <div ref={containerRef} className={className} dangerouslySetInnerHTML={{ __html: renderedHtml }} />;
 }
 
-function sanitizeRichText(html: string) {
+export function sanitizeRichText(html: string) {
   const allowedTags = new Set(["p", "strong", "em", "br", "sub", "sup", "b", "i", "ul", "ol", "li", "blockquote", "h1", "h2", "h3", "h4", "hr", "a", "code"]);
   return html
     .replace(/<\/?(script|style|iframe|object|embed|form)[^>]*>/gi, "")
     .replace(/\s+on[a-z-]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
     .replace(/<([a-z0-9-]+)(?:\s[^>]*)?>/gi, (match, tag: string) => {
       const normalized = tag.toLowerCase();
+      if (normalized === "img") return sanitizeKeyedImageTag(match);
       if (!allowedTags.has(normalized)) return "";
       if (normalized === "a") {
         const hrefMatch = match.match(/href\s*=\s*"([^"]*)"|href\s*=\s*'([^']*)'|href\s*=\s*([^\s>]+)/i);

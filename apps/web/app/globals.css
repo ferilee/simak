@@ -1910,6 +1910,17 @@ a {
   padding: 0.1em 0.35em;
 }
 
+/* Gambar sisipan berkunci lampiran di dalam blok teks: lebar mengikuti
+   kolom baca, sudut membulat seperti gambar lampiran. Selama URL segarnya
+   belum terbit, placeholder transparan + teks alt tampil di atas latar
+   lembut — bukan ikon gambar rusak. */
+.math-rich-content img.simak-inline-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+  background: #f8f9fc;
+}
+
 .math-rich-content hr {
   border: none;
   border-top: 1px solid #d0d5dd;

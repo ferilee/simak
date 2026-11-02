@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { CSSProperties, FormEvent, ReactNode, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiBase, apiRequest } from "../../lib/api";
@@ -16,6 +16,7 @@ type ModuleSummary = {
   title: string;
   subject: string;
   description: string | null;
+  cover_key: string | null;
   status: "draf" | "terbit" | "arsip";
   version: number;
   viewer_count: number;
@@ -202,6 +203,14 @@ export default function GuruPage() {
   const [title, setTitle] = useState("");
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
+  // Sampul modul pada formulir buat: berkas terpilih + URL objek pratinjaunya.
+  // Berkas baru diunggah setelah modul terbuat (presign butuh id modul),
+  // lalu kuncinya disimpan lewat PATCH coverKey.
+  const [newCover, setNewCover] = useState<{ file: File; previewUrl: string } | null>(null);
+  // Sampul pada formulir edit: editCoverKey = kunci efektif sesudah simpan
+  // (null berarti sampul dihapus); editCover = berkas pengganti yang dipilih.
+  const [editCoverKey, setEditCoverKey] = useState<string | null>(null);
+  const [editCover, setEditCover] = useState<{ file: File; previewUrl: string } | null>(null);
   // Blok teks punya dua mode sunting yang berbagi satu isi: Rich Text (bawaan)
   // menyimpan HTML tersanitasi, Markdown menyimpan HTML + sumber markdown-nya.
   // textEditedSideRef mengingat mode yang terakhir menyunting agar berpindah
@@ -386,7 +395,14 @@ export default function GuruPage() {
 
   function renderModuleRow(module: ModuleSummary, dimmed = false) {
     return (
-      <article key={module.id} className={`module-row ${dimmed ? "module-row-archived" : ""} ${selectedId === module.id ? "is-selected" : ""}`}>
+      <article
+        key={module.id}
+        className={`module-row ${dimmed ? "module-row-archived" : ""} ${selectedId === module.id ? "is-selected" : ""}`}
+        style={module.cover_key ? { gridTemplateColumns: "52px minmax(0, 1fr) auto auto" } : undefined}
+      >
+        {module.cover_key ? (
+          <ModuleCoverImage moduleId={module.id} coverKey={module.cover_key} style={styles.moduleRowCover} />
+        ) : null}
         <button type="button" onClick={() => setSelectedId(module.id)} className="module-row-main">
           <strong>{module.title}</strong>
           <span>{module.subject} · versi {module.version}</span>
@@ -812,6 +828,14 @@ export default function GuruPage() {
     }
   }, [selectedAssignmentId, assignmentSummary, assignmentSummaryLoading]);
 
+  function pickNewCover(file: File | null) {
+    setNewCover(file ? { file, previewUrl: URL.createObjectURL(file) } : null);
+  }
+
+  function pickEditCover(file: File | null) {
+    setEditCover(file ? { file, previewUrl: URL.createObjectURL(file) } : null);
+  }
+
   async function createModule(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage("");
@@ -820,13 +844,30 @@ export default function GuruPage() {
         method: "POST",
         body: JSON.stringify({ title, subject, description }),
       });
+      const createdId = response.data.id;
+      // Sampul diunggah sesudah modul ada (presign butuh id modul), lalu
+      // kuncinya ditempel lewat PATCH. Gagal sampul tidak menggagalkan
+      // pembuatan modul — guru bisa memasangnya lagi lewat Edit modul.
+      let coverNote = "";
+      if (newCover) {
+        try {
+          const coverKey = await uploadModuleFile(createdId, newCover.file);
+          await apiRequest(`/modules/${createdId}`, {
+            method: "PATCH",
+            body: JSON.stringify({ coverKey }),
+          });
+        } catch {
+          coverNote = " Sampul belum terpasang — pasang lagi lewat Edit modul.";
+        }
+      }
       setTitle("");
       setSubject("");
       setDescription("");
-      setSelectedId(response.data.id);
+      setNewCover(null);
+      setSelectedId(createdId);
       setShowCreateModule(false);
       await loadModules();
-      setMessage("Draf modul dibuat. Sekarang tambahkan isinya di panel di bawah.");
+      setMessage(`Draf modul dibuat. Sekarang tambahkan isinya di panel di bawah.${coverNote}`);
       setTimeout(() => {
         document.getElementById("panel-isi-materi")?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 150);
@@ -840,19 +881,32 @@ export default function GuruPage() {
     setEditModuleTitle(selectedModule.title);
     setEditModuleSubject(selectedModule.subject);
     setEditModuleDescription(selectedModule.description ?? "");
+    setEditCoverKey(selectedModule.cover_key);
+    setEditCover(null);
     setEditingModuleMeta(true);
+  }
+
+  function cancelEditModuleMeta() {
+    setEditingModuleMeta(false);
+    setEditCover(null);
+    setEditCoverKey(null);
   }
 
   async function saveModuleMeta(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedId) return;
     try {
-      // Hanya metadata yang dikirim; status modul tidak ikut berubah.
+      // Metadata + sampul yang dikirim; status modul tidak ikut berubah.
+      // Berkas sampul pengganti diunggah dulu, kuncinya yang disimpan;
+      // coverKey null berarti sampul dihapus.
+      let coverKey = editCoverKey;
+      if (editCover) coverKey = await uploadModuleFile(selectedId, editCover.file);
       await apiRequest(`/modules/${selectedId}`, {
         method: "PATCH",
-        body: JSON.stringify({ title: editModuleTitle, subject: editModuleSubject, description: editModuleDescription }),
+        body: JSON.stringify({ title: editModuleTitle, subject: editModuleSubject, description: editModuleDescription, coverKey }),
       });
       setEditingModuleMeta(false);
+      setEditCover(null);
       setMessage("Data modul disimpan.");
       await loadModules();
     } catch (error) {
@@ -1005,10 +1059,16 @@ export default function GuruPage() {
   }
 
   function textBlockIsEmpty() {
-    return textEditorMode === "markdown"
-      ? !blockMarkdown.trim()
-      : !stripHtmlToText(sanitizeBlockHtml(blockRichHtml));
+    if (textEditorMode === "markdown") return !blockMarkdown.trim();
+    const sanitized = sanitizeBlockHtml(blockRichHtml);
+    // Blok yang isinya hanya gambar sisipan tetap dihitung berisi.
+    return !stripHtmlToText(sanitized) && !sanitized.includes("data-attachment-key");
   }
+
+  // Gambar sisipan tidak punya padanan Markdown: selama HTML aktif memuat
+  // gambar berkunci, tab Markdown dikunci agar gambar tidak hilang saat
+  // blok disimpan dari mode itu.
+  const blockHasInlineImages = blockRichHtml.includes("data-attachment-key");
 
   // Muatan simpan blok teks mengikuti mode aktif: mode Markdown menyimpan
   // HTML hasil konversi PLUS sumber markdown-nya; mode Rich Text menyimpan
@@ -1114,6 +1174,73 @@ export default function GuruPage() {
     }
   }
 
+  // Unggah satu berkas ke penyimpanan lewat presign modul (pola yang sama
+  // dengan lampiran blok) dan kembalikan kunci lampirannya.
+  async function uploadModuleFile(moduleId: number, file: File): Promise<string> {
+    if (file.size > 10 * 1024 * 1024) throw new Error("Ukuran berkas maksimal 10 MB.");
+    const presign = await apiRequest<{
+      ok: true;
+      data: { upload_url: string; attachment_key: string; content_type: string };
+    }>("/uploads/presign", {
+      method: "POST",
+      body: JSON.stringify({
+        moduleId,
+        filename: file.name,
+        contentType: file.type,
+        size: file.size,
+      }),
+    });
+    const upload = await fetch(presign.data.upload_url, {
+      method: "PUT",
+      headers: { "Content-Type": presign.data.content_type },
+      body: file,
+    });
+    if (!upload.ok) throw new Error("Berkas gagal diunggah ke penyimpanan.");
+    return presign.data.attachment_key;
+  }
+
+  // Pengait tombol Gambar pada editor teks kaya: unggah gambar sisipan untuk
+  // modul terpilih dan kembalikan kuncinya untuk disisipkan ke isi blok.
+  async function insertInlineImage(file: File): Promise<string> {
+    if (!selectedId) throw new Error("Pilih modul terlebih dahulu.");
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setMessage("Gambar sisipan harus JPG, PNG, atau WebP.");
+      throw new Error("Jenis gambar tidak didukung.");
+    }
+    try {
+      return await uploadModuleFile(selectedId, file);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Gambar sisipan belum dapat diunggah.");
+      throw error;
+    }
+  }
+
+  // Isi blok tersimpan memuat gambar berkunci tanpa src; untuk tampilan di
+  // editor, src diisi URL unduhan segar. Salinan ini hanya hidup di editor —
+  // saat disimpan, sanitizeBlockHtml membuang src dan menyisakan kuncinya.
+  async function hydrateEditorImages(html: string, moduleId: number): Promise<string> {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const images = Array.from(doc.querySelectorAll("img[data-attachment-key]"));
+    if (images.length === 0) return html;
+    const keys = [...new Set(images.map((image) => image.getAttribute("data-attachment-key")).filter((key): key is string => Boolean(key)))];
+    const urls = new Map<string, string>();
+    await Promise.all(keys.map(async (key) => {
+      try {
+        const response = await apiRequest<{ ok: true; data: { download_url: string } }>(
+          `/uploads/download?moduleId=${moduleId}&key=${encodeURIComponent(key)}`,
+        );
+        urls.set(key, response.data.download_url);
+      } catch {
+        // Biarkan gambar tanpa src di editor bila URL-nya gagal diterbitkan.
+      }
+    }));
+    images.forEach((image) => {
+      const url = urls.get(image.getAttribute("data-attachment-key") ?? "");
+      if (url) image.setAttribute("src", url);
+    });
+    return doc.body.innerHTML;
+  }
+
   async function updateAttachmentBlock() {
     if (!selectedId || !editingBlock) return false;
     if (!attachment) {
@@ -1171,7 +1298,7 @@ export default function GuruPage() {
     }
   }
 
-  function startEditBlock(block: ModuleBlock) {
+  async function startEditBlock(block: ModuleBlock) {
     setEditingBlock(block);
     setAttachment(null);
     if (block.type === "teks") {
@@ -1187,8 +1314,14 @@ export default function GuruPage() {
         // Blok HTML warisan: rich text diisi HTML-nya; tab Markdown diisi
         // belakangan lewat konversi balik saat pertama kali dibuka.
         setBlockMarkdown("");
-        setBlockRichHtml(typeof block.content.html === "string" ? block.content.html : "");
+        const storedHtml = typeof block.content.html === "string" ? block.content.html : "";
+        setBlockRichHtml(storedHtml);
         textEditedSideRef.current = "rich";
+        if (selectedId && storedHtml.includes("data-attachment-key")) {
+          const hydrated = await hydrateEditorImages(storedHtml, selectedId);
+          // Terapkan hanya bila guru masih menyunting isi yang sama.
+          setBlockRichHtml((current) => (current === storedHtml ? hydrated : current));
+        }
       }
     } else if (block.type === "sub_bab") {
       setBlockType("sub_bab");
@@ -1840,6 +1973,14 @@ export default function GuruPage() {
             <input required value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Judul modul" style={styles.input} />
             <input required value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="Mata pelajaran" style={styles.input} />
             <textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Deskripsi singkat" rows={3} style={styles.textarea} />
+            <CoverField
+              inputId="module-cover-file"
+              pickedName={newCover?.file.name ?? null}
+              preview={newCover ? <img src={newCover.previewUrl} alt="Pratinjau sampul materi" style={styles.coverPreview} /> : null}
+              canClear={Boolean(newCover)}
+              onPick={pickNewCover}
+              onClear={() => setNewCover(null)}
+            />
             <button type="submit" style={styles.primaryButton}>Buat draf</button>
           </form>
         ) : null}
@@ -1914,8 +2055,23 @@ export default function GuruPage() {
               <input required value={editModuleTitle} onChange={(event) => setEditModuleTitle(event.target.value)} placeholder="Judul modul" style={styles.input} />
               <input required value={editModuleSubject} onChange={(event) => setEditModuleSubject(event.target.value)} placeholder="Mata pelajaran" style={styles.input} />
               <textarea value={editModuleDescription} onChange={(event) => setEditModuleDescription(event.target.value)} placeholder="Deskripsi singkat" rows={3} style={styles.textarea} />
+              <CoverField
+                inputId="module-cover-edit-file"
+                pickedName={editCover?.file.name ?? null}
+                preview={editCover ? (
+                  <img src={editCover.previewUrl} alt="Pratinjau sampul materi" style={styles.coverPreview} />
+                ) : editCoverKey && selectedModule ? (
+                  <ModuleCoverImage moduleId={selectedModule.id} coverKey={editCoverKey} style={styles.coverPreview} />
+                ) : null}
+                canClear={Boolean(editCover || editCoverKey)}
+                onPick={pickEditCover}
+                onClear={() => {
+                  setEditCover(null);
+                  setEditCoverKey(null);
+                }}
+              />
               <button type="submit" style={styles.primaryButton}>Simpan data modul</button>
-              <button type="button" onClick={() => setEditingModuleMeta(false)} style={styles.secondaryButton}>Batal</button>
+              <button type="button" onClick={cancelEditModuleMeta} style={styles.secondaryButton}>Batal</button>
             </form>
           ) : null}
           <h2 style={styles.sectionTitle}>{editingBlock ? "Edit isi materi" : "Tambah isi materi"}</h2>
@@ -1953,6 +2109,7 @@ export default function GuruPage() {
                       key={option.value}
                       type="button"
                       aria-pressed={textEditorMode === option.value}
+                      disabled={option.value === "markdown" && blockHasInlineImages && textEditorMode === "rich"}
                       onClick={() => switchTextEditorMode(option.value)}
                       style={textEditorMode === option.value ? styles.blockTypeButtonActive : styles.blockTypeButton}
                     >
@@ -1960,9 +2117,12 @@ export default function GuruPage() {
                     </button>
                   ))}
                 </div>
+                {blockHasInlineImages ? (
+                  <small style={styles.muted}>Blok ini memuat gambar sisipan yang tidak bisa diwakili mode Markdown.</small>
+                ) : null}
                 {textEditorMode === "rich" ? (
                   <>
-                    <RichTextEditor value={blockRichHtml} onChange={handleRichTextChange} inputRef={setBlockFirstField} />
+                    <RichTextEditor value={blockRichHtml} onChange={handleRichTextChange} inputRef={setBlockFirstField} onInsertImage={insertInlineImage} />
                     <small style={styles.muted}>Sunting teks persis seperti yang akan dilihat murid; gunakan tombol format di atas editor. Rumus tetap ditulis sebagai teks $$ … $$ di dalam paragraf.</small>
                   </>
                 ) : (
@@ -2621,6 +2781,9 @@ export default function GuruPage() {
                 {previewModule.description ? (
                   <p style={styles.muted}><MathText text={previewModule.description} /></p>
                 ) : null}
+                {previewModule.cover_key ? (
+                  <ModuleCoverImage moduleId={previewModule.id} coverKey={previewModule.cover_key} style={styles.previewCover} />
+                ) : null}
                 {previewModule.viewer_count > 0 ? (
                   <p style={styles.muted}>
                     Dilihat oleh {previewModule.viewer_count} murid · {previewModule.view_count} kali dibuka
@@ -2706,15 +2869,91 @@ export default function GuruPage() {
   );
 }
 
+// Gambar sampul modul: state hanya menyimpan kuncinya, URL unduhan
+// bertanda tangan diterbitkan segar lewat /uploads/download (pola yang sama
+// seperti blok lampiran). Selama URL belum terbit, tidak ada yang dirender.
+function ModuleCoverImage({ moduleId, coverKey, style }: { moduleId: number; coverKey: string; style: CSSProperties }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setUrl(null);
+    void apiRequest<{ ok: true; data: { download_url: string } }>(
+      `/uploads/download?moduleId=${moduleId}&key=${encodeURIComponent(coverKey)}`,
+    )
+      .then((response) => {
+        if (!cancelled) setUrl(response.data.download_url);
+      })
+      .catch(() => {
+        // Sampul gagal diterbitkan URL-nya: tampilkan tanpa gambar.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [moduleId, coverKey]);
+
+  if (!url) return null;
+  return <img src={url} alt="Sampul materi" style={style} />;
+}
+
+// Kontrol pemilih sampul pada formulir modul (buat + edit): pemilih berkas
+// bergaya sama seperti pemilih lampiran, pratinjau, dan tombol hapus sampul
+// (penghapusan berlaku saat formulir disimpan).
+function CoverField({
+  inputId,
+  pickedName,
+  preview,
+  canClear,
+  onPick,
+  onClear,
+}: {
+  inputId: string;
+  pickedName: string | null;
+  preview: ReactNode;
+  canClear: boolean;
+  onPick: (file: File | null) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      <span style={styles.label}>Sampul materi</span>
+      <div style={styles.filePickerRow}>
+        <label htmlFor={inputId} style={styles.filePickerButton}>
+          Pilih gambar sampul
+        </label>
+        <span style={styles.fileName}>{pickedName ?? "Belum ada berkas dipilih"}</span>
+        <input
+          id={inputId}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          onChange={(event) => {
+            const file = event.target.files?.[0] ?? null;
+            event.target.value = "";
+            onPick(file);
+          }}
+          style={styles.hiddenFileInput}
+        />
+      </div>
+      <small style={styles.muted}>JPG, PNG, atau WebP. Maksimal 10 MB.</small>
+      {preview}
+      {canClear ? (
+        <div>
+          <button type="button" onClick={onClear} style={styles.secondaryButton}>Hapus sampul</button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function PreviewBlock({ block, moduleId }: { block: ModuleBlock; moduleId: number }) {
   if (block.type === "sub_bab") {
     return <h3 style={styles.previewSubheading}><MathText text={String(block.content.title ?? "Sub-bab")} /></h3>;
   }
   if (block.type === "teks") {
     if (block.content.format === "markdown" || typeof block.content.markdown === "string") {
-      return <MarkdownHtml markdown={String(block.content.markdown ?? "")} className="math-rich-content" />;
+      return <MarkdownHtml markdown={String(block.content.markdown ?? "")} className="math-rich-content" moduleId={moduleId} />;
     }
-    return <MathHtml html={String(block.content.html ?? "")} className="math-rich-content" />;
+    return <MathHtml html={String(block.content.html ?? "")} className="math-rich-content" moduleId={moduleId} />;
   }
   if (block.type === "video") {
     return <PreviewVideoBlock block={block} />;
@@ -3003,6 +3242,9 @@ const styles = {
   previewSubheading: { fontSize: 20, margin: "12px 0 0", borderTop: "1px solid #eaecf0", paddingTop: 16 },
   previewFigure: { margin: 0, display: "grid", gap: 8 },
   previewImage: { maxWidth: "100%", borderRadius: 10 },
+  moduleRowCover: { width: 52, height: 52, objectFit: "cover" as const, borderRadius: 8 },
+  coverPreview: { maxWidth: 260, width: "100%", borderRadius: 10, display: "block" },
+  previewCover: { width: "100%", maxHeight: 200, objectFit: "cover" as const, borderRadius: 10, display: "block" },
   previewVideo: { width: "100%", aspectRatio: "16 / 9", border: 0, borderRadius: 10 },
   previewFileLink: { color: "#175cd3", fontWeight: 700 },
   previewNotice: { color: "#667085", background: "#f8f9fc", padding: 12, borderRadius: 8, margin: 0 },

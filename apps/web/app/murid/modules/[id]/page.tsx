@@ -19,7 +19,7 @@ type Block = {
 type ModuleResponse = {
   ok: true;
   data: {
-    module: { id: number; title: string; subject: string; description: string | null };
+    module: { id: number; title: string; subject: string; description: string | null; cover_key: string | null };
     blocks: Block[];
     worksheets: { id: number; title: string; instructions: string | null }[];
     material_completed: boolean;
@@ -53,6 +53,7 @@ export default function ModulePage() {
       <p style={styles.subject}>{data.module.subject}</p>
       <h1 style={styles.title}>{data.module.title}</h1>
       {data.module.description ? <p style={styles.description}><MathText text={data.module.description} /></p> : null}
+      {data.module.cover_key ? <ModuleCover moduleId={data.module.id} coverKey={data.module.cover_key} /> : null}
       <article style={styles.content}>
         {data.blocks.map((block) => <ModuleBlock key={block.id} block={block} moduleId={data.module.id} />)}
       </article>
@@ -79,9 +80,9 @@ function ModuleBlock({ block, moduleId }: { block: Block; moduleId: number }) {
   }
   if (block.type === "teks") {
     if (block.content.format === "markdown" || typeof block.content.markdown === "string") {
-      return <MarkdownHtml markdown={String(block.content.markdown ?? "")} className="math-rich-content" />;
+      return <MarkdownHtml markdown={String(block.content.markdown ?? "")} className="math-rich-content" moduleId={moduleId} />;
     }
-    return <MathHtml html={String(block.content.html ?? "")} className="math-rich-content" />;
+    return <MathHtml html={String(block.content.html ?? "")} className="math-rich-content" moduleId={moduleId} />;
   }
   if (block.type === "video") {
     return <VideoBlock block={block} />;
@@ -90,6 +91,35 @@ function ModuleBlock({ block, moduleId }: { block: Block; moduleId: number }) {
     return <AttachmentBlock block={block} moduleId={moduleId} />;
   }
   return null;
+}
+
+// Sampul modul sebagai banner di bawah judul: URL diterbitkan segar lewat
+// /uploads/download dari kuncinya, sama seperti lampiran blok.
+function ModuleCover({ moduleId, coverKey }: { moduleId: number; coverKey: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void apiRequest<{ ok: true; data: { download_url: string } }>(
+      `/uploads/download?moduleId=${moduleId}&key=${encodeURIComponent(coverKey)}`,
+    )
+      .then((response) => {
+        if (!cancelled) setUrl(response.data.download_url);
+      })
+      .catch(() => {
+        // Sampul gagal dimuat: materi tetap tampil tanpa banner.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [moduleId, coverKey]);
+
+  if (!url) return null;
+  return (
+    <figure style={styles.coverFigure}>
+      <img src={url} alt="Sampul materi" style={styles.coverImage} />
+    </figure>
+  );
 }
 
 function youtubeEmbedId(url: string): string | null {
@@ -168,6 +198,8 @@ const styles = {
   textBlock: { color: "#344054" },
   notice: { color: "#667085", background: "#f8f9fc", padding: 12, borderRadius: 8 },
   figure: { margin: 0, display: "grid", gap: 8 },
+  coverFigure: { margin: "20px 0 0", display: "grid", gap: 8 },
+  coverImage: { width: "100%", maxHeight: 260, objectFit: "cover" as const, borderRadius: 10, display: "block" },
   video: { width: "100%", aspectRatio: "16 / 9", border: 0, borderRadius: 10 },
   image: { maxWidth: "100%", borderRadius: 10 },
   fileLink: { color: "#175cd3", fontWeight: 700 },

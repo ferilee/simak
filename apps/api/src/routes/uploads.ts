@@ -205,12 +205,24 @@ uploadRoutes.get("/download", requireAuth, async (c) => {
     return c.json({ ok: false, message: "Modul tidak ditemukan." }, 404);
   }
 
-  const [block] = await db
-    .select({ id: moduleBlocks.id })
-    .from(moduleBlocks)
-    .where(and(eq(moduleBlocks.moduleId, moduleId), eq(moduleBlocks.attachmentKey, key)))
-    .limit(1);
-  if (!block) return c.json({ ok: false, message: "Lampiran tidak ditemukan." }, 404);
+  // Key sah bila salah satu dari: sampul modul ini, lampiran sebuah blok
+  // modul ini (kolom attachment_key), atau kunci gambar sisipan yang
+  // tertanam sebagai data-attachment-key di dalam isi HTML blok modul ini.
+  // Di luar itu key ditolak — otorisasi tidak dilonggarkan ke modul lain.
+  const keyIsCover = module.coverKey !== null && module.coverKey === key;
+  let keyAllowed = keyIsCover;
+  if (!keyAllowed) {
+    const blocks = await db
+      .select({ attachmentKey: moduleBlocks.attachmentKey, contentJson: moduleBlocks.contentJson })
+      .from(moduleBlocks)
+      .where(eq(moduleBlocks.moduleId, moduleId));
+    keyAllowed = blocks.some(
+      (block) =>
+        block.attachmentKey === key
+        || (block.contentJson !== null && JSON.stringify(block.contentJson).includes(key)),
+    );
+  }
+  if (!keyAllowed) return c.json({ ok: false, message: "Lampiran tidak ditemukan." }, 404);
 
   const command = new GetObjectCommand({ Bucket: env.RUSTFS_BUCKET, Key: key });
   const downloadUrl = await getSignedUrl(storage, command, { expiresIn: DOWNLOAD_PRESIGN_SECONDS });

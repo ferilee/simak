@@ -205,6 +205,7 @@ muridRoutes.get("/today", async (c) => {
         title: module.title,
         subject: module.subject,
         description: module.description,
+        cover_key: module.coverKey,
         status: module.status,
         updated_at: module.updatedAt,
       })),
@@ -342,6 +343,7 @@ muridRoutes.get("/modules/:id", async (c) => {
         title: module.title,
         subject: module.subject,
         description: module.description,
+        cover_key: module.coverKey,
       },
       blocks: blocks.map((block) => ({
         id: block.id,

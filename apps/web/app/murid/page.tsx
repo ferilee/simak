@@ -19,6 +19,7 @@ type ModuleSummary = {
   title: string;
   subject: string;
   description: string | null;
+  cover_key: string | null;
   status: "terbit";
   updated_at: string;
 };
@@ -282,6 +283,7 @@ export default function MuridPage() {
                 <div className="content-list">
                   {data.modules.map((module) => (
                     <Link key={module.id} href={`/murid/modules/${module.id}`} className="content-card content-link">
+                      {module.cover_key ? <ModuleListCover moduleId={module.id} coverKey={module.cover_key} /> : null}
                       <span className="content-label">{module.subject}</span>
                       <strong>{module.title}</strong>
                       <span className="content-muted">{module.description ?? "Materi pembelajaran SIMAK."}</span>
@@ -300,6 +302,38 @@ export default function MuridPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+// Thumbnail sampul pada kartu daftar materi: URL diterbitkan segar dari
+// kuncinya lewat /uploads/download; selama belum terbit tidak ada yang
+// dirender agar kartu tanpa sampul tidak berubah bentuk.
+function ModuleListCover({ moduleId, coverKey }: { moduleId: number; coverKey: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void apiRequest<{ ok: true; data: { download_url: string } }>(
+      `/uploads/download?moduleId=${moduleId}&key=${encodeURIComponent(coverKey)}`,
+    )
+      .then((response) => {
+        if (!cancelled) setUrl(response.data.download_url);
+      })
+      .catch(() => {
+        // Kartu tetap tampil tanpa thumbnail.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [moduleId, coverKey]);
+
+  if (!url) return null;
+  return (
+    <img
+      src={url}
+      alt="Sampul materi"
+      style={{ width: "100%", height: 130, objectFit: "cover", borderRadius: 8, display: "block" }}
+    />
   );
 }
 

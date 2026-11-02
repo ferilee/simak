@@ -1837,8 +1837,16 @@ a {
   padding-block: 0.25rem;
 }
 
+/* Rumus inline adalah kotak yang tidak bisa patah baris: batasi selebar
+   kolomnya agar satu rumus panjang tidak mendorong halaman melebar. */
+.katex {
+  max-width: 100%;
+}
+
 .math-rich-content {
   color: #344054;
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
 .math-rich-content > :first-child {
@@ -1919,6 +1927,42 @@ a {
   height: auto;
   border-radius: 10px;
   background: #f8f9fc;
+}
+
+/* Gambar biasa di dalam isi (bukan sisipan berkunci): jangan pernah
+   melewati lebar kolom baca. */
+.math-rich-content img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Tabel di dalam materi: digeser menyamping di dalam stripnya sendiri,
+   bukan melebarkan halaman. Tabel ditampilkan sebagai blok selebar
+   isinya (maksimal selebar kolom) yang bisa digulir secara internal;
+   tabel yang sempit tetap tampil wajar seperti tabel biasa. */
+.math-rich-content table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-collapse: collapse;
+  font-size: 0.92em;
+  line-height: 1.5;
+  margin: 0 0 0.9em;
+}
+
+.math-rich-content th,
+.math-rich-content td {
+  border: 1px solid #d0d5dd;
+  padding: 0.45em 0.7em;
+  text-align: left;
+  vertical-align: top;
+}
+
+.math-rich-content th {
+  background: #f2f4f7;
+  font-weight: 700;
 }
 
 .math-rich-content hr {

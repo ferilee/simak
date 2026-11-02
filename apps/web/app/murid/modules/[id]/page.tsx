@@ -188,17 +188,20 @@ function AttachmentBlock({ block, moduleId }: { block: Block; moduleId: number }
 const styles = {
   // Padding bawah longgar agar isi terakhir bisa digulir bebas dari
   // lencana indikator kemajuan membaca yang melayang di pojok kanan bawah.
-  container: { maxWidth: 720, margin: "0 auto", padding: "32px 20px 128px" },
+  // overflowX "clip": satu elemen isi yang kebetulan lebih lebar dari
+  // layar (rumus/tabel panjang) tidak boleh melebarkan seluruh halaman
+  // di HP — elemen semacam itu digeser di dalam stripnya sendiri.
+  container: { maxWidth: 720, margin: "0 auto", padding: "32px 20px 128px", overflowX: "clip" as const },
   back: { color: "#175cd3", textDecoration: "none" },
   subject: { color: "#175cd3", fontWeight: 700, margin: "32px 0 8px" },
   title: { fontSize: 34, margin: 0 },
   description: { color: "#667085", lineHeight: 1.6 },
-  content: { marginTop: 32, display: "grid", gap: 12, lineHeight: 1.7 },
+  content: { marginTop: 32, display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 12, lineHeight: 1.7 },
   subheading: { fontSize: 24, margin: "24px 0 0", borderTop: "1px solid #eaecf0", paddingTop: 20 },
   textBlock: { color: "#344054" },
   notice: { color: "#667085", background: "#f8f9fc", padding: 12, borderRadius: 8 },
-  figure: { margin: 0, display: "grid", gap: 8 },
-  coverFigure: { margin: "20px 0 0", display: "grid", gap: 8 },
+  figure: { margin: 0, display: "grid", gap: 8, minWidth: 0 },
+  coverFigure: { margin: "20px 0 0", display: "grid", gap: 8, minWidth: 0 },
   coverImage: { width: "100%", maxHeight: 260, objectFit: "cover" as const, borderRadius: 10, display: "block" },
   video: { width: "100%", aspectRatio: "16 / 9", border: 0, borderRadius: 10 },
   image: { maxWidth: "100%", borderRadius: 10 },

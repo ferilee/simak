@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiBase, apiRequest } from "../../lib/api";
 import { prepareImageForUpload } from "../../lib/prepare-image";
+import { buildWhatsAppShareMessage } from "../../lib/wa-share";
 import { submissionStatusLabel } from "../lib/labels";
 import { Toast } from "../../components/Toast";
 import { useConfirm } from "../../components/ConfirmDialog";
@@ -70,7 +71,7 @@ type AssignmentSummary = {
   opens_at: string;
   due_at: string;
   status: "draf" | "terbit" | "ditutup";
-  classes: { id: number; name: string }[];
+  classes: { id: number; name: string; join_code: string }[];
 };
 type AssignmentsResponse = { ok: true; data: AssignmentSummary[] };
 type WorksheetAttemptSummary = {
@@ -3300,25 +3301,6 @@ function scrollPanelIntoView(element: HTMLElement | null) {
   if (!element) return;
   const reduceMotion = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   element.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
-}
-
-function buildWhatsAppShareMessage(assignment: AssignmentSummary, origin: string) {
-  const due = new Intl.DateTimeFormat("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }).format(new Date(assignment.due_at));
-  const lines = [`📚 *${assignment.title}*`];
-  if (assignment.classes.length > 0) lines.push(`Kelas: ${assignment.classes.map((kelas) => kelas.name).join(", ")}`);
-  lines.push(
-    "",
-    "Kegiatan belajar hari ini:",
-    "1. Baca dan pahami materi di SIMAK",
-    "2. Kerjakan LKPD-nya",
-    "3. Kerjakan kuis di RUAS",
-    "4. Isi exit ticket 3-2-1",
-    "",
-    `⏰ Batas pengumpulan: ${due} WIB — pengumpulan tercatat sebagai kehadiran.`,
-    `🔗 SIMAK: ${origin}`,
-  );
-  if (assignment.ruas_quiz_url) lines.push(`🔗 RUAS: ${assignment.ruas_quiz_url}`);
-  return lines.join("\n");
 }
 
 function integrityEventLabel(event: string) {

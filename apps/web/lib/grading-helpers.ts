@@ -13,6 +13,8 @@ export type GradingAttemptLike = {
   status: string;
   total_score: number | null;
   worksheet_id?: number;
+  class_id?: number | null;
+  class_name?: string | null;
 };
 
 export type GradingCounts = {
@@ -86,6 +88,56 @@ export function matchesGradingStatusFilter(attempt: GradingAttemptLike, filter: 
   return true;
 }
 
+// --- Saringan kelas ---
+// API menempelkan kelas murid pada setiap attempt (class_id/class_name;
+// null = murid belum masuk kelas guru mana pun, ditampilkan "Tanpa
+// kelas"). Nilai saringan: "semua", "tanpa_kelas", atau id kelas sebagai
+// string (nilai bawaan elemen <select>).
+
+export type GradingClassOption = {
+  id: number | null;
+  name: string;
+};
+
+/** Nilai saringan untuk satu opsi kelas: id sebagai string, atau "tanpa_kelas". */
+export function gradingClassFilterValue(option: GradingClassOption): string {
+  return option.id === null ? "tanpa_kelas" : String(option.id);
+}
+
+/**
+ * Kelas-kelas berbeda yang benar-benar muncul pada daftar sumber aktif,
+ * terurut menurut nama; "Tanpa kelas" (id null) selalu paling akhir dan
+ * hanya muncul bila ada attempt tanpa kelas.
+ */
+export function distinctGradingClasses(attempts: GradingAttemptLike[]): GradingClassOption[] {
+  const byId = new Map<number, string>();
+  let hasClassless = false;
+  for (const attempt of attempts) {
+    if (attempt.class_id === null || attempt.class_id === undefined) {
+      hasClassless = true;
+    } else if (!byId.has(attempt.class_id)) {
+      byId.set(attempt.class_id, attempt.class_name ?? "");
+    }
+  }
+  const options: GradingClassOption[] = [...byId.entries()]
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name, "id"));
+  if (hasClassless) options.push({ id: null, name: "Tanpa kelas" });
+  return options;
+}
+
+/** Cocok tidaknya satu attempt dengan saringan kelas terpilih. */
+export function matchesGradingClassFilter(attempt: GradingAttemptLike, filter: string): boolean {
+  if (filter === "semua") return true;
+  if (filter === "tanpa_kelas") return attempt.class_id === null || attempt.class_id === undefined;
+  return attempt.class_id === Number(filter);
+}
+
+/** Terapkan saringan kelas pada daftar sumber (tahap sesudah sumber, sebelum status). */
+export function filterGradingAttemptsByClass<T extends GradingAttemptLike>(attempts: T[], filter: string): T[] {
+  return attempts.filter((attempt) => matchesGradingClassFilter(attempt, filter));
+}
+
 function roundScore(value: number): number {
   return Math.round(value * 100) / 100;
 }
@@ -124,4 +176,34 @@ export function quickScoreDrafts(points: number): { zero: string; half: string; 
     half: formatScoreValue(points / 2),
     full: formatScoreValue(points),
   };
+}
+
+// --- Tampilkan bertahap (progressive reveal) daftar pengumpulan ---
+// Sengaja bukan halaman bernomor: antrean penilaian (lompat otomatis ke
+// yang belum dinilai berikutnya) tidak boleh bertabrakan dengan batas
+// halaman. Daftar dirender sebanyak `revealedCount` item pertama dari
+// daftar akhir (sudah disaring + diurutkan); tombol "Tampilkan lebih
+// banyak" menambah satu halaman, dan lompat otomatis memperluas tampilan
+// sampai targetnya ikut terlihat.
+
+export const GRADING_PAGE_SIZE = 20;
+
+/** Jumlah item yang benar-benar tampil: revealedCount dibatasi total daftar. */
+export function revealedSliceCount(total: number, revealedCount: number): number {
+  return Math.max(0, Math.min(total, revealedCount));
+}
+
+/** Jumlah tampil sesudah satu kali "Tampilkan lebih banyak". */
+export function nextRevealedCount(current: number, pageSize: number = GRADING_PAGE_SIZE): number {
+  return current + pageSize;
+}
+
+/**
+ * Jumlah tampil terkecil (kelipatan ukuran halaman) yang membuat indeks
+ * tertentu (0-based) pada daftar akhir ikut terlihat — dipakai lompat
+ * otomatis penilaian agar target berikutnya tidak berada di luar lipatan.
+ */
+export function revealedCountForIndex(index: number, pageSize: number = GRADING_PAGE_SIZE): number {
+  if (index < 0) return pageSize;
+  return (Math.floor(index / pageSize) + 1) * pageSize;
 }

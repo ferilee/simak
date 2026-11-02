@@ -2,13 +2,14 @@ import { Hono } from "hono";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@simak/db";
 import { requireRole } from "../middleware/auth";
+import { loadTeacherClassMemberships, resolveStudentClass } from "../lib/student-class";
 
 // Ringkasan pengumpulan penugasan untuk panel guru.
 export const gradingRoutes = new Hono();
 
 gradingRoutes.use("*", requireRole("guru"));
 
-const { assignmentClasses, assignments, classMembers, classes, exitTickets, users, worksheetAttempts, worksheets } = schema;
+const { assignmentClasses, assignments, classMembers, classes, exitTickets, modules, users, worksheetAttempts, worksheets } = schema;
 
 function serializeScore(score: string | null) {
   return score === null ? null : Number(score);
@@ -17,43 +18,54 @@ function serializeScore(score: string | null) {
 // Daftar gabungan pengumpulan lintas semua LKPD milik guru yang login
 // (mode "Semua LKPD" pada panel Pengumpulan LKPD). Kolomnya sama seperti
 // daftar per-LKPD di routes/worksheets.ts, ditambah identitas LKPD asal
-// setiap attempt agar rincian penilaian bisa dibuka dari daftar gabungan.
+// setiap attempt agar rincian penilaian bisa dibuka dari daftar gabungan,
+// dan kelas murid (lib/student-class) untuk saringan kelas di panel.
 gradingRoutes.get("/attempts", async (c) => {
   const user = c.get("user")!;
 
-  const rows = await db
-    .select({
-      id: worksheetAttempts.id,
-      worksheetId: worksheetAttempts.worksheetId,
-      worksheetTitle: worksheets.title,
-      studentId: worksheetAttempts.studentId,
-      studentName: users.name,
-      username: users.username,
-      status: worksheetAttempts.status,
-      submittedAt: worksheetAttempts.submittedAt,
-      totalScore: worksheetAttempts.totalScore,
-      updatedAt: worksheetAttempts.updatedAt,
-    })
-    .from(worksheetAttempts)
-    .innerJoin(worksheets, eq(worksheets.id, worksheetAttempts.worksheetId))
-    .innerJoin(users, eq(users.id, worksheetAttempts.studentId))
-    .where(eq(worksheets.teacherId, user.userId))
-    .orderBy(desc(worksheetAttempts.updatedAt));
+  const [rows, membershipsByStudent] = await Promise.all([
+    db
+      .select({
+        id: worksheetAttempts.id,
+        worksheetId: worksheetAttempts.worksheetId,
+        worksheetTitle: worksheets.title,
+        moduleSubject: modules.subject,
+        studentId: worksheetAttempts.studentId,
+        studentName: users.name,
+        username: users.username,
+        status: worksheetAttempts.status,
+        submittedAt: worksheetAttempts.submittedAt,
+        totalScore: worksheetAttempts.totalScore,
+        updatedAt: worksheetAttempts.updatedAt,
+      })
+      .from(worksheetAttempts)
+      .innerJoin(worksheets, eq(worksheets.id, worksheetAttempts.worksheetId))
+      .leftJoin(modules, eq(modules.id, worksheets.moduleId))
+      .innerJoin(users, eq(users.id, worksheetAttempts.studentId))
+      .where(eq(worksheets.teacherId, user.userId))
+      .orderBy(desc(worksheetAttempts.updatedAt)),
+    loadTeacherClassMemberships(user.userId),
+  ]);
 
   return c.json({
     ok: true,
-    data: rows.map((row) => ({
-      id: row.id,
-      worksheet_id: row.worksheetId,
-      worksheet_title: row.worksheetTitle,
-      student_id: row.studentId,
-      student_name: row.studentName,
-      username: row.username,
-      status: row.status,
-      submitted_at: row.submittedAt,
-      total_score: serializeScore(row.totalScore),
-      updated_at: row.updatedAt,
-    })),
+    data: rows.map((row) => {
+      const studentClass = resolveStudentClass(membershipsByStudent.get(row.studentId) ?? [], row.moduleSubject);
+      return {
+        id: row.id,
+        worksheet_id: row.worksheetId,
+        worksheet_title: row.worksheetTitle,
+        student_id: row.studentId,
+        student_name: row.studentName,
+        username: row.username,
+        status: row.status,
+        submitted_at: row.submittedAt,
+        total_score: serializeScore(row.totalScore),
+        updated_at: row.updatedAt,
+        class_id: studentClass?.id ?? null,
+        class_name: studentClass?.name ?? null,
+      };
+    }),
   });
 });
 

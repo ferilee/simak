@@ -2,11 +2,19 @@
 // Run with bun from apps/web:  bun lib/grading-helpers.test.mjs
 import {
   countGradingAttempts,
+  distinctGradingClasses,
+  filterGradingAttemptsByClass,
   formatScoreValue,
+  gradingClassFilterValue,
+  GRADING_PAGE_SIZE,
   isUngradedAttempt,
+  matchesGradingClassFilter,
   matchesGradingStatusFilter,
+  nextRevealedCount,
   pickNextUngradedAttempt,
   quickScoreDrafts,
+  revealedCountForIndex,
+  revealedSliceCount,
   runningTotal,
   sortGradingAttempts,
 } from "./grading-helpers.ts";
@@ -86,6 +94,73 @@ const quick10 = quickScoreDrafts(10);
 check("setengah dari 10 adalah 5", quick10.half === "5" && quick10.full === "10");
 check("setengah dari 7 adalah 3.5", quickScoreDrafts(7).half === "3.5");
 check("setengah dari 2.5 adalah 1.25", quickScoreDrafts(2.5).half === "1.25");
+
+console.log("Case 7: saringan kelas — opsi berbeda dari daftar sumber");
+const classFixture = [
+  { id: 21, status: "terkumpul", total_score: null, class_id: 5, class_name: "XI TKJ B" },
+  { id: 22, status: "dinilai", total_score: 90, class_id: 3, class_name: "XI TKJ A" },
+  { id: 23, status: "terkumpul", total_score: null, class_id: 5, class_name: "XI TKJ B" },
+  { id: 24, status: "draf", total_score: null, class_id: null, class_name: null },
+  { id: 25, status: "terkumpul", total_score: null, class_id: 3, class_name: "XI TKJ A" },
+];
+const classOptions = distinctGradingClasses(classFixture);
+check(
+  "kelas terurut nama, Tanpa kelas terakhir",
+  JSON.stringify(classOptions.map((option) => option.name)) === JSON.stringify(["XI TKJ A", "XI TKJ B", "Tanpa kelas"]),
+  JSON.stringify(classOptions),
+);
+check(
+  "nilai saringan: id sebagai string, Tanpa kelas = tanpa_kelas",
+  gradingClassFilterValue(classOptions[0]) === "3" && gradingClassFilterValue(classOptions[2]) === "tanpa_kelas",
+);
+check(
+  "Tanpa kelas tidak muncul bila semua attempt berkelas",
+  JSON.stringify(distinctGradingClasses(classFixture.slice(0, 3)).map((option) => option.id)) === JSON.stringify([3, 5]),
+);
+check("daftar kosong menghasilkan opsi kosong", distinctGradingClasses([]).length === 0);
+
+console.log("Case 8: saringan kelas — pencocokan dan hitungan sesudahnya");
+check("semua menerima semua kelas", classFixture.every((a) => matchesGradingClassFilter(a, "semua")));
+check("id kelas cocok persis", matchesGradingClassFilter(classFixture[0], "5") && !matchesGradingClassFilter(classFixture[0], "3"));
+check("tanpa_kelas hanya untuk class_id null", matchesGradingClassFilter(classFixture[3], "tanpa_kelas") && !matchesGradingClassFilter(classFixture[0], "tanpa_kelas"));
+const tkjB = filterGradingAttemptsByClass(classFixture, "5");
+check("saring kelas 5 menyisakan attempt kelas itu", JSON.stringify(tkjB.map((a) => a.id)) === JSON.stringify([21, 23]));
+const tkjBCounts = countGradingAttempts(tkjB);
+check(
+  "hitungan dihitung sesudah saringan kelas",
+  tkjBCounts.terkumpul === 2 && tkjBCounts.belumDinilai === 2 && tkjBCounts.sudahDinilai === 0,
+  JSON.stringify(tkjBCounts),
+);
+const tanpaKelasCounts = countGradingAttempts(filterGradingAttemptsByClass(classFixture, "tanpa_kelas"));
+check("hitungan Tanpa kelas hanya dari attempt tanpa kelas", tanpaKelasCounts.terkumpul === 0 && tanpaKelasCounts.belumDinilai === 0 && tanpaKelasCounts.sudahDinilai === 0);
+
+console.log("Case 9: rantai saringan sumber → kelas → urutan → status tetap konsisten");
+const chained = sortGradingAttempts(filterGradingAttemptsByClass(classFixture, "3"))
+  .filter((attempt) => matchesGradingStatusFilter(attempt, "belum_dinilai"));
+check("sesudah rantai hanya belum dinilai dari kelas 3", JSON.stringify(chained.map((a) => a.id)) === JSON.stringify([25]), JSON.stringify(chained.map((a) => a.id)));
+check(
+  "lompat otomatis tetap di dalam daftar tersaring kelas",
+  pickNextUngradedAttempt(sortGradingAttempts(tkjB), 21)?.id === 23,
+);
+const tkjBSudahDinilai = tkjB.map((a) => ({ ...a, status: "dinilai", total_score: 80 }));
+check(
+  "semua attempt kelas tersaring sudah dinilai menghasilkan null",
+  pickNextUngradedAttempt(sortGradingAttempts(tkjBSudahDinilai), 23) === null,
+);
+
+console.log("Case 10: tampilkan bertahap (progressive reveal)");
+check("ukuran halaman 20", GRADING_PAGE_SIZE === 20);
+check("slice dibatasi total daftar", revealedSliceCount(55, 20) === 20 && revealedSliceCount(12, 20) === 12 && revealedSliceCount(0, 20) === 0);
+check("slice tidak pernah negatif", revealedSliceCount(10, -5) === 0);
+check("tampilkan lebih banyak menambah satu halaman", nextRevealedCount(20) === 40 && nextRevealedCount(40) === 60);
+check("indeks di halaman pertama cukup 20", revealedCountForIndex(0) === 20 && revealedCountForIndex(19) === 20);
+check("indeks pertama halaman kedua menuntut 40", revealedCountForIndex(20) === 40 && revealedCountForIndex(39) === 40);
+check("indeks jauh dibulatkan ke kelipatan halaman berikutnya", revealedCountForIndex(47) === 60 && revealedCountForIndex(100) === 120);
+check("indeks negatif jatuh ke satu halaman", revealedCountForIndex(-1) === 20);
+check(
+  "target lompat otomatis selalu ikut terlihat sesudah perluasan",
+  [0, 19, 20, 41, 59, 60, 99].every((index) => revealedCountForIndex(index) > index),
+);
 
 console.log(`\nHasil: ${passed} lulus, ${failed} gagal, ${passed + failed} total`);
 process.exit(failed > 0 ? 1 : 0);

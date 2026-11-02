@@ -11,6 +11,7 @@ import {
   updateWorksheetSchema,
 } from "@simak/shared";
 import { requireRole } from "../middleware/auth";
+import { loadTeacherClassMemberships, resolveStudentClass } from "../lib/student-class";
 
 // LKPD + butir blok interaktifnya (Tahap 2).
 // Opsi butir divalidasi worksheetItemOptionsSchema dari @simak/shared.
@@ -121,36 +122,50 @@ worksheetRoutes.get("/:id/attempts", requireRole("guru"), async (c) => {
   const user = c.get("user")!;
   const worksheetId = Number(c.req.param("id"));
   if (!Number.isInteger(worksheetId) || worksheetId <= 0) return c.json({ ok: false, message: "ID LKPD tidak valid." }, 400);
-  if (!(await ownedWorksheet(user.userId, worksheetId))) return c.json({ ok: false, message: "LKPD tidak ditemukan." }, 404);
+  const worksheet = await ownedWorksheet(user.userId, worksheetId);
+  if (!worksheet) return c.json({ ok: false, message: "LKPD tidak ditemukan." }, 404);
 
-  const rows = await db
-    .select({
-      id: worksheetAttempts.id,
-      studentId: worksheetAttempts.studentId,
-      studentName: users.name,
-      username: users.username,
-      status: worksheetAttempts.status,
-      submittedAt: worksheetAttempts.submittedAt,
-      totalScore: worksheetAttempts.totalScore,
-      updatedAt: worksheetAttempts.updatedAt,
-    })
-    .from(worksheetAttempts)
-    .innerJoin(users, eq(users.id, worksheetAttempts.studentId))
-    .where(eq(worksheetAttempts.worksheetId, worksheetId))
-    .orderBy(desc(worksheetAttempts.updatedAt));
+  // Kelas murid untuk saringan kelas panel Pengumpulan LKPD — aturan dan
+  // helper yang sama dengan daftar gabungan di routes/grading.ts.
+  const [module] = worksheet.moduleId
+    ? await db.select({ subject: modules.subject }).from(modules).where(eq(modules.id, worksheet.moduleId)).limit(1)
+    : [];
+  const [rows, membershipsByStudent] = await Promise.all([
+    db
+      .select({
+        id: worksheetAttempts.id,
+        studentId: worksheetAttempts.studentId,
+        studentName: users.name,
+        username: users.username,
+        status: worksheetAttempts.status,
+        submittedAt: worksheetAttempts.submittedAt,
+        totalScore: worksheetAttempts.totalScore,
+        updatedAt: worksheetAttempts.updatedAt,
+      })
+      .from(worksheetAttempts)
+      .innerJoin(users, eq(users.id, worksheetAttempts.studentId))
+      .where(eq(worksheetAttempts.worksheetId, worksheetId))
+      .orderBy(desc(worksheetAttempts.updatedAt)),
+    loadTeacherClassMemberships(user.userId),
+  ]);
 
   return c.json({
     ok: true,
-    data: rows.map((row) => ({
-      id: row.id,
-      student_id: row.studentId,
-      student_name: row.studentName,
-      username: row.username,
-      status: row.status,
-      submitted_at: row.submittedAt,
-      total_score: serializeScore(row.totalScore),
-      updated_at: row.updatedAt,
-    })),
+    data: rows.map((row) => {
+      const studentClass = resolveStudentClass(membershipsByStudent.get(row.studentId) ?? [], module?.subject ?? null);
+      return {
+        id: row.id,
+        student_id: row.studentId,
+        student_name: row.studentName,
+        username: row.username,
+        status: row.status,
+        submitted_at: row.submittedAt,
+        total_score: serializeScore(row.totalScore),
+        updated_at: row.updatedAt,
+        class_id: studentClass?.id ?? null,
+        class_name: studentClass?.name ?? null,
+      };
+    }),
   });
 });
 

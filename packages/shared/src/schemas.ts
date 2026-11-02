@@ -16,6 +16,11 @@ export const moduleBlockContentSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("teks"),
     html: z.string().max(100_000),
+    // Sumber Markdown opsional: disimpan bersama HTML hasil konversinya agar
+    // blok bisa dibuka kembali di mode Markdown editor guru tanpa konversi
+    // balik yang hilang-hilang. Blok lama tanpa field ini tetap sah.
+    markdown: z.string().max(100_000).optional(),
+    format: z.literal("markdown").optional(),
   }),
   z.object({
     type: z.literal("gambar"),

@@ -45,7 +45,27 @@ type AttemptResponse = {
     last_edited_at?: string | null;
     total_score?: number | null;
     teacher_comment?: string | null;
+    member_score?: number | null;
   };
+};
+
+type ContributionTeammate = { id: number; name: string; username: string; my_score: number | null };
+type ContributionRatingsResponse = {
+  ok: true;
+  data: {
+    attempt_id: number | null;
+    status: "draf" | "terkumpul" | "dinilai" | null;
+    can_rate: boolean;
+    teammates: ContributionTeammate[];
+  };
+};
+
+const CONTRIBUTION_LABELS: Record<number, string> = {
+  1: "Sangat kurang",
+  2: "Kurang",
+  3: "Cukup",
+  4: "Baik",
+  5: "Sangat baik",
 };
 type IntegrityEvent = "visibility_hidden" | "window_blur" | "copy_attempt" | "paste_attempt" | "context_menu";
 
@@ -79,6 +99,10 @@ export default function WorksheetPage() {
   const [lastEditedBy, setLastEditedBy] = useState<{ name: string; at: string | null } | null>(null);
   const [groupScore, setGroupScore] = useState<number | null>(null);
   const [groupTeacherComment, setGroupTeacherComment] = useState<string | null>(null);
+  const [memberScore, setMemberScore] = useState<number | null>(null);
+  const [contributionTeammates, setContributionTeammates] = useState<ContributionTeammate[] | null>(null);
+  const [contributionDrafts, setContributionDrafts] = useState<Record<number, number>>({});
+  const [contributionSaving, setContributionSaving] = useState(false);
   const [status, setStatus] = useState<"draf" | "terkumpul" | "dinilai">("draf");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
@@ -131,6 +155,10 @@ export default function WorksheetPage() {
         }
         if (attempt.data.total_score !== undefined) setGroupScore(attempt.data.total_score);
         if (attempt.data.teacher_comment !== undefined) setGroupTeacherComment(attempt.data.teacher_comment);
+        if (attempt.data.member_score !== undefined) setMemberScore(attempt.data.member_score);
+        if (attempt.data.group && (attempt.data.status ?? "draf") === "terkumpul") {
+          void loadContributionRatings();
+        }
         setAnswers(Object.fromEntries(attempt.data.answers.map((answer) => [answer.item_id, answer.answer_text ?? ""])));
         // Butir langkah berurutan yang urutan tersimpannya berbeda dari urutan
         // tampil bawaan berarti sudah pernah disusun murid pada draf sebelumnya.
@@ -401,10 +429,55 @@ export default function WorksheetPage() {
       }
       setStatus("terkumpul");
       setMessage("LKPD berhasil dikumpulkan.");
+      if (groupInfo) void loadContributionRatings();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "LKPD belum dapat dikumpulkan.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  // Penilaian kontribusi antarteman (Tahap 2): hanya nilai yang diberikan
+  // murid ini yang dimuat; penilaian teman tidak pernah ditampilkan.
+  async function loadContributionRatings() {
+    if (!assignmentId) return;
+    try {
+      const response = await apiRequest<ContributionRatingsResponse>(
+        `/murid/worksheets/${params.id}/contribution-ratings?assignmentId=${assignmentId}`,
+      );
+      setContributionTeammates(response.data.teammates);
+      setContributionDrafts(Object.fromEntries(
+        response.data.teammates.flatMap((teammate) => (teammate.my_score === null ? [] : [[teammate.id, teammate.my_score] as const])),
+      ));
+    } catch {
+      // Kartu kontribusi bersifat tambahan — kegagalan memuatnya tidak
+      // boleh mengganggu tampilan pengumpulan.
+      setContributionTeammates(null);
+    }
+  }
+
+  async function saveContributionRatings() {
+    if (!assignmentId || !contributionTeammates) return;
+    const ratings = contributionTeammates
+      .filter((teammate) => contributionDrafts[teammate.id] !== undefined)
+      .map((teammate) => ({ rateeStudentId: teammate.id, score: contributionDrafts[teammate.id]! }));
+    if (ratings.length === 0) {
+      setMessage("Pilih nilai kontribusi untuk minimal satu teman dulu.");
+      return;
+    }
+    setContributionSaving(true);
+    setMessage("");
+    try {
+      const response = await apiRequest<ContributionRatingsResponse>(
+        `/murid/worksheets/${params.id}/contribution-ratings?assignmentId=${assignmentId}`,
+        { method: "PUT", body: JSON.stringify({ ratings }) },
+      );
+      setContributionTeammates(response.data.teammates);
+      setMessage("Penilaian kontribusi tersimpan.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Penilaian kontribusi belum dapat disimpan.");
+    } finally {
+      setContributionSaving(false);
     }
   }
 
@@ -487,7 +560,44 @@ export default function WorksheetPage() {
       {groupInfo && status === "dinilai" ? (
         <div style={styles.groupScoreCard}>
           <strong>Nilai kelompok: {groupScore ?? "—"}</strong>
+          {memberScore !== null ? <span>Nilaimu (disesuaikan guru): {memberScore}</span> : null}
           {groupTeacherComment ? <p style={{ margin: 0, lineHeight: 1.6 }}>Komentar guru: {groupTeacherComment}</p> : null}
+        </div>
+      ) : null}
+      {groupInfo && status === "terkumpul" && contributionTeammates ? (
+        <div style={styles.contributionCard}>
+          <strong>Nilai kontribusi teman</strong>
+          <p style={{ margin: 0, lineHeight: 1.6 }}>Nilai seberapa besar kontribusi tiap temanmu dalam kerja kelompok ini. Penilaianmu hanya dilihat guru.</p>
+          {contributionTeammates.length === 0 ? (
+            <p style={{ margin: 0 }}>Tidak ada teman satu kelompok untuk dinilai.</p>
+          ) : (
+            <>
+              {contributionTeammates.map((teammate) => (
+                <div key={teammate.id} style={styles.contributionRow}>
+                  <span style={styles.contributionName}>{teammate.name}</span>
+                  <span style={styles.contributionButtons}>
+                    {[1, 2, 3, 4, 5].map((score) => (
+                      <button
+                        key={score}
+                        type="button"
+                        title={CONTRIBUTION_LABELS[score]}
+                        aria-label={`${teammate.name}: ${score} — ${CONTRIBUTION_LABELS[score]}`}
+                        aria-pressed={contributionDrafts[teammate.id] === score}
+                        onClick={() => setContributionDrafts((current) => ({ ...current, [teammate.id]: score }))}
+                        style={{ ...styles.contributionButton, ...(contributionDrafts[teammate.id] === score ? styles.contributionButtonActive : {}) }}
+                      >
+                        {score}
+                      </button>
+                    ))}
+                  </span>
+                </div>
+              ))}
+              <p style={{ margin: 0, fontSize: 13 }}>1 Sangat kurang · 2 Kurang · 3 Cukup · 4 Baik · 5 Sangat baik</p>
+              <div>
+                <button type="button" disabled={contributionSaving} onClick={() => void saveContributionRatings()} style={styles.primaryButtonSmall}>Simpan penilaian</button>
+              </div>
+            </>
+          )}
         </div>
       ) : null}
 
@@ -798,6 +908,12 @@ const styles = {
   groupMembers: { display: "flex", gap: 6, flexWrap: "wrap" as const },
   groupNotice: { display: "grid", gap: 8, background: "#ecfdf3", border: "1px solid #a6f4c5", borderRadius: 10, padding: 16, marginTop: 20, color: "#05603a" },
   groupScoreCard: { display: "grid", gap: 6, background: "#eff8ff", border: "1px solid #b2ddff", borderRadius: 10, padding: 14, marginTop: 16, color: "#175cd3" },
+  contributionCard: { display: "grid", gap: 10, background: "#fffaeb", border: "1px solid #fedf89", borderRadius: 10, padding: 14, marginTop: 16, color: "#93370d" },
+  contributionRow: { display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" as const, background: "white", border: "1px solid #eaecf0", borderRadius: 8, padding: "8px 10px" },
+  contributionName: { fontWeight: 600, color: "#344054" },
+  contributionButtons: { display: "flex", gap: 6 },
+  contributionButton: { minWidth: 40, minHeight: 40, border: "1px solid #d0d5dd", borderRadius: 8, background: "white", color: "#475467", fontWeight: 700, fontSize: 14, cursor: "pointer" },
+  contributionButtonActive: { background: "#175cd3", borderColor: "#175cd3", color: "white" },
   integrityNotice: { display: "flex", gap: 10, alignItems: "flex-start", background: "#FFFAEB", border: "1px solid #F79009", padding: 14, borderRadius: 10 },
   integrityNoticeIcon: { fontSize: 18, lineHeight: 1.4 },
   integrityNoticeTitle: { margin: 0, fontSize: 15, fontWeight: 700, color: "#93370D", lineHeight: 1.4 },

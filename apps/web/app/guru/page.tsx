@@ -104,8 +104,9 @@ type AssignmentClassGroups = {
   class_id: number;
   class_name: string;
   shuffle_locked: boolean;
-  groups: { id: number; name: string; members: AssignmentGroupMemberView[] }[];
+  groups: { id: number; name: string; members: AssignmentGroupMemberView[]; attempt_status: "draf" | "terkumpul" | "dinilai" | null }[];
   ungrouped: AssignmentGroupMemberView[];
+  copy_sources: { assignment_id: number; title: string }[];
 };
 type AssignmentGroupsData = {
   assignment_id: number;
@@ -214,6 +215,12 @@ type WorksheetAttemptItem = {
   score: number | null;
   teacher_note: string | null;
 };
+type AttemptMemberDetail = AssignmentGroupMemberView & {
+  contribution_average?: number | null;
+  contribution_raters?: number;
+  member_score?: number | null;
+  effective_score?: number | null;
+};
 type WorksheetAttemptDetail = {
   attempt: {
     id: number;
@@ -225,7 +232,7 @@ type WorksheetAttemptDetail = {
     teacher_comment: string | null;
     is_group?: boolean;
     group_name?: string | null;
-    members?: AssignmentGroupMemberView[];
+    members?: AttemptMemberDetail[];
   };
   items: WorksheetAttemptItem[];
 };
@@ -326,6 +333,8 @@ export default function GuruPage() {
   const [assignmentGroups, setAssignmentGroups] = useState<AssignmentGroupsData | null>(null);
   const [assignmentGroupsLoading, setAssignmentGroupsLoading] = useState(false);
   const [groupAddSelection, setGroupAddSelection] = useState<Record<number, number>>({});
+  const [groupCopySelection, setGroupCopySelection] = useState<Record<number, number>>({});
+  const [memberScoreDrafts, setMemberScoreDrafts] = useState<Record<number, string>>({});
   const [editingAssignment, setEditingAssignment] = useState<AssignmentSummary | null>(null);
   // Jepretan keadaan formulir penugasan + pilihan editor (Langkah 1–2) sebelum
   // masuk mode edit penugasan; dipulihkan saat keluar agar mode edit tidak
@@ -710,6 +719,7 @@ export default function GuruPage() {
     try {
       const response = await apiRequest<WorksheetAttemptDetailResponse>(`/worksheets/${worksheetId}/attempts/${attemptId}`);
       setAttemptDetail(response.data);
+      setMemberScoreDrafts(Object.fromEntries((response.data.attempt.members ?? []).map((member) => [member.id, member.member_score === null || member.member_score === undefined ? "" : String(member.member_score)])));
       setScoreDrafts(Object.fromEntries(response.data.items.map((item) => [item.id, item.score === null ? "" : String(item.score)])));
       setNoteDrafts(Object.fromEntries(response.data.items.map((item) => [item.id, item.teacher_note ?? ""])));
       setTeacherComment(response.data.attempt.teacher_comment ?? "");
@@ -2060,6 +2070,59 @@ export default function GuruPage() {
     }
   }
 
+  async function removeAssignmentGroupMember(assignmentId: number, groupId: number, groupName: string, member: AssignmentGroupMemberView) {
+    if (!(await confirmDialog(`Keluarkan ${member.name} dari ${groupName}? Jawaban yang sudah ia buat tetap tersimpan sebagai milik kelompok.`, { confirmLabel: "Keluarkan" }))) return;
+    setAssignmentGroupsLoading(true);
+    try {
+      const response = await apiRequest<AssignmentGroupsResponse>(`/assignments/${assignmentId}/groups/${groupId}/members/${member.id}`, {
+        method: "DELETE",
+      });
+      setAssignmentGroups(response.data);
+      setMessage(`${member.name} dikeluarkan dari ${groupName}.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Anggota belum dapat dikeluarkan.");
+    } finally {
+      setAssignmentGroupsLoading(false);
+    }
+  }
+
+  async function copyAssignmentGroups(assignmentId: number, classId: number, className: string, sourceAssignmentId: number | undefined, replacesExisting: boolean) {
+    if (!sourceAssignmentId) {
+      setMessage("Pilih dulu penugasan sumber untuk menyalin kelompok.");
+      return;
+    }
+    if (replacesExisting && !(await confirmDialog(`Ganti kelompok kelas ${className} dengan susunan dari penugasan sumber? Susunan kelompok saat ini akan diganti seluruhnya.`, { confirmLabel: "Salin kelompok" }))) return;
+    setAssignmentGroupsLoading(true);
+    try {
+      const response = await apiRequest<AssignmentGroupsResponse>(`/assignments/${assignmentId}/groups/copy`, {
+        method: "POST",
+        body: JSON.stringify({ sourceAssignmentId, classId }),
+      });
+      setAssignmentGroups(response.data);
+      setMessage(`Kelompok kelas ${className} disalin dari penugasan sumber.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Kelompok belum dapat disalin.");
+    } finally {
+      setAssignmentGroupsLoading(false);
+    }
+  }
+
+  async function saveMemberScore(studentId: number, score: number | null) {
+    if (!selectedWorksheetId || !selectedAttemptId) return;
+    const worksheetId = selectedWorksheetId;
+    const attemptId = selectedAttemptId;
+    try {
+      await apiRequest(`/grading/attempts/${attemptId}/member-scores`, {
+        method: "PUT",
+        body: JSON.stringify({ studentId, score }),
+      });
+      setMessage(score === null ? "Penyesuaian nilai dihapus; nilai kembali mengikuti nilai kelompok." : "Penyesuaian nilai anggota disimpan.");
+      await loadAttemptDetail(worksheetId, attemptId);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Penyesuaian nilai belum dapat disimpan.");
+    }
+  }
+
   if (loading) return <main className="dashboard-shell container"><p>Memuat ruang guru...</p></main>;
 
   return (
@@ -2716,6 +2779,27 @@ export default function GuruPage() {
                         <button type="button" disabled={assignmentGroupsLoading} onClick={() => void shuffleAssignmentClassGroups(selectedGroupAssignmentId, kelas.class_id, kelas.class_name)} style={styles.secondaryButton}>Acak ulang</button>
                       )}
                     </div>
+                    {kelas.copy_sources.length > 0 && (kelas.groups.length === 0 || !kelas.shuffle_locked) ? (
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                        <span style={styles.muted}>Salin dari penugasan lain:</span>
+                        <select
+                          value={groupCopySelection[kelas.class_id] ?? (kelas.copy_sources[0]?.assignment_id ?? "")}
+                          onChange={(event) => setGroupCopySelection((current) => ({ ...current, [kelas.class_id]: Number(event.target.value) }))}
+                          aria-label={`Pilih penugasan sumber kelompok untuk kelas ${kelas.class_name}`}
+                          style={{ ...styles.input, flex: "0 1 260px" }}
+                        >
+                          {kelas.copy_sources.map((source) => <option key={source.assignment_id} value={source.assignment_id}>{source.title}</option>)}
+                        </select>
+                        <button
+                          type="button"
+                          disabled={assignmentGroupsLoading}
+                          onClick={() => void copyAssignmentGroups(selectedGroupAssignmentId, kelas.class_id, kelas.class_name, groupCopySelection[kelas.class_id] ?? kelas.copy_sources[0]?.assignment_id, kelas.groups.length > 0)}
+                          style={styles.secondaryButton}
+                        >
+                          Salin kelompok
+                        </button>
+                      </div>
+                    ) : null}
                     {kelas.groups.length === 0 ? (
                       <p style={styles.muted}>Belum ada kelompok untuk kelas ini. Kelompok terbentuk otomatis saat penugasan diterbitkan, atau bentuk sekarang dengan tombol di atas.</p>
                     ) : (
@@ -2727,7 +2811,24 @@ export default function GuruPage() {
                               <span>{group.members.length} anggota</span>
                             </div>
                             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                              {group.members.map((member) => <span key={member.id} className="member-chip">{member.name}</span>)}
+                              {group.members.map((member) => {
+                                const removalLocked = group.attempt_status === "terkumpul" || group.attempt_status === "dinilai";
+                                return (
+                                  <span key={member.id} className="member-chip">
+                                    {member.name}
+                                    <button
+                                      type="button"
+                                      className="member-chip-remove"
+                                      disabled={assignmentGroupsLoading || removalLocked}
+                                      title={removalLocked ? "Anggota tidak dapat dikeluarkan karena kelompoknya sudah mengumpulkan." : `Keluarkan ${member.name} dari ${group.name}`}
+                                      aria-label={`Keluarkan ${member.name} dari ${group.name}`}
+                                      onClick={() => void removeAssignmentGroupMember(selectedGroupAssignmentId, group.id, group.name, member)}
+                                    >
+                                      ×
+                                    </button>
+                                  </span>
+                                );
+                              })}
                             </div>
                           </article>
                         ))}
@@ -3172,6 +3273,49 @@ export default function GuruPage() {
                     style={styles.textarea}
                   />
                   <button type="button" onClick={() => void saveGrades()} style={styles.primaryButton}>Simpan penilaian</button>
+                  {attemptDetail.attempt.is_group && attemptDetail.attempt.members && attemptDetail.attempt.members.length > 0 ? (
+                    <div style={{ display: "grid", gap: 10, borderTop: "1px solid #eaecf0", paddingTop: 14 }}>
+                      <strong>Kontribusi & nilai anggota</strong>
+                      <p style={styles.muted}>Kontribusi adalah rata-rata penilaian antarteman — hanya informasi untuk pertimbangan guru dan tidak diterapkan otomatis ke nilai. Nilai akhir anggota mengikuti nilai kelompok, kecuali guru menyesuaikannya di sini.</p>
+                      {attemptDetail.attempt.members.map((member) => (
+                        <div key={member.id} style={{ display: "grid", gap: 6, border: "1px solid #eaecf0", borderRadius: 10, padding: 12 }}>
+                          <strong>{member.name}</strong>
+                          <span style={styles.muted}>{member.contribution_average !== null && member.contribution_average !== undefined ? `Kontribusi: ${formatScoreValue(member.contribution_average)} dari ${member.contribution_raters ?? 0} penilai` : "Kontribusi: belum dinilai teman"}</span>
+                          <span style={styles.muted}>Nilai akhir: {member.effective_score === null || member.effective_score === undefined ? "—" : formatScoreValue(member.effective_score)}{member.member_score !== null && member.member_score !== undefined ? " (disesuaikan guru)" : ""}</span>
+                          <div style={styles.scoreRow}>
+                            <input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              value={memberScoreDrafts[member.id] ?? ""}
+                              onChange={(event) => setMemberScoreDrafts((current) => ({ ...current, [member.id]: event.target.value }))}
+                              placeholder="Nilai khusus anggota"
+                              aria-label={`Nilai khusus untuk ${member.name}`}
+                              style={{ ...styles.input, ...styles.scoreInput }}
+                            />
+                            <button
+                              type="button"
+                              style={styles.secondaryButton}
+                              onClick={() => {
+                                const raw = (memberScoreDrafts[member.id] ?? "").trim();
+                                const value = Number(raw);
+                                if (raw === "" || !Number.isFinite(value) || value < 0) {
+                                  setMessage("Isi nilai khusus berupa angka nol atau lebih terlebih dahulu.");
+                                  return;
+                                }
+                                void saveMemberScore(member.id, value);
+                              }}
+                            >
+                              Sesuaikan
+                            </button>
+                            {member.member_score !== null && member.member_score !== undefined ? (
+                              <button type="button" style={styles.secondaryButton} onClick={() => void saveMemberScore(member.id, null)}>Kembalikan ke nilai kelompok</button>
+                            ) : null}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </div>

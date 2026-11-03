@@ -1335,6 +1335,9 @@ a {
 }
 
 .member-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border-radius: 999px;
   padding: 4px 10px;
   background: #f2f4f7;
@@ -1342,6 +1345,23 @@ a {
   color: #344054;
   font-size: 12.5px;
   font-weight: 600;
+}
+
+/* Tombol keluarkan anggota di dalam chip panel Kelompok (Tahap 2). */
+.member-chip-remove {
+  border: 0;
+  background: transparent;
+  color: #b42318;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+}
+
+.member-chip-remove:disabled {
+  color: #98a2b3;
+  cursor: not-allowed;
 }
 
 /* Bilah tab Langkah 5 ("Pantau hasil"): lengket di atas saat digulir dan

@@ -26,7 +26,7 @@ type AssignmentDetail = {
     progress: string;
   };
   worksheet: { id: number; title: string } | null;
-  attempt: { status: string; total_score: number | null; submitted_at: string | null } | null;
+  attempt: { status: string; total_score: number | null; submitted_at: string | null; group_total_score?: number | null; member_score?: number | null } | null;
   exit_ticket_submitted: boolean;
   ruas_quiz_completed: boolean;
 };
@@ -161,7 +161,12 @@ export default function AssignmentPage() {
           <div className="assignment-flow-content">
             <p style={styles.muted}>Buka LKPD berikut dan kirimkan jawaban sesuai instruksi.</p>
             <Link href={`/murid/worksheets/${data.worksheet.id}?assignmentId=${data.assignment.id}`} className="assignment-flow-action" style={styles.actionLink}>Buka {data.worksheet.title} →</Link>
-            {data.attempt?.total_score !== null && data.attempt?.total_score !== undefined ? <p style={styles.score}>Nilai LKPD: {data.attempt.total_score}</p> : null}
+            {data.attempt?.member_score !== null && data.attempt?.member_score !== undefined ? (
+              <>
+                <p style={styles.score}>Nilai kelompok: {data.attempt.group_total_score ?? data.attempt.total_score}</p>
+                <p style={styles.score}>Nilaimu (disesuaikan guru): {data.attempt.member_score}</p>
+              </>
+            ) : data.attempt?.total_score !== null && data.attempt?.total_score !== undefined ? <p style={styles.score}>Nilai LKPD: {data.attempt.total_score}</p> : null}
           </div>
         ) : null}
 

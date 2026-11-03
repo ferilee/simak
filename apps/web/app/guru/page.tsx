@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { apiBase, apiRequest } from "../../lib/api";
 import { prepareImageForUpload } from "../../lib/prepare-image";
 import { buildWhatsAppShareMessage } from "../../lib/wa-share";
+import { groupsCopyText } from "../../lib/kelompok-copy";
 import {
   countGradingAttempts,
   distinctGradingClasses,
@@ -212,6 +213,8 @@ type WorksheetAttemptItem = {
   answer_key: string | null;
   answer_text: string | null;
   attachment_key: string | null;
+  last_editor_name: string | null;
+  answer_updated_at: string | null;
   score: number | null;
   teacher_note: string | null;
 };
@@ -334,6 +337,7 @@ export default function GuruPage() {
   const [assignmentGroupsLoading, setAssignmentGroupsLoading] = useState(false);
   const [groupAddSelection, setGroupAddSelection] = useState<Record<number, number>>({});
   const [groupCopySelection, setGroupCopySelection] = useState<Record<number, number>>({});
+  const [copiedGroupClassId, setCopiedGroupClassId] = useState<number | null>(null);
   const [memberScoreDrafts, setMemberScoreDrafts] = useState<Record<number, string>>({});
   const [editingAssignment, setEditingAssignment] = useState<AssignmentSummary | null>(null);
   // Jepretan keadaan formulir penugasan + pilihan editor (Langkah 1–2) sebelum
@@ -2107,6 +2111,26 @@ export default function GuruPage() {
     }
   }
 
+  // Salin daftar kelompok satu kelas sebagai teks polos (Tahap 3 mini) —
+  // siap ditempel guru ke obrolan kelas. Tombolnya berlabel "Tersalin ✓"
+  // sebentar sesudah berhasil.
+  async function copyClassGroupsList(assignmentTitle: string, kelas: AssignmentClassGroups) {
+    const text = groupsCopyText({
+      assignmentTitle,
+      className: kelas.class_name,
+      groups: kelas.groups.map((group) => ({ name: group.name, members: group.members.map((member) => member.name) })),
+      ungrouped: kelas.ungrouped.map((student) => student.name),
+    });
+    if (!(await copyTextToClipboard(text))) {
+      setMessage("Daftar kelompok belum dapat disalin di peramban ini.");
+      return;
+    }
+    setCopiedGroupClassId(kelas.class_id);
+    window.setTimeout(() => {
+      setCopiedGroupClassId((current) => (current === kelas.class_id ? null : current));
+    }, 2000);
+  }
+
   async function saveMemberScore(studentId: number, score: number | null) {
     if (!selectedWorksheetId || !selectedAttemptId) return;
     const worksheetId = selectedWorksheetId;
@@ -2771,13 +2795,24 @@ export default function GuruPage() {
                   <div key={kelas.class_id} style={{ display: "grid", gap: 10 }}>
                     <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
                       <h3 style={{ ...styles.contentListTitle, margin: 0 }}>{kelas.class_name}</h3>
-                      {kelas.groups.length === 0 ? (
-                        <button type="button" disabled={assignmentGroupsLoading} onClick={() => void generateAssignmentGroups(selectedGroupAssignmentId)} style={styles.secondaryButton}>Bentuk kelompok</button>
-                      ) : kelas.shuffle_locked ? (
-                        <span style={styles.muted}>Acak ulang terkunci — sudah ada kelompok yang mulai mengerjakan.</span>
-                      ) : (
-                        <button type="button" disabled={assignmentGroupsLoading} onClick={() => void shuffleAssignmentClassGroups(selectedGroupAssignmentId, kelas.class_id, kelas.class_name)} style={styles.secondaryButton}>Acak ulang</button>
-                      )}
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                        {kelas.groups.length > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => void copyClassGroupsList(assignments.find((assignment) => assignment.id === selectedGroupAssignmentId)?.title ?? "", kelas)}
+                            style={styles.secondaryButton}
+                          >
+                            {copiedGroupClassId === kelas.class_id ? "Tersalin ✓" : "Salin daftar"}
+                          </button>
+                        ) : null}
+                        {kelas.groups.length === 0 ? (
+                          <button type="button" disabled={assignmentGroupsLoading} onClick={() => void generateAssignmentGroups(selectedGroupAssignmentId)} style={styles.secondaryButton}>Bentuk kelompok</button>
+                        ) : kelas.shuffle_locked ? (
+                          <span style={styles.muted}>Acak ulang terkunci — sudah ada kelompok yang mulai mengerjakan.</span>
+                        ) : (
+                          <button type="button" disabled={assignmentGroupsLoading} onClick={() => void shuffleAssignmentClassGroups(selectedGroupAssignmentId, kelas.class_id, kelas.class_name)} style={styles.secondaryButton}>Acak ulang</button>
+                        )}
+                      </div>
                     </div>
                     {kelas.copy_sources.length > 0 && (kelas.groups.length === 0 || !kelas.shuffle_locked) ? (
                       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -2804,11 +2839,14 @@ export default function GuruPage() {
                       <p style={styles.muted}>Belum ada kelompok untuk kelas ini. Kelompok terbentuk otomatis saat penugasan diterbitkan, atau bentuk sekarang dengan tombol di atas.</p>
                     ) : (
                       <div className="module-list">
-                        {kelas.groups.map((group) => (
+                        {kelas.groups.map((group) => {
+                          const progress = groupProgressChip(group.attempt_status);
+                          return (
                           <article key={group.id} className="resource-row">
                             <div className="module-row-main">
                               <strong>👥 {group.name}</strong>
                               <span>{group.members.length} anggota</span>
+                              <span className={progress.className} style={{ justifySelf: "start" }}>{progress.label}</span>
                             </div>
                             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                               {group.members.map((member) => {
@@ -2831,7 +2869,8 @@ export default function GuruPage() {
                               })}
                             </div>
                           </article>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                     {kelas.ungrouped.length > 0 ? (
@@ -3239,6 +3278,9 @@ export default function GuruPage() {
                         >
                           Lihat foto jawaban
                         </button>
+                      ) : null}
+                      {attemptDetail.attempt.is_group && item.last_editor_name ? (
+                        <small style={styles.muted}>Diubah terakhir oleh {item.last_editor_name}{item.answer_updated_at ? ` · ${formatDate(item.answer_updated_at)}` : ""}</small>
                       ) : null}
                       <small style={styles.muted}>Kunci: <MathText text={item.answer_key || "Tidak ada kunci otomatis."} /> · Maksimal {item.points} poin</small>
                       <div style={styles.scoreRow}>
@@ -3883,4 +3925,44 @@ function integrityEventLabel(event: string) {
 
 function integrityRiskLabel(risk: IntegrityAlert["risk"]) {
   return risk === "peringatan" ? "Peringatan" : risk === "perlu_ditinjau" ? "Perlu ditinjau" : "Info";
+}
+
+// Lencana progres pengerjaan per kelompok pada panel Kelompok (Tahap 3
+// mini), mengikuti status attempt kelompoknya: belum ada attempt → Belum
+// mulai, draf → Sedang dikerjakan, terkumpul → Terkumpul, dinilai → Dinilai.
+function groupProgressChip(status: "draf" | "terkumpul" | "dinilai" | null) {
+  switch (status) {
+    case "draf":
+      return { label: "Sedang dikerjakan", className: "group-progress group-progress-draf" };
+    case "terkumpul":
+      return { label: "Terkumpul", className: "group-progress group-progress-terkumpul" };
+    case "dinilai":
+      return { label: "Dinilai", className: "group-progress group-progress-dinilai" };
+    default:
+      return { label: "Belum mulai", className: "group-progress group-progress-belum" };
+  }
+}
+
+// Salin teks ke papan klip: Clipboard API bila tersedia, dengan jalan
+// cadangan textarea + execCommand untuk konteks yang belum aman (http).
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Lanjut ke jalan cadangan di bawah.
+  }
+  try {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    const copied = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    return copied;
+  } catch {
+    return false;
+  }
 }

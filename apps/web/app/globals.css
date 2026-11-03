@@ -1364,6 +1364,38 @@ a {
   cursor: not-allowed;
 }
 
+/* Lencana progres pengerjaan per kelompok pada panel Kelompok (Tahap 3
+   mini) — palet mengikuti .module-status/.integrity-risk yang sudah ada:
+   kelabu = belum mulai, biru = sedang dikerjakan, amber = terkumpul
+   (menunggu dinilai), hijau = dinilai. */
+.group-progress {
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.group-progress-belum {
+  background: #f2f4f7;
+  color: #667085;
+}
+
+.group-progress-draf {
+  background: #eff8ff;
+  color: #175cd3;
+}
+
+.group-progress-terkumpul {
+  background: #fffaeb;
+  color: #b54708;
+}
+
+.group-progress-dinilai {
+  background: #ecfdf3;
+  color: #087a6f;
+}
+
 /* Bilah tab Langkah 5 ("Pantau hasil"): lengket di atas saat digulir dan
    bisa digeser menyamping di layar sempit; hanya satu seksi tampil per tab. */
 .hasil-tabs {

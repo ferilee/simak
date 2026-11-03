@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiRequest } from "../../lib/api";
+import { decideBaruMarkers, readNilaiSayaBaseline } from "../../lib/nilai-saya";
 import { submissionStatusLabel } from "../lib/labels";
 import { Toast } from "../../components/Toast";
 
@@ -52,6 +53,13 @@ type MeResponse = {
   user: { display_name?: string; name?: string; username: string; role: "guru" | "murid" };
 };
 
+// Bentuk minimum endpoint Nilai Saya yang dibutuhkan titik penanda beranda:
+// hanya id penugasan + waktu terbit tiap nilai.
+type NilaiDotResponse = {
+  ok: true;
+  data: { grades: { assignment_id: number; graded_at: string }[] };
+};
+
 export default function MuridPage() {
   const router = useRouter();
   const [user, setUser] = useState<MeResponse["user"] | null>(null);
@@ -62,6 +70,7 @@ export default function MuridPage() {
   const [joining, setJoining] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
   const [studentStep, setStudentStep] = useState(0);
+  const [hasNewGrades, setHasNewGrades] = useState(false);
 
   const studentSteps = [
     { title: "Kelas saya", description: "Gabung dan lihat kelas aktif" },
@@ -97,6 +106,17 @@ export default function MuridPage() {
       const today = await apiRequest<TodayResponse>("/murid/today");
       setData(today.data);
       setJoinOpen(today.data.classes.length === 0);
+      // Titik penanda "ada nilai baru" untuk tautan Nilai Saya: satu
+      // pengambilan ringan, baseline kunjungan terakhir hanya DIBACA di
+      // sini (tidak pernah dimajukan — itu hak halaman Nilai Saya, supaya
+      // titik tidak padam sebelum murid benar-benar membukanya). Gagal
+      // ambil → tautan tetap tampil tanpa titik, tanpa pesan apa pun.
+      void apiRequest<NilaiDotResponse>("/murid/nilai")
+        .then((response) => {
+          const decision = decideBaruMarkers(response.data.grades, readNilaiSayaBaseline(), new Date());
+          setHasNewGrades(decision.baruIds.size > 0);
+        })
+        .catch(() => undefined);
     } catch (error) {
       if (error instanceof Error && error.message === "Belum masuk.") {
         router.replace("/login");
@@ -186,6 +206,14 @@ export default function MuridPage() {
               </button>
             ))}
           </nav>
+          <Link href="/murid/nilai" className="content-card content-link" style={{ marginTop: 16 }}>
+            <strong style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              Nilai Saya
+              {hasNewGrades ? <span aria-label="Ada nilai baru" title="Ada nilai baru" style={{ width: 10, height: 10, borderRadius: "50%", background: "#d92d20", display: "inline-block", flexShrink: 0 }} /> : null}
+            </strong>
+            <span className="content-muted">Lihat semua nilai LKPD yang sudah terbit.</span>
+            <span className="content-action">Buka nilai →</span>
+          </Link>
           <p className="wizard-side-note">Selesaikan langkah belajar sesuai kebutuhan Anda. Anda dapat berpindah langkah kapan saja.</p>
         </aside>
 

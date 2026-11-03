@@ -229,6 +229,17 @@ export const gradeWorksheetSchema = z.object({
   })).max(200),
 });
 
+// Penilaian Rapi (v1.0.34) — simpan nilai SATU butir seketika agar penilaian
+// bisa dicicil: score null berarti kosongkan skor butir ini; teacherNote
+// yang tidak dikirim berarti catatan dibiarkan, string (termasuk kosong)
+// berarti catatan diganti. Batas atas terhadap poin butir ditegakkan di
+// route, sama seperti simpan menyeluruh.
+export const gradeWorksheetItemSchema = z.object({
+  itemId: z.number().int().positive(),
+  score: z.number().min(0).max(1000).nullable(),
+  teacherNote: z.string().max(5000).optional(),
+});
+
 export const createAssignmentSchema = z.object({
   moduleId: z.number().int().positive().optional(),
   worksheetId: z.number().int().positive().optional(),

@@ -1,10 +1,11 @@
 import { Hono } from "hono";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
 import { db, schema } from "@simak/db";
 import {
   createWorksheetItemSchema,
   createWorksheetSchema,
+  gradeWorksheetItemSchema,
   gradeWorksheetSchema,
   reorderWorksheetItemsSchema,
   updateWorksheetItemSchema,
@@ -13,12 +14,14 @@ import {
 import { requireRole } from "../middleware/auth";
 import { loadTeacherClassMemberships, resolveStudentClass } from "../lib/student-class";
 import { loadAttemptMemberScores, loadContributionSummary, resolveEffectiveMemberScore } from "../lib/groups";
+import { computeGradingProgress, countGradedByAttempt, gradingStatusAfterItemSave } from "../lib/grading-progress";
+import { filterGradingQueueRows, groupOnlyWorksheetIds } from "../lib/grading-queue";
 
 // LKPD + butir blok interaktifnya (Tahap 2).
 // Opsi butir divalidasi worksheetItemOptionsSchema dari @simak/shared.
 export const worksheetRoutes = new Hono();
 
-const { assignmentGroupMembers, assignmentGroups, classes, modules, users, worksheetAnswers, worksheetAttempts, worksheetItems, worksheets } = schema;
+const { assignmentGroupMembers, assignmentGroups, assignments, classes, modules, users, worksheetAnswers, worksheetAttempts, worksheetItems, worksheets } = schema;
 
 type WorksheetAttemptStats = {
   started_count: number;
@@ -133,7 +136,7 @@ worksheetRoutes.get("/:id/attempts", requireRole("guru"), async (c) => {
   const [module] = worksheet.moduleId
     ? await db.select({ subject: modules.subject }).from(modules).where(eq(modules.id, worksheet.moduleId)).limit(1)
     : [];
-  const [rows, membershipsByStudent] = await Promise.all([
+  const [rawRows, membershipsByStudent] = await Promise.all([
     db
       .select({
         id: worksheetAttempts.id,
@@ -158,6 +161,20 @@ worksheetRoutes.get("/:id/attempts", requireRole("guru"), async (c) => {
     loadTeacherClassMemberships(user.userId),
   ]);
 
+  // Penilaian Rapi: pada LKPD khusus penugasan kelompok, antrean hanya
+  // menampilkan attempt kelompok — baris individu (duplikat anggota atau
+  // pengerjaan sendiri) disembunyikan tanpa menghapus datanya. Hitungan
+  // ringkas panel dihitung klien dari daftar ini, jadi menyaring di sini
+  // membuat hitungan dan daftar selalu sejalan.
+  const assignmentRows = await db
+    .select({ worksheetId: assignments.worksheetId, workMode: assignments.workMode, status: assignments.status })
+    .from(assignments)
+    .where(and(eq(assignments.teacherId, user.userId), eq(assignments.worksheetId, worksheetId)));
+  const rows = filterGradingQueueRows(
+    rawRows.map((row) => ({ ...row, worksheetId })),
+    groupOnlyWorksheetIds(assignmentRows),
+  );
+
   const groupIds = [...new Set(rows.flatMap((row) => (row.groupId === null ? [] : [row.groupId])))];
   const memberRows = groupIds.length
     ? await db
@@ -173,6 +190,22 @@ worksheetRoutes.get("/:id/attempts", requireRole("guru"), async (c) => {
     list.push(row.name);
     memberNamesByGroup.set(row.groupId, list);
   }
+
+  // Kemajuan penilaian per attempt (Penilaian Rapi): jumlah butir yang
+  // sudah berskor dari seluruh butir LKPD — penanda "Dinilai X dari Y
+  // butir" selama penilaian dicicil dan total masih kosong.
+  const visibleAttemptIds = rows.map((row) => row.id);
+  const [gradedRows, itemRows] = await Promise.all([
+    visibleAttemptIds.length
+      ? db
+          .select({ attemptId: worksheetAnswers.attemptId })
+          .from(worksheetAnswers)
+          .where(and(inArray(worksheetAnswers.attemptId, visibleAttemptIds), isNotNull(worksheetAnswers.score)))
+      : Promise.resolve([] as { attemptId: number }[]),
+    db.select({ id: worksheetItems.id }).from(worksheetItems).where(eq(worksheetItems.worksheetId, worksheetId)),
+  ]);
+  const gradedByAttempt = countGradedByAttempt(gradedRows);
+  const totalItems = itemRows.length;
 
   return c.json({
     ok: true,
@@ -193,6 +226,8 @@ worksheetRoutes.get("/:id/attempts", requireRole("guru"), async (c) => {
           group_id: row.groupId,
           group_name: row.groupName,
           member_names: memberNamesByGroup.get(row.groupId) ?? [],
+          graded_count: gradedByAttempt.get(row.id) ?? 0,
+          total_items: totalItems,
         };
       }
       const studentClass = resolveStudentClass(membershipsByStudent.get(row.studentId!) ?? [], module?.subject ?? null);
@@ -211,6 +246,8 @@ worksheetRoutes.get("/:id/attempts", requireRole("guru"), async (c) => {
         group_id: null,
         group_name: null,
         member_names: [],
+        graded_count: gradedByAttempt.get(row.id) ?? 0,
+        total_items: totalItems,
       };
     }),
   });
@@ -311,6 +348,8 @@ worksheetRoutes.get("/:id/attempts/:attemptId", requireRole("guru"), async (c) =
         submitted_at: attempt.submittedAt,
         total_score: serializeScore(attempt.totalScore),
         teacher_comment: attempt.teacherComment,
+        graded_count: answers.filter((answer) => answer.score !== null).length,
+        total_items: items.length,
         is_group: attempt.groupId !== null,
         group_id: attempt.groupId,
         group_name: attempt.groupName,
@@ -387,6 +426,101 @@ worksheetRoutes.patch(
       teacherComment: input.teacherComment,
     }).where(eq(worksheetAttempts.id, attemptId));
     return c.json({ ok: true, data: { status: "dinilai", total_score: totalScore } });
+  },
+);
+
+// Penilaian Rapi — simpan nilai SATU butir seketika (autosave penilaian
+// cicilan). Upsert baris jawabannya persis seperti simpan menyeluruh di
+// atas — termasuk membuat baris baru bila murid tidak menjawab butir ini —
+// lalu kelengkapan dihitung ulang dari skor tersimpan semua butir: bila
+// semua butir berskor, total diisi dan attempt menjadi "dinilai" (hasil
+// akhir identik dengan simpan menyeluruh); selama belum lengkap total
+// tetap null sehingga murid belum melihat nilai apa pun. Komentar umum
+// attempt tidak disentuh di sini. Skor null mengosongkan skor butir (dan
+// dapat menurunkan attempt yang tadinya "dinilai" kembali ke "terkumpul").
+worksheetRoutes.patch(
+  "/:id/attempts/:attemptId/items",
+  requireRole("guru"),
+  zValidator("json", gradeWorksheetItemSchema),
+  async (c) => {
+    const user = c.get("user")!;
+    const worksheetId = Number(c.req.param("id"));
+    const attemptId = Number(c.req.param("attemptId"));
+    if (![worksheetId, attemptId].every((value) => Number.isInteger(value) && value > 0)) {
+      return c.json({ ok: false, message: "ID LKPD atau pengumpulan tidak valid." }, 400);
+    }
+    if (!(await ownedWorksheet(user.userId, worksheetId))) return c.json({ ok: false, message: "LKPD tidak ditemukan." }, 404);
+
+    const [attempt] = await db
+      .select({ id: worksheetAttempts.id, status: worksheetAttempts.status })
+      .from(worksheetAttempts)
+      .where(and(eq(worksheetAttempts.id, attemptId), eq(worksheetAttempts.worksheetId, worksheetId)))
+      .limit(1);
+    if (!attempt) return c.json({ ok: false, message: "Pengumpulan tidak ditemukan." }, 404);
+
+    const input = c.req.valid("json");
+    const items = await db.select({ id: worksheetItems.id, points: worksheetItems.points }).from(worksheetItems).where(eq(worksheetItems.worksheetId, worksheetId));
+    const pointsByItem = new Map(items.map((item) => [item.id, item.points]));
+    if (!pointsByItem.has(input.itemId)) {
+      return c.json({ ok: false, message: "Ada nilai untuk soal yang bukan bagian dari LKPD ini." }, 400);
+    }
+    if (input.score !== null && input.score > pointsByItem.get(input.itemId)!) {
+      return c.json({ ok: false, message: "Nilai tidak boleh melebihi poin soal." }, 400);
+    }
+
+    const scoreValue = input.score === null ? null : input.score.toFixed(2);
+    const noteProvided = input.teacherNote !== undefined;
+    const noteValue = noteProvided ? (input.teacherNote!.trim() === "" ? null : input.teacherNote!) : undefined;
+    const [existing] = await db
+      .select({ id: worksheetAnswers.id })
+      .from(worksheetAnswers)
+      .where(and(eq(worksheetAnswers.attemptId, attemptId), eq(worksheetAnswers.worksheetItemId, input.itemId)))
+      .limit(1);
+    if (existing) {
+      await db.update(worksheetAnswers).set({
+        score: scoreValue,
+        ...(noteProvided ? { teacherNote: noteValue } : {}),
+      }).where(eq(worksheetAnswers.id, existing.id));
+    } else {
+      await db.insert(worksheetAnswers).values({
+        attemptId,
+        worksheetItemId: input.itemId,
+        score: scoreValue,
+        teacherNote: noteValue ?? null,
+      });
+    }
+
+    const savedAnswers = await db
+      .select({ worksheetItemId: worksheetAnswers.worksheetItemId, score: worksheetAnswers.score })
+      .from(worksheetAnswers)
+      .where(eq(worksheetAnswers.attemptId, attemptId));
+    const scoresByItem = new Map(savedAnswers.map((answer) => [answer.worksheetItemId, answer.score === null ? null : Number(answer.score)]));
+    const progress = computeGradingProgress(items.map((item) => item.id), scoresByItem);
+    const nextStatus = gradingStatusAfterItemSave(attempt.status, progress);
+    if (progress.complete) {
+      await db.update(worksheetAttempts).set({
+        status: "dinilai",
+        totalScore: progress.totalScore!.toFixed(2),
+      }).where(eq(worksheetAttempts.id, attemptId));
+    } else if (nextStatus !== attempt.status) {
+      await db.update(worksheetAttempts).set({
+        status: nextStatus,
+        totalScore: null,
+      }).where(eq(worksheetAttempts.id, attemptId));
+    }
+
+    return c.json({
+      ok: true,
+      data: {
+        item_id: input.itemId,
+        score: input.score,
+        graded_count: progress.gradedCount,
+        total_items: progress.totalItems,
+        complete: progress.complete,
+        status: nextStatus,
+        total_score: progress.totalScore,
+      },
+    });
   },
 );
 

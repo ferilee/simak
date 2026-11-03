@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
 import { db, schema } from "@simak/db";
 import { memberScoreSchema } from "@simak/shared";
@@ -7,13 +7,15 @@ import { requireRole } from "../middleware/auth";
 import { loadTeacherClassMemberships, resolveStudentClass } from "../lib/student-class";
 import { loadAssignmentSubject } from "../lib/assignment-target";
 import { loadAttemptMemberScores, mapGroupAttemptsToStudents, pickEffectiveAttempt, resolveEffectiveMemberScore } from "../lib/groups";
+import { countGradedByAttempt } from "../lib/grading-progress";
+import { filterGradingQueueRows, groupOnlyWorksheetIds } from "../lib/grading-queue";
 
 // Ringkasan pengumpulan penugasan untuk panel guru.
 export const gradingRoutes = new Hono();
 
 gradingRoutes.use("*", requireRole("guru"));
 
-const { assignmentClasses, assignmentGroupMembers, assignmentGroups, assignmentStudents, assignments, classMembers, classes, exitTickets, modules, users, worksheetAttemptMemberScores, worksheetAttempts, worksheetItems, worksheets } = schema;
+const { assignmentClasses, assignmentGroupMembers, assignmentGroups, assignmentStudents, assignments, classMembers, classes, exitTickets, modules, users, worksheetAnswers, worksheetAttemptMemberScores, worksheetAttempts, worksheetItems, worksheets } = schema;
 
 function serializeScore(score: string | null) {
   return score === null ? null : Number(score);
@@ -30,7 +32,7 @@ function serializeScore(score: string | null) {
 gradingRoutes.get("/attempts", async (c) => {
   const user = c.get("user")!;
 
-  const [rows, membershipsByStudent] = await Promise.all([
+  const [rawRows, membershipsByStudent] = await Promise.all([
     db
       .select({
         id: worksheetAttempts.id,
@@ -60,6 +62,19 @@ gradingRoutes.get("/attempts", async (c) => {
     loadTeacherClassMemberships(user.userId),
   ]);
 
+  // Penilaian Rapi: sama seperti daftar per-LKPD di routes/worksheets.ts —
+  // LKPD khusus penugasan kelompok hanya menampilkan attempt kelompok di
+  // antrean ini, dan hitungan panel (termasuk lencana tab) dihitung klien
+  // dari daftar yang sama sehingga selalu sejalan.
+  const listedWorksheetIds = [...new Set(rawRows.map((row) => row.worksheetId))];
+  const assignmentRows = listedWorksheetIds.length
+    ? await db
+        .select({ worksheetId: assignments.worksheetId, workMode: assignments.workMode, status: assignments.status })
+        .from(assignments)
+        .where(and(eq(assignments.teacherId, user.userId), inArray(assignments.worksheetId, listedWorksheetIds)))
+    : [];
+  const rows = filterGradingQueueRows(rawRows, groupOnlyWorksheetIds(assignmentRows));
+
   const groupIds = [...new Set(rows.flatMap((row) => (row.groupId === null ? [] : [row.groupId])))];
   const memberRows = groupIds.length
     ? await db
@@ -74,6 +89,27 @@ gradingRoutes.get("/attempts", async (c) => {
     const list = memberNamesByGroup.get(row.groupId) ?? [];
     list.push(row.name);
     memberNamesByGroup.set(row.groupId, list);
+  }
+
+  // Kemajuan penilaian per attempt (Penilaian Rapi): butir berskor dari
+  // seluruh butir LKPD asal attempt — penanda "Dinilai X dari Y butir".
+  const visibleAttemptIds = rows.map((row) => row.id);
+  const visibleWorksheetIds = [...new Set(rows.map((row) => row.worksheetId))];
+  const [gradedRows, itemRows] = await Promise.all([
+    visibleAttemptIds.length
+      ? db
+          .select({ attemptId: worksheetAnswers.attemptId })
+          .from(worksheetAnswers)
+          .where(and(inArray(worksheetAnswers.attemptId, visibleAttemptIds), isNotNull(worksheetAnswers.score)))
+      : Promise.resolve([] as { attemptId: number }[]),
+    visibleWorksheetIds.length
+      ? db.select({ worksheetId: worksheetItems.worksheetId }).from(worksheetItems).where(inArray(worksheetItems.worksheetId, visibleWorksheetIds))
+      : Promise.resolve([] as { worksheetId: number }[]),
+  ]);
+  const gradedByAttempt = countGradedByAttempt(gradedRows);
+  const totalItemsByWorksheet = new Map<number, number>();
+  for (const item of itemRows) {
+    totalItemsByWorksheet.set(item.worksheetId, (totalItemsByWorksheet.get(item.worksheetId) ?? 0) + 1);
   }
 
   return c.json({
@@ -97,6 +133,8 @@ gradingRoutes.get("/attempts", async (c) => {
           group_id: row.groupId,
           group_name: row.groupName,
           member_names: memberNamesByGroup.get(row.groupId) ?? [],
+          graded_count: gradedByAttempt.get(row.id) ?? 0,
+          total_items: totalItemsByWorksheet.get(row.worksheetId) ?? 0,
         };
       }
       const studentClass = resolveStudentClass(membershipsByStudent.get(row.studentId!) ?? [], row.moduleSubject);
@@ -117,6 +155,8 @@ gradingRoutes.get("/attempts", async (c) => {
         group_id: null,
         group_name: null,
         member_names: [],
+        graded_count: gradedByAttempt.get(row.id) ?? 0,
+        total_items: totalItemsByWorksheet.get(row.worksheetId) ?? 0,
       };
     }),
   });

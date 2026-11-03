@@ -1,4 +1,4 @@
-import { bigint, datetime, decimal, index, mysqlEnum, mysqlTable, text, timestamp, tinyint, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
+import { bigint, datetime, decimal, foreignKey, index, mysqlEnum, mysqlTable, text, timestamp, tinyint, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 import { users } from "./users";
 import { worksheets, worksheetItems } from "./worksheets";
 import { assignmentGroups } from "./groups";
@@ -105,9 +105,10 @@ export const worksheetAttemptMemberScores = mysqlTable(
   "worksheet_attempt_member_scores",
   {
     id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
-    attemptId: bigint("attempt_id", { mode: "number" })
-      .notNull()
-      .references(() => worksheetAttempts.id, { onDelete: "cascade" }),
+    // FK attempt_id dinyatakan eksplisit dengan nama pendek di bawah:
+    // nama otomatis Drizzle untuk FK ini 67 karakter, melebihi batas
+    // 64 karakter MariaDB (ERROR 1059) — lihat catatan perbaikan 0009.
+    attemptId: bigint("attempt_id", { mode: "number" }).notNull(),
     studentId: bigint("student_id", { mode: "number" })
       .notNull()
       .references(() => users.id),
@@ -118,5 +119,10 @@ export const worksheetAttemptMemberScores = mysqlTable(
   (t) => [
     uniqueIndex("worksheet_attempt_member_scores_pair_unique").on(t.attemptId, t.studentId),
     index("worksheet_attempt_member_scores_attempt_idx").on(t.attemptId),
+    foreignKey({
+      columns: [t.attemptId],
+      foreignColumns: [worksheetAttempts.id],
+      name: "wams_attempt_id_worksheet_attempts_id_fk",
+    }).onDelete("cascade"),
   ],
 );

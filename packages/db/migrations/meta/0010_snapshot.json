@@ -1074,8 +1074,8 @@
         }
       },
       "foreignKeys": {
-        "worksheet_attempt_member_scores_attempt_id_worksheet_attempts_id_fk": {
-          "name": "worksheet_attempt_member_scores_attempt_id_worksheet_attempts_id_fk",
+        "wams_attempt_id_worksheet_attempts_id_fk": {
+          "name": "wams_attempt_id_worksheet_attempts_id_fk",
           "tableFrom": "worksheet_attempt_member_scores",
           "tableTo": "worksheet_attempts",
           "columnsFrom": [

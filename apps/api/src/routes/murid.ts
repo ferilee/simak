@@ -8,13 +8,14 @@ import { fetchRuasQuizCompleted, parseRuasQuizUrl } from "../lib/ruas-status";
 import { presenceSnapshot, presenceStore, recordHeartbeat } from "../lib/presence";
 import { studentIsAssignmentTarget } from "../lib/assignment-target";
 import { contributionWindowOpen, loadMemberScoreOverride, loadStudentGroup, pickEffectiveAttempt, type AttemptSnapshot } from "../lib/groups";
+import { buildStudentGradeRow, chooseGradeAttempt, sortGradeRows, type GradeAttemptCandidate } from "../lib/nilai-saya";
 
 // Beranda murid + detail penugasan — halaman paling ringan adalah prioritas.
 export const muridRoutes = new Hono();
 
 muridRoutes.use("*", requireRole("murid"));
 
-const { activityLogs, assignmentClasses, assignmentStudents, assignments, classes, classMembers, exitTickets, groupContributionRatings, moduleBlocks, modules, users, worksheetAnswers, worksheetAttempts, worksheetItems, worksheets } = schema;
+const { activityLogs, assignmentClasses, assignmentStudents, assignments, classes, classMembers, exitTickets, groupContributionRatings, moduleBlocks, modules, users, worksheetAnswers, worksheetAttemptMemberScores, worksheetAttempts, worksheetItems, worksheets } = schema;
 
 type StudentGroupView = NonNullable<Awaited<ReturnType<typeof loadStudentGroup>>>;
 
@@ -376,6 +377,114 @@ muridRoutes.get("/today", async (c) => {
       has_viewed_material: hasViewedMaterial,
     },
   });
+});
+
+// Halaman "Nilai Saya": rangkuman semua nilai LKPD murid yang meminta yang
+// sudah terbit — satu baris per penugasan yang menjadi sasarannya (anggota
+// kelas tujuan ATAU murid sasaran langsung, gabungan yang sama dengan
+// /today) dan attempt-nya untuk konteks penugasan itu sudah dinilai.
+// Resolusi attempt meniru persis GET /assignments/:id (attempt individu +
+// attempt kelompok murid ini, dipilih dengan pickEffectiveAttempt lewat
+// lib/nilai-saya.ts) supaya angka di sini tidak pernah berbeda dari detail
+// penugasan. Murid hanya pernah melihat barisnya sendiri: semua kueri
+// attempt dan penyesuaian nilai terlingkup pada user.userId.
+muridRoutes.get("/nilai", async (c) => {
+  const user = c.get("user")!;
+  const memberships = await db
+    .select({ id: classes.id })
+    .from(classMembers)
+    .innerJoin(classes, eq(classes.id, classMembers.classId))
+    .where(and(eq(classMembers.studentId, user.userId), eq(classes.isArchived, false)));
+  const classIds = memberships.map((membership) => membership.id);
+  const assignmentRows = classIds.length
+    ? await db
+        .select()
+        .from(assignments)
+        .innerJoin(assignmentClasses, eq(assignmentClasses.assignmentId, assignments.id))
+        .where(and(eq(assignments.status, "terbit"), inArray(assignmentClasses.classId, classIds)))
+    : [];
+  const directRows = await db
+    .select()
+    .from(assignments)
+    .innerJoin(assignmentStudents, eq(assignmentStudents.assignmentId, assignments.id))
+    .where(and(eq(assignments.status, "terbit"), eq(assignmentStudents.studentId, user.userId)));
+  const uniqueAssignments = [...new Map([...assignmentRows, ...directRows].map((row) => [row.assignments.id, row.assignments])).values()]
+    .filter((assignment) => assignment.worksheetId !== null);
+
+  // Judul LKPD dan mapel semua penugasan kandidat, masing-masing satu kueri.
+  // Mapel mengikuti loadAssignmentSubject: modul penugasan lebih dulu, lalu
+  // modul induk LKPD-nya.
+  const worksheetIds = [...new Set(uniqueAssignments.map((assignment) => assignment.worksheetId!))];
+  const worksheetRows = worksheetIds.length
+    ? await db.select({ id: worksheets.id, title: worksheets.title, moduleId: worksheets.moduleId }).from(worksheets).where(inArray(worksheets.id, worksheetIds))
+    : [];
+  const worksheetById = new Map(worksheetRows.map((row) => [row.id, row]));
+  const moduleIds = [...new Set([
+    ...uniqueAssignments.flatMap((assignment) => (assignment.moduleId === null ? [] : [assignment.moduleId])),
+    ...worksheetRows.flatMap((row) => (row.moduleId === null ? [] : [row.moduleId])),
+  ])];
+  const moduleRows = moduleIds.length
+    ? await db.select({ id: modules.id, subject: modules.subject }).from(modules).where(inArray(modules.id, moduleIds))
+    : [];
+  const subjectByModuleId = new Map(moduleRows.map((row) => [row.id, row.subject]));
+
+  const attemptFields = {
+    id: worksheetAttempts.id,
+    status: worksheetAttempts.status,
+    submittedAt: worksheetAttempts.submittedAt,
+    totalScore: worksheetAttempts.totalScore,
+    updatedAt: worksheetAttempts.updatedAt,
+  };
+  const rows = await Promise.all(uniqueAssignments.map(async (assignment) => {
+    const worksheetId = assignment.worksheetId!;
+    const [individual] = await db
+      .select(attemptFields)
+      .from(worksheetAttempts)
+      .where(and(eq(worksheetAttempts.studentId, user.userId), eq(worksheetAttempts.worksheetId, worksheetId)))
+      .limit(1);
+    let group: StudentGroupView | null = null;
+    let groupAttempt: GradeAttemptCandidate | undefined;
+    if (assignment.workMode === "kelompok") {
+      group = await loadStudentGroup(assignment.id, user.userId);
+      if (group) {
+        [groupAttempt] = await db
+          .select(attemptFields)
+          .from(worksheetAttempts)
+          .where(and(eq(worksheetAttempts.worksheetId, worksheetId), eq(worksheetAttempts.groupId, group.id)))
+          .limit(1);
+      }
+    }
+    const chosen = chooseGradeAttempt(individual ?? null, groupAttempt ?? null);
+    // Penyesuaian nilai hanya bermakna pada attempt kelompok yang efektif,
+    // dan hanya baris milik murid yang meminta yang dibaca.
+    let override: { score: string; updatedAt: Date } | null = null;
+    if (chosen?.isGroup) {
+      const [overrideRow] = await db
+        .select({ score: worksheetAttemptMemberScores.score, updatedAt: worksheetAttemptMemberScores.updatedAt })
+        .from(worksheetAttemptMemberScores)
+        .where(and(
+          eq(worksheetAttemptMemberScores.attemptId, chosen.attempt.id),
+          eq(worksheetAttemptMemberScores.studentId, user.userId),
+        ))
+        .limit(1);
+      override = overrideRow ?? null;
+    }
+    const subjectName = (assignment.moduleId !== null ? subjectByModuleId.get(assignment.moduleId) : undefined)
+      ?? subjectByModuleId.get(worksheetById.get(worksheetId)?.moduleId ?? -1)
+      ?? null;
+    return buildStudentGradeRow({
+      assignmentId: assignment.id,
+      assignmentTitle: assignment.title,
+      worksheetTitle: worksheetById.get(worksheetId)?.title ?? "",
+      subjectName,
+      workMode: assignment.workMode,
+      groupName: group?.name ?? null,
+      chosen,
+      override,
+    });
+  }));
+
+  return c.json({ ok: true, data: { grades: sortGradeRows(rows.filter((row) => row !== null)) } });
 });
 
 muridRoutes.get("/assignments/:id", async (c) => {

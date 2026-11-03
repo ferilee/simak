@@ -78,6 +78,7 @@ export const worksheetAttemptMemberScoresRelations = relations(worksheetAttemptM
 export const worksheetAnswersRelations = relations(worksheetAnswers, ({ one }) => ({
   attempt: one(worksheetAttempts, { fields: [worksheetAnswers.attemptId], references: [worksheetAttempts.id] }),
   item: one(worksheetItems, { fields: [worksheetAnswers.worksheetItemId], references: [worksheetItems.id] }),
+  lastEditor: one(users, { fields: [worksheetAnswers.lastEditedBy], references: [users.id] }),
 }));
 
 export const assignmentsRelations = relations(assignments, ({ one, many }) => ({

@@ -49,6 +49,14 @@ export const worksheetAnswers = mysqlTable(
       .references(() => worksheetItems.id),
     answerText: text("answer_text"),
     attachmentKey: varchar("attachment_key", { length: 512 }),
+    // Jejak penulis per jawaban (Tahap 3 mini): murid yang terakhir menulis
+    // atau mengubah jawaban ini, diisi pada setiap simpan jawaban murid
+    // (termasuk jawaban foto lewat attachment_key). NULL pada jawaban lama
+    // yang dibuat sebelum kolom ini ada. Pada attempt individu penulisnya
+    // selalu murid pemilik attempt; nilainya dipakai tampilan guru pada
+    // attempt kelompok.
+    lastEditedBy: bigint("last_edited_by", { mode: "number" })
+      .references(() => users.id),
     score: decimal("score", { precision: 8, scale: 2 }),
     teacherNote: text("teacher_note"),
     createdAt: timestamp("created_at").notNull().defaultNow(),

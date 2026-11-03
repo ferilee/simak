@@ -289,6 +289,15 @@ worksheetRoutes.get("/:id/attempts/:attemptId", requireRole("guru"), async (c) =
   ]);
   const answerByItem = new Map(answers.map((answer) => [answer.worksheetItemId, answer]));
 
+  // Jejak penulis per jawaban (Tahap 3 mini): nama pengedit terakhir tiap
+  // jawaban, untuk ditampilkan guru pada attempt kelompok. Jawaban lama
+  // ber-lastEditedBy NULL → last_editor_name null.
+  const editorIds = [...new Set(answers.map((answer) => answer.lastEditedBy).filter((id): id is number => id !== null))];
+  const editorRows = editorIds.length
+    ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, editorIds))
+    : [];
+  const editorNameById = new Map(editorRows.map((editor) => [editor.id, editor.name]));
+
   return c.json({
     ok: true,
     data: {
@@ -313,6 +322,8 @@ worksheetRoutes.get("/:id/attempts/:attemptId", requireRole("guru"), async (c) =
           ...serializeItem(item),
           answer_text: answer?.answerText ?? null,
           attachment_key: answer?.attachmentKey ?? null,
+          last_editor_name: answer?.lastEditedBy ? (editorNameById.get(answer.lastEditedBy) ?? null) : null,
+          answer_updated_at: answer?.updatedAt ?? null,
           score: serializeScore(answer?.score ?? null),
           teacher_note: answer?.teacherNote ?? null,
         };

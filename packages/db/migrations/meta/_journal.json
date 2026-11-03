@@ -71,6 +71,13 @@
       "when": 1793667575283,
       "tag": "0009_lkpd_kelompok_2",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1793668748251,
+      "tag": "0010_lkpd_kelompok_3",
+      "breakpoints": true
     }
   ]
 }

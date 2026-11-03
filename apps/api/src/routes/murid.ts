@@ -663,6 +663,9 @@ muridRoutes.put("/worksheets/:id/answers", zValidator("json", worksheetAnswersSc
     return c.json({ ok: false, message: "Ada jawaban yang bukan bagian dari LKPD ini." }, 400);
   }
 
+  // Setiap simpan jawaban (teks maupun foto lewat attachmentKey) mencatat
+  // penulisnya pada baris jawaban — jejak penulis per jawaban (Tahap 3 mini),
+  // ditampilkan ke guru pada attempt kelompok.
   for (const answer of input.answers) {
     const [existing] = await db
       .select({ id: worksheetAnswers.id })
@@ -670,13 +673,14 @@ muridRoutes.put("/worksheets/:id/answers", zValidator("json", worksheetAnswersSc
       .where(and(eq(worksheetAnswers.attemptId, attempt.id), eq(worksheetAnswers.worksheetItemId, answer.itemId)))
       .limit(1);
     if (existing) {
-      await db.update(worksheetAnswers).set({ answerText: answer.answerText, attachmentKey: answer.attachmentKey }).where(eq(worksheetAnswers.id, existing.id));
+      await db.update(worksheetAnswers).set({ answerText: answer.answerText, attachmentKey: answer.attachmentKey, lastEditedBy: user.userId }).where(eq(worksheetAnswers.id, existing.id));
     } else {
       await db.insert(worksheetAnswers).values({
         attemptId: attempt.id,
         worksheetItemId: answer.itemId,
         answerText: answer.answerText,
         attachmentKey: answer.attachmentKey,
+        lastEditedBy: user.userId,
       });
     }
   }

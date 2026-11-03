@@ -1,0 +1,2 @@
+ALTER TABLE `worksheet_answers` ADD `last_edited_by` bigint;--> statement-breakpoint
+ALTER TABLE `worksheet_answers` ADD CONSTRAINT `worksheet_answers_last_edited_by_users_id_fk` FOREIGN KEY (`last_edited_by`) REFERENCES `users`(`id`) ON DELETE no action ON UPDATE no action;

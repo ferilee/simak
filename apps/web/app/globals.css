@@ -1323,6 +1323,27 @@ a {
   font-weight: 800;
 }
 
+/* Lencana mode kelompok pada baris penugasan + chip anggota kelompok. */
+.group-mode-badge {
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: #ecfdf3;
+  color: #027a48;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.member-chip {
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: #f2f4f7;
+  border: 1px solid #eaecf0;
+  color: #344054;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
 /* Bilah tab Langkah 5 ("Pantau hasil"): lengket di atas saat digulir dan
    bisa digeser menyamping di layar sempit; hanya satu seksi tampil per tab. */
 .hasil-tabs {

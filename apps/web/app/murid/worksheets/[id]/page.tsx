@@ -25,12 +25,26 @@ type WorksheetResponse = {
   };
 };
 
+type MuridGroup = {
+  id: number;
+  name: string;
+  class_id: number;
+  class_name: string;
+  members: { id: number; name: string; username: string }[];
+};
+
 type AttemptResponse = {
   ok: true;
   data: {
-    status: "draf" | "terkumpul" | "dinilai";
+    status: "draf" | "terkumpul" | "dinilai" | null;
     answers: { item_id: number; answer_text: string | null; attachment_key: string | null }[];
     explanations?: Record<string, string>;
+    ungrouped?: boolean;
+    group?: MuridGroup | null;
+    last_edited_by?: { id: number; name: string } | null;
+    last_edited_at?: string | null;
+    total_score?: number | null;
+    teacher_comment?: string | null;
   };
 };
 type IntegrityEvent = "visibility_hidden" | "window_blur" | "copy_attempt" | "paste_attempt" | "context_menu";
@@ -60,6 +74,11 @@ export default function WorksheetPage() {
   const [attachmentNames, setAttachmentNames] = useState<Record<number, string>>({});
   const [uploadingItemId, setUploadingItemId] = useState<number | null>(null);
   const [explanations, setExplanations] = useState<Record<number, string>>({});
+  const [groupInfo, setGroupInfo] = useState<MuridGroup | null>(null);
+  const [ungrouped, setUngrouped] = useState(false);
+  const [lastEditedBy, setLastEditedBy] = useState<{ name: string; at: string | null } | null>(null);
+  const [groupScore, setGroupScore] = useState<number | null>(null);
+  const [groupTeacherComment, setGroupTeacherComment] = useState<string | null>(null);
   const [status, setStatus] = useState<"draf" | "terkumpul" | "dinilai">("draf");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
@@ -75,11 +94,19 @@ export default function WorksheetPage() {
   const lastIntegrityEventRef = useRef<Record<string, number>>({});
 
   useEffect(() => {
+    const attemptQuery = assignmentId ? `?assignmentId=${assignmentId}` : "";
     void Promise.all([
       apiRequest<WorksheetResponse>(`/murid/worksheets/${params.id}`),
-      apiRequest<AttemptResponse>(`/murid/worksheets/${params.id}/attempt`),
+      apiRequest<AttemptResponse>(`/murid/worksheets/${params.id}/attempt${attemptQuery}`),
     ])
       .then(([worksheet, attempt]) => {
+        if (attempt.data.ungrouped) {
+          // Murid belum masuk kelompok pada penugasan ini: tampilkan
+          // keadaan khusus, jangan bangun pemutar soal sama sekali.
+          setData(worksheet.data);
+          setUngrouped(true);
+          return;
+        }
         // Snapshot awal acuan kotor autosave: payload yang persis dibangun
         // dari jawaban terload (termasuk fallback urutan tampil untuk butir
         // langkah yang belum disentuh, sama seperti buildAnswersPayload),
@@ -97,7 +124,13 @@ export default function WorksheetPage() {
           };
         }));
         setData(worksheet.data);
-        setStatus(attempt.data.status);
+        setStatus(attempt.data.status ?? "draf");
+        setGroupInfo(attempt.data.group ?? null);
+        if (attempt.data.last_edited_by) {
+          setLastEditedBy({ name: attempt.data.last_edited_by.name, at: attempt.data.last_edited_at ?? null });
+        }
+        if (attempt.data.total_score !== undefined) setGroupScore(attempt.data.total_score);
+        if (attempt.data.teacher_comment !== undefined) setGroupTeacherComment(attempt.data.teacher_comment);
         setAnswers(Object.fromEntries(attempt.data.answers.map((answer) => [answer.item_id, answer.answer_text ?? ""])));
         // Butir langkah berurutan yang urutan tersimpannya berbeda dari urutan
         // tampil bawaan berarti sudah pernah disusun murid pada draf sebelumnya.
@@ -257,7 +290,7 @@ export default function WorksheetPage() {
     setAutoSaving(true);
     try {
       const payload = buildAnswersPayload();
-      await apiRequest(`/murid/worksheets/${data.worksheet.id}/answers`, {
+      await apiRequest(`/murid/worksheets/${data.worksheet.id}/answers${assignmentId ? `?assignmentId=${assignmentId}` : ""}`, {
         method: "PUT",
         body: JSON.stringify({ answers: payload }),
       });
@@ -354,11 +387,12 @@ export default function WorksheetPage() {
     setSaving(true);
     setMessage("");
     try {
-      await apiRequest(`/murid/worksheets/${data.worksheet.id}/answers`, {
+      const attemptQuery = assignmentId ? `?assignmentId=${assignmentId}` : "";
+      await apiRequest(`/murid/worksheets/${data.worksheet.id}/answers${attemptQuery}`, {
         method: "PUT",
         body: JSON.stringify({ answers: buildAnswersPayload() }),
       });
-      await apiRequest(`/murid/worksheets/${data.worksheet.id}/submit`, { method: "POST" });
+      await apiRequest(`/murid/worksheets/${data.worksheet.id}/submit${attemptQuery}`, { method: "POST" });
       if (assignmentId) {
         await apiRequest("/activity", {
           method: "POST",
@@ -376,6 +410,26 @@ export default function WorksheetPage() {
 
   if (message && !data) return <main style={styles.container}><Toast message={message} onDismiss={() => setMessage("")} /><Link href="/murid">← Kembali</Link></main>;
   if (!data) return <main style={styles.container}><p>Memuat LKPD...</p></main>;
+
+  if (ungrouped) {
+    return (
+      <main style={styles.container}>
+        {assignmentId ? (
+          <div style={styles.backRow}>
+            <Link href={`/murid/assignments/${assignmentId}`} style={styles.back}>← Kembali ke penugasan</Link>
+          </div>
+        ) : (
+          <Link href={`/murid/modules/${data.worksheet.module_id}`} style={styles.back}>← Kembali ke materi</Link>
+        )}
+        <p style={styles.eyebrow}>SIMAK · LKPD</p>
+        <h1 style={styles.title}>{data.worksheet.title}</h1>
+        <div style={styles.groupNotice}>
+          <strong>👥 Penugasan berkelompok</strong>
+          <p style={{ margin: 0, lineHeight: 1.6 }}>Kamu belum masuk kelompok untuk penugasan ini. Hubungi gurumu.</p>
+        </div>
+      </main>
+    );
+  }
 
   const { answered: answeredCount, total: totalCount } = answerProgress();
   // Mode paginasi hanya untuk attempt yang masih bisa diedit; tampilan
@@ -405,6 +459,18 @@ export default function WorksheetPage() {
       <p style={styles.eyebrow}>SIMAK · LKPD</p>
       <h1 style={styles.title}>{data.worksheet.title}</h1>
       {data.worksheet.instructions ? <p style={styles.instructions}><MathText text={data.worksheet.instructions} /></p> : null}
+      {groupInfo ? (
+        <div style={styles.groupCard}>
+          <strong>👥 {groupInfo.name} · {groupInfo.class_name}</strong>
+          <div style={styles.groupMembers}>
+            {groupInfo.members.map((member) => <span key={member.id} className="member-chip">{member.name}</span>)}
+          </div>
+          <span>Jawaban di halaman ini dikerjakan bersama — perubahan anggota lain akan terlihat saat halaman dimuat ulang.</span>
+          {lastEditedBy ? (
+            <span>Terakhir diubah oleh {lastEditedBy.name}{lastEditedBy.at ? `, ${new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "Asia/Jakarta" }).format(new Date(lastEditedBy.at))}` : ""}</span>
+          ) : null}
+        </div>
+      ) : null}
       {assignmentId ? (
         <div style={styles.integrityNotice}>
           <span style={styles.integrityNoticeIcon} aria-hidden="true">ℹ️</span>
@@ -417,6 +483,12 @@ export default function WorksheetPage() {
       {message ? <Toast message={message} onDismiss={() => setMessage("")} /> : null}
       {assignmentId && status !== "draf" ? (
         <Link href={`/murid/assignments/${assignmentId}`} style={styles.continueButton}>Kembali ke penugasan untuk melanjutkan →</Link>
+      ) : null}
+      {groupInfo && status === "dinilai" ? (
+        <div style={styles.groupScoreCard}>
+          <strong>Nilai kelompok: {groupScore ?? "—"}</strong>
+          {groupTeacherComment ? <p style={{ margin: 0, lineHeight: 1.6 }}>Komentar guru: {groupTeacherComment}</p> : null}
+        </div>
       ) : null}
 
       {status === "draf" ? (
@@ -433,7 +505,7 @@ export default function WorksheetPage() {
           </span>
           <span style={styles.progressActions}>
             <button type="button" disabled={saving} onClick={() => void saveDraft()} style={styles.secondaryButtonSmall}>Simpan draf</button>
-            <button type="button" disabled={saving} onClick={() => void submitWorksheet()} style={styles.primaryButtonSmall}>Kumpulkan</button>
+            <button type="button" disabled={saving} onClick={() => void submitWorksheet()} style={styles.primaryButtonSmall}>{groupInfo ? "Kumpulkan atas nama kelompok" : "Kumpulkan"}</button>
           </span>
         </div>
       ) : null}
@@ -551,7 +623,7 @@ export default function WorksheetPage() {
           {onReview ? (
             <>
               <button type="button" disabled={autoSaving} onClick={() => void goToPage(data.items.length - 1)} style={styles.navButton}>← Kembali ke soal terakhir</button>
-              <button type="button" disabled={saving} onClick={() => void submitWorksheet()} style={{ ...styles.navButton, ...styles.navPrimary }}>Kumpulkan</button>
+              <button type="button" disabled={saving} onClick={() => void submitWorksheet()} style={{ ...styles.navButton, ...styles.navPrimary }}>{groupInfo ? "Kumpulkan atas nama kelompok" : "Kumpulkan"}</button>
             </>
           ) : (
             <>
@@ -567,7 +639,7 @@ export default function WorksheetPage() {
       ) : (
         <div style={styles.actions}>
           <button type="button" disabled={saving || status !== "draf"} onClick={() => void saveDraft()} style={styles.secondaryButton}>Simpan draf</button>
-          <button type="button" disabled={saving || status !== "draf"} onClick={() => void submitWorksheet()} style={styles.primaryButton}>Kumpulkan LKPD</button>
+          <button type="button" disabled={saving || status !== "draf"} onClick={() => void submitWorksheet()} style={styles.primaryButton}>{groupInfo ? "Kumpulkan atas nama kelompok" : "Kumpulkan LKPD"}</button>
         </div>
       )}
     </main>
@@ -722,6 +794,10 @@ const styles = {
   eyebrow: { color: "#475467", fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", margin: "32px 0 8px" },
   title: { fontSize: 34, margin: 0 },
   instructions: { color: "#667085", lineHeight: 1.6 },
+  groupCard: { display: "grid", gap: 8, background: "#ecfdf3", border: "1px solid #a6f4c5", borderRadius: 10, padding: 14, marginTop: 16, color: "#05603a", fontSize: 14, lineHeight: 1.55 },
+  groupMembers: { display: "flex", gap: 6, flexWrap: "wrap" as const },
+  groupNotice: { display: "grid", gap: 8, background: "#ecfdf3", border: "1px solid #a6f4c5", borderRadius: 10, padding: 16, marginTop: 20, color: "#05603a" },
+  groupScoreCard: { display: "grid", gap: 6, background: "#eff8ff", border: "1px solid #b2ddff", borderRadius: 10, padding: 14, marginTop: 16, color: "#175cd3" },
   integrityNotice: { display: "flex", gap: 10, alignItems: "flex-start", background: "#FFFAEB", border: "1px solid #F79009", padding: 14, borderRadius: 10 },
   integrityNoticeIcon: { fontSize: 18, lineHeight: 1.4 },
   integrityNoticeTitle: { margin: 0, fontSize: 15, fontWeight: 700, color: "#93370D", lineHeight: 1.4 },

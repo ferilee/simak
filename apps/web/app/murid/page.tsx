@@ -30,6 +30,13 @@ type AssignmentSummary = {
   title: string;
   instructions: string | null;
   ruas_quiz_url: string | null;
+  work_mode?: "individu" | "kelompok";
+  group?: {
+    id: number;
+    name: string;
+    class_name: string;
+    members: { id: number; name: string; username: string }[];
+  } | null;
   opens_at: string;
   due_at: string;
   progress: "belum_dibuka" | "belum" | "draf" | "terkumpul" | "dinilai" | "terlambat";
@@ -341,6 +348,9 @@ function AssignmentCard({ assignment }: { assignment: AssignmentSummary }) {
   return (
     <Link href={`/murid/assignments/${assignment.id}`} className="content-card content-link">
       <strong>{assignment.title}</strong>
+      {assignment.work_mode === "kelompok" ? (
+        <span className="group-mode-badge" style={{ alignSelf: "flex-start" }}>👥 Kelompok{assignment.group ? ` · ${assignment.group.name}` : ""}</span>
+      ) : null}
       <span className="content-muted">{assignment.instructions ?? "Buka detail penugasan untuk mulai."}</span>
       <span className="content-meta">Status: {submissionStatusLabel(assignment.progress)} · batas {formatDate(assignment.due_at)}</span>
       <span className="content-action">Buka penugasan →</span>

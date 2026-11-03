@@ -102,5 +102,44 @@ const noCode = buildWhatsAppShareMessage(
 check("baris Kelas ada", noCode.includes("Kelas: X TKR A"));
 check("baris Kode kelas tidak ada", !noCode.includes("Kode kelas:"));
 
+// Case 6: mode kelompok — baris 👥 muncul sesudah baris kode kelas, dan
+// pesan lengkapnya terkunci sebagai golden kedua.
+console.log("Case 6: penugasan kelompok (golden)");
+const groupMessage = buildWhatsAppShareMessage(
+  {
+    title: "Matematika Keuangan · XI DPIB",
+    due_at: DUE,
+    ruas_quiz_url: null,
+    work_mode: "kelompok",
+    classes: [{ name: "XI DPIB", join_code: "ECE4E736E7" }],
+  },
+  ORIGIN,
+);
+const expectedGroup = [
+  "📚 *Matematika Keuangan · XI DPIB*",
+  "Kelas: XI DPIB",
+  "Kode kelas: ECE4E736E7",
+  "👥 Penugasan ini dikerjakan berkelompok — lihat kelompokmu di SIMAK.",
+  "",
+  "Kegiatan belajar hari ini:",
+  "1. Baca dan pahami materi di SIMAK https://simak.smkpasirian-lmj.sch.id",
+  "2. Kerjakan LKPD-nya di SIMAK",
+  "3. Kerjakan kuis di RUAS https://ruas.smkpasirian-lmj.sch.id",
+  "4. Isi exit ticket 3-2-1 di SIMAK",
+  "",
+  "⏰ Batas pengumpulan: Senin, 2 November 2026 pukul 15.00 WIB — pengumpulan tercatat sebagai kehadiran.",
+  "🔑 Gunakan akun RUAS untuk masuk ke SIMAK",
+].join("\n");
+check("persis sama dengan teks target kelompok", groupMessage === expectedGroup, groupMessage === expectedGroup ? "" : `\n--- didapat ---\n${groupMessage}\n--- diharapkan ---\n${expectedGroup}`);
+
+// Case 7: work_mode individu eksplisit sama persis dengan tanpa work_mode.
+console.log("Case 7: mode individu eksplisit");
+const individuExplicit = buildWhatsAppShareMessage(
+  { title: "Matematika Keuangan · XI DPIB", due_at: DUE, ruas_quiz_url: null, work_mode: "individu", classes: [{ name: "XI DPIB", join_code: "ECE4E736E7" }] },
+  ORIGIN,
+);
+check("tanpa baris kelompok", !individuExplicit.includes("👥"));
+check("identik dengan golden individu", individuExplicit === expected);
+
 console.log(`\nHasil: ${passed} lulus, ${failed} gagal, ${passed + failed} total`);
 if (failed > 0) process.exit(1);

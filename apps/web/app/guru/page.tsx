@@ -92,15 +92,32 @@ type AssignmentSummary = {
   title: string;
   instructions: string | null;
   ruas_quiz_url: string | null;
+  work_mode: "individu" | "kelompok";
+  group_size: number | null;
   opens_at: string;
   due_at: string;
   status: "draf" | "terbit" | "ditutup";
   classes: { id: number; name: string; join_code: string }[];
 };
+type AssignmentGroupMemberView = { id: number; name: string; username: string };
+type AssignmentClassGroups = {
+  class_id: number;
+  class_name: string;
+  shuffle_locked: boolean;
+  groups: { id: number; name: string; members: AssignmentGroupMemberView[] }[];
+  ungrouped: AssignmentGroupMemberView[];
+};
+type AssignmentGroupsData = {
+  assignment_id: number;
+  work_mode: "individu" | "kelompok";
+  group_size: number | null;
+  classes: AssignmentClassGroups[];
+};
+type AssignmentGroupsResponse = { ok: true; data: AssignmentGroupsData };
 type AssignmentsResponse = { ok: true; data: AssignmentSummary[] };
 type WorksheetAttemptSummary = {
   id: number;
-  student_id: number;
+  student_id: number | null;
   student_name: string;
   username: string;
   status: "draf" | "terkumpul" | "dinilai";
@@ -109,6 +126,10 @@ type WorksheetAttemptSummary = {
   updated_at: string;
   class_id: number | null;
   class_name: string | null;
+  is_group?: boolean;
+  group_id?: number | null;
+  group_name?: string | null;
+  member_names?: string[];
 };
 type WorksheetAttemptsResponse = { ok: true; data: WorksheetAttemptSummary[] };
 type GradingAttemptSummary = WorksheetAttemptSummary & {
@@ -202,6 +223,9 @@ type WorksheetAttemptDetail = {
     submitted_at: string | null;
     total_score: number | null;
     teacher_comment: string | null;
+    is_group?: boolean;
+    group_name?: string | null;
+    members?: AssignmentGroupMemberView[];
   };
   items: WorksheetAttemptItem[];
 };
@@ -296,6 +320,12 @@ export default function GuruPage() {
   const [assignmentDueAt, setAssignmentDueAt] = useState(() => toDateTimeLocal(new Date(Date.now() + 24 * 60 * 60 * 1000)));
   const [assignmentClassIds, setAssignmentClassIds] = useState<number[]>([]);
   const [assignmentRuasUrl, setAssignmentRuasUrl] = useState("");
+  const [assignmentWorkMode, setAssignmentWorkMode] = useState<"individu" | "kelompok">("individu");
+  const [assignmentGroupSize, setAssignmentGroupSize] = useState("4");
+  const [selectedGroupAssignmentId, setSelectedGroupAssignmentId] = useState<number | null>(null);
+  const [assignmentGroups, setAssignmentGroups] = useState<AssignmentGroupsData | null>(null);
+  const [assignmentGroupsLoading, setAssignmentGroupsLoading] = useState(false);
+  const [groupAddSelection, setGroupAddSelection] = useState<Record<number, number>>({});
   const [editingAssignment, setEditingAssignment] = useState<AssignmentSummary | null>(null);
   // Jepretan keadaan formulir penugasan + pilihan editor (Langkah 1–2) sebelum
   // masuk mode edit penugasan; dipulihkan saat keluar agar mode edit tidak
@@ -308,6 +338,8 @@ export default function GuruPage() {
     opensAt: string;
     dueAt: string;
     ruasUrl: string;
+    workMode: "individu" | "kelompok";
+    groupSize: string;
     classIds: number[];
   } | null>(null);
   const assignmentFormRef = useRef<HTMLDetailsElement | null>(null);
@@ -1851,12 +1883,16 @@ export default function GuruPage() {
           opensAt: new Date(assignmentOpensAt).toISOString(),
           dueAt: new Date(assignmentDueAt).toISOString(),
           ruasQuizUrl: assignmentRuasUrl || undefined,
+          workMode: assignmentWorkMode,
+          groupSize: assignmentWorkMode === "kelompok" ? Number(assignmentGroupSize) || 4 : undefined,
           classIds: assignmentClassIds,
         }),
       });
       setAssignmentTitle("");
       setAssignmentInstructions("");
       setAssignmentRuasUrl("");
+      setAssignmentWorkMode("individu");
+      setAssignmentGroupSize("4");
       setMessage("Penugasan dibuat sebagai draf.");
       await loadModules();
     } catch (error) {
@@ -1873,6 +1909,8 @@ export default function GuruPage() {
       opensAt: assignmentOpensAt,
       dueAt: assignmentDueAt,
       ruasUrl: assignmentRuasUrl,
+      workMode: assignmentWorkMode,
+      groupSize: assignmentGroupSize,
       classIds: assignmentClassIds,
     };
     setEditingAssignment(assignment);
@@ -1880,6 +1918,8 @@ export default function GuruPage() {
     setAssignmentInstructions(assignment.instructions ?? "");
     setSelectedId(assignment.module_id);
     setSelectedWorksheetId(assignment.worksheet_id);
+    setAssignmentWorkMode(assignment.work_mode);
+    setAssignmentGroupSize(String(assignment.group_size ?? 4));
     setAssignmentClassIds(assignment.classes.map((kelas) => kelas.id));
     setAssignmentOpensAt(toDateTimeLocal(new Date(assignment.opens_at)));
     setAssignmentDueAt(toDateTimeLocal(new Date(assignment.due_at)));
@@ -1900,6 +1940,8 @@ export default function GuruPage() {
       setAssignmentOpensAt(snapshot.opensAt);
       setAssignmentDueAt(snapshot.dueAt);
       setAssignmentRuasUrl(snapshot.ruasUrl);
+      setAssignmentWorkMode(snapshot.workMode);
+      setAssignmentGroupSize(snapshot.groupSize);
       setAssignmentClassIds(snapshot.classIds);
     }
     assignmentEditSnapshot.current = null;
@@ -1924,6 +1966,8 @@ export default function GuruPage() {
           opensAt: new Date(assignmentOpensAt).toISOString(),
           dueAt: new Date(assignmentDueAt).toISOString(),
           ruasQuizUrl: assignmentRuasUrl || undefined,
+          workMode: assignmentWorkMode,
+          groupSize: assignmentWorkMode === "kelompok" ? Number(assignmentGroupSize) || 4 : undefined,
           classIds: assignmentClassIds,
         }),
       });
@@ -1944,6 +1988,75 @@ export default function GuruPage() {
       await loadModules();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Status penugasan belum dapat diubah.");
+    }
+  }
+
+  async function loadAssignmentGroups(assignmentId: number) {
+    setAssignmentGroupsLoading(true);
+    try {
+      const response = await apiRequest<AssignmentGroupsResponse>(`/assignments/${assignmentId}/groups`);
+      setAssignmentGroups(response.data);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Kelompok belum dapat dimuat.");
+    } finally {
+      setAssignmentGroupsLoading(false);
+    }
+  }
+
+  function toggleGroupsPanel(assignment: AssignmentSummary) {
+    if (selectedGroupAssignmentId === assignment.id) {
+      setSelectedGroupAssignmentId(null);
+      setAssignmentGroups(null);
+      return;
+    }
+    setSelectedGroupAssignmentId(assignment.id);
+    setAssignmentGroups(null);
+    void loadAssignmentGroups(assignment.id);
+  }
+
+  async function generateAssignmentGroups(assignmentId: number) {
+    setAssignmentGroupsLoading(true);
+    try {
+      const response = await apiRequest<AssignmentGroupsResponse>(`/assignments/${assignmentId}/groups/generate`, { method: "POST" });
+      setAssignmentGroups(response.data);
+      setMessage("Kelompok dibentuk secara acak.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Kelompok belum dapat dibentuk.");
+    } finally {
+      setAssignmentGroupsLoading(false);
+    }
+  }
+
+  async function shuffleAssignmentClassGroups(assignmentId: number, classId: number, className: string) {
+    if (!(await confirmDialog(`Acak ulang kelompok kelas ${className}? Susunan kelompok saat ini akan diganti seluruhnya.`, { confirmLabel: "Acak ulang" }))) return;
+    setAssignmentGroupsLoading(true);
+    try {
+      const response = await apiRequest<AssignmentGroupsResponse>(`/assignments/${assignmentId}/groups/shuffle`, {
+        method: "POST",
+        body: JSON.stringify({ classId }),
+      });
+      setAssignmentGroups(response.data);
+      setMessage(`Kelompok kelas ${className} diacak ulang.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Kelompok belum dapat diacak ulang.");
+    } finally {
+      setAssignmentGroupsLoading(false);
+    }
+  }
+
+  async function addAssignmentGroupMember(assignmentId: number, groupId: number, studentId: number) {
+    setAssignmentGroupsLoading(true);
+    try {
+      const response = await apiRequest<AssignmentGroupsResponse>(`/assignments/${assignmentId}/groups/${groupId}/members`, {
+        method: "POST",
+        body: JSON.stringify({ studentId }),
+      });
+      setAssignmentGroups(response.data);
+      setMessage("Murid ditambahkan ke kelompok.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Murid belum dapat ditambahkan ke kelompok.");
+    } finally {
+      setAssignmentGroupsLoading(false);
     }
   }
 
@@ -2542,6 +2655,18 @@ export default function GuruPage() {
                 {worksheets.map((worksheet) => <option key={worksheet.id} value={worksheet.id}>{worksheet.title}</option>)}
               </select>
             </label>
+            <label style={styles.label}>Mode pengerjaan LKPD
+              <select value={assignmentWorkMode} onChange={(event) => setAssignmentWorkMode(event.target.value as "individu" | "kelompok")} style={styles.input}>
+                <option value="individu">Individu — setiap murid mengerjakan sendiri</option>
+                <option value="kelompok">Kelompok — satu LKPD dikerjakan bersama</option>
+              </select>
+            </label>
+            {assignmentWorkMode === "kelompok" ? (
+              <label style={styles.label}>Anggota per kelompok
+                <input type="number" min={2} max={10} value={assignmentGroupSize} onChange={(event) => setAssignmentGroupSize(event.target.value)} style={styles.input} />
+                <span style={styles.muted}>Kelompok dibentuk otomatis secara acak oleh sistem saat penugasan diterbitkan.</span>
+              </label>
+            ) : null}
             <div style={styles.checkboxList}>
               <span style={styles.label}>Kelas tujuan</span>
               {classes.map((kelas) => <label key={kelas.id} style={styles.checkbox}><input type="checkbox" checked={assignmentClassIds.includes(kelas.id)} onChange={(event) => setAssignmentClassIds((current) => event.target.checked ? [...current, kelas.id] : current.filter((id) => id !== kelas.id))} />{kelas.name} · {kelas.subject}</label>)}
@@ -2549,7 +2674,7 @@ export default function GuruPage() {
             <label style={styles.label}>Dibuka pada<input type="datetime-local" value={assignmentOpensAt} onChange={(event) => setAssignmentOpensAt(event.target.value)} style={styles.input} /></label>
             <label style={styles.label}>Batas pengumpulan<input type="datetime-local" value={assignmentDueAt} onChange={(event) => setAssignmentDueAt(event.target.value)} style={styles.input} /></label>
             <input type="url" value={assignmentRuasUrl} onChange={(event) => setAssignmentRuasUrl(event.target.value)} placeholder="Tautan kuis RUAS (opsional)" style={styles.input} />
-            {editingAssignment?.status === "terbit" ? <p style={styles.message}>Modul, LKPD, dan kelas tujuan terkunci bila sudah ada murid yang mengerjakan.</p> : null}
+            {editingAssignment?.status === "terbit" ? <p style={styles.message}>Modul, LKPD, dan kelas tujuan terkunci bila sudah ada murid yang mengerjakan. Mode pengerjaan dan ukuran kelompok juga terkunci bila sudah ada murid atau kelompok yang mengerjakan.</p> : null}
             <button type="submit" style={styles.primaryButton}>{editingAssignment ? "Simpan perubahan" : "Buat draf penugasan"}</button>
             {editingAssignment ? <button type="button" onClick={exitAssignmentEdit} style={styles.secondaryButton}>Batal</button> : null}
           </form>
@@ -2565,8 +2690,86 @@ export default function GuruPage() {
         ) : null}
         {assignments.length === 0 ? <p style={styles.empty}>Belum ada penugasan.</p> : visibleAssignments.length === 0 ? (
           <p style={styles.empty}>Tidak ada penugasan berstatus {activeAssignmentFilterLabel}.</p>
-        ) : <div className="module-list">{visibleAssignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><div className="resource-row-actions">{assignment.status !== "ditutup" ? <button type="button" onClick={() => startEditAssignment(assignment)} className="row-action-button is-outline"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>Edit</button> : null}<button type="button" onClick={() => void changeAssignmentStatus(assignment)} className={assignment.status === "terbit" ? "row-action-button is-outline" : "row-action-button is-primary"}>{assignment.status === "terbit" ? <><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>Tutup</> : "Terbitkan"}</button>{assignment.status === "terbit" ? <a href={`https://wa.me/?text=${encodeURIComponent(buildWhatsAppShareMessage(assignment, typeof window !== "undefined" ? window.location.origin : ""))}`} target="_blank" rel="noreferrer" className="row-action-button is-whatsapp"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.6L3 21l1.9-5.6A8.5 8.5 0 1 1 21 11.5Z" /></svg>Bagikan WA</a> : null}</div></article>)}</div>}
+        ) : <div className="module-list">{visibleAssignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}{assignment.work_mode === "kelompok" ? <> · <span className="group-mode-badge">👥 Kelompok · {assignment.group_size ?? 4} orang</span></> : null}</span></div><div className="resource-row-actions">{assignment.work_mode === "kelompok" ? <button type="button" onClick={() => toggleGroupsPanel(assignment)} className={`row-action-button is-outline${selectedGroupAssignmentId === assignment.id ? " is-active" : ""}`} aria-pressed={selectedGroupAssignmentId === assignment.id}>Kelompok</button> : null}{assignment.status !== "ditutup" ? <button type="button" onClick={() => startEditAssignment(assignment)} className="row-action-button is-outline"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>Edit</button> : null}<button type="button" onClick={() => void changeAssignmentStatus(assignment)} className={assignment.status === "terbit" ? "row-action-button is-outline" : "row-action-button is-primary"}>{assignment.status === "terbit" ? <><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>Tutup</> : "Terbitkan"}</button>{assignment.status === "terbit" ? <a href={`https://wa.me/?text=${encodeURIComponent(buildWhatsAppShareMessage(assignment, typeof window !== "undefined" ? window.location.origin : ""))}`} target="_blank" rel="noreferrer" className="row-action-button is-whatsapp"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.6L3 21l1.9-5.6A8.5 8.5 0 1 1 21 11.5Z" /></svg>Bagikan WA</a> : null}</div></article>)}</div>}
       </section>
+
+      {selectedGroupAssignmentId ? (
+        <section className="wizard-step-panel" data-active={guruStep === 3} style={styles.panel}>
+          <h2 style={styles.sectionTitle}>Kelompok penugasan</h2>
+          {(() => {
+            const panelAssignment = assignments.find((assignment) => assignment.id === selectedGroupAssignmentId);
+            return panelAssignment ? <p style={styles.muted}>{panelAssignment.title} · {panelAssignment.group_size ?? 4} anggota per kelompok · dibentuk acak oleh sistem</p> : null;
+          })()}
+          {assignmentGroupsLoading && !assignmentGroups ? <p style={styles.muted}>Memuat kelompok...</p> : null}
+          {!assignmentGroupsLoading && assignmentGroups ? (
+            assignmentGroups.classes.length === 0 ? <p style={styles.empty}>Belum ada kelas tujuan yang aktif.</p> : (
+              <div style={{ display: "grid", gap: 20 }}>
+                {assignmentGroups.classes.map((kelas) => (
+                  <div key={kelas.class_id} style={{ display: "grid", gap: 10 }}>
+                    <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+                      <h3 style={{ ...styles.contentListTitle, margin: 0 }}>{kelas.class_name}</h3>
+                      {kelas.groups.length === 0 ? (
+                        <button type="button" disabled={assignmentGroupsLoading} onClick={() => void generateAssignmentGroups(selectedGroupAssignmentId)} style={styles.secondaryButton}>Bentuk kelompok</button>
+                      ) : kelas.shuffle_locked ? (
+                        <span style={styles.muted}>Acak ulang terkunci — sudah ada kelompok yang mulai mengerjakan.</span>
+                      ) : (
+                        <button type="button" disabled={assignmentGroupsLoading} onClick={() => void shuffleAssignmentClassGroups(selectedGroupAssignmentId, kelas.class_id, kelas.class_name)} style={styles.secondaryButton}>Acak ulang</button>
+                      )}
+                    </div>
+                    {kelas.groups.length === 0 ? (
+                      <p style={styles.muted}>Belum ada kelompok untuk kelas ini. Kelompok terbentuk otomatis saat penugasan diterbitkan, atau bentuk sekarang dengan tombol di atas.</p>
+                    ) : (
+                      <div className="module-list">
+                        {kelas.groups.map((group) => (
+                          <article key={group.id} className="resource-row">
+                            <div className="module-row-main">
+                              <strong>👥 {group.name}</strong>
+                              <span>{group.members.length} anggota</span>
+                            </div>
+                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                              {group.members.map((member) => <span key={member.id} className="member-chip">{member.name}</span>)}
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                    {kelas.ungrouped.length > 0 ? (
+                      <div style={{ display: "grid", gap: 8 }}>
+                        <strong>Belum berkelompok ({kelas.ungrouped.length})</strong>
+                        {kelas.ungrouped.map((student) => (
+                          <div key={student.id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                            <span style={{ flex: "1 1 160px" }}>{student.name} <span style={styles.muted}>({student.username})</span></span>
+                            <select
+                              value={groupAddSelection[student.id] ?? (kelas.groups[0]?.id ?? "")}
+                              onChange={(event) => setGroupAddSelection((current) => ({ ...current, [student.id]: Number(event.target.value) }))}
+                              aria-label={`Pilih kelompok untuk ${student.name}`}
+                              style={{ ...styles.input, flex: "0 1 180px" }}
+                            >
+                              {kelas.groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+                            </select>
+                            <button
+                              type="button"
+                              disabled={assignmentGroupsLoading || kelas.groups.length === 0}
+                              onClick={() => {
+                                const targetGroupId = groupAddSelection[student.id] ?? kelas.groups[0]?.id;
+                                if (targetGroupId) void addAssignmentGroupMember(selectedGroupAssignmentId, targetGroupId, student.id);
+                              }}
+                              style={styles.secondaryButton}
+                            >
+                              Tambah
+                            </button>
+                          </div>
+                        ))}
+                        {kelas.groups.length === 0 ? <p style={styles.muted}>Bentuk kelompok terlebih dahulu sebelum menambahkan murid.</p> : null}
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )
+          ) : null}
+        </section>
+      ) : null}
 
       {guruStep === 4 ? (
         <nav className="hasil-tabs" aria-label="Bagian pantau hasil">
@@ -2891,7 +3094,14 @@ export default function GuruPage() {
                   >
                     <strong>{attempt.student_name}</strong>
                     {gradingCombined && attempt.worksheet_title ? <span style={styles.muted}>{attempt.worksheet_title}</span> : null}
-                    <span style={styles.muted}>{attempt.username} · {attempt.status} · {attempt.class_name ?? "Tanpa kelas"}</span>
+                    {attempt.is_group ? (
+                      <>
+                        <span style={styles.muted}>👥 Kelompok · {attempt.status} · {attempt.class_name ?? "Tanpa kelas"}</span>
+                        {attempt.member_names && attempt.member_names.length > 0 ? <span style={styles.muted}>{attempt.member_names.join(", ")}</span> : null}
+                      </>
+                    ) : (
+                      <span style={styles.muted}>{attempt.username} · {attempt.status} · {attempt.class_name ?? "Tanpa kelas"}</span>
+                    )}
                     <span style={styles.muted}>{attempt.total_score === null ? "Belum dinilai" : `Nilai ${attempt.total_score}`}</span>
                   </button>
                 ))}
@@ -2908,7 +3118,11 @@ export default function GuruPage() {
               {attemptDetail ? (
                 <div className="teacher-attempt-review" style={styles.review}>
                   <h3 style={styles.reviewTitle}>{attemptDetail.attempt.student_name}</h3>
-                  <p style={styles.muted}>{attemptDetail.attempt.username} · status {attemptDetail.attempt.status}</p>
+                  {attemptDetail.attempt.is_group ? (
+                    <p style={styles.muted}>👥 Pengumpulan kelompok · status {attemptDetail.attempt.status}{attemptDetail.attempt.members && attemptDetail.attempt.members.length > 0 ? <> · Anggota: {attemptDetail.attempt.members.map((member) => member.name).join(", ")}</> : null}</p>
+                  ) : (
+                    <p style={styles.muted}>{attemptDetail.attempt.username} · status {attemptDetail.attempt.status}</p>
+                  )}
                   {runningTotalDraft ? (
                     <p style={styles.muted}>Total sementara: {formatScoreValue(runningTotalDraft.current)} dari {formatScoreValue(runningTotalDraft.max)}</p>
                   ) : null}

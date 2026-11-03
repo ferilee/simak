@@ -8,6 +8,7 @@ export type WhatsAppShareAssignment = {
   title: string;
   due_at: string;
   ruas_quiz_url: string | null;
+  work_mode?: "individu" | "kelompok";
   classes: WhatsAppShareClass[];
 };
 
@@ -43,6 +44,9 @@ export function buildWhatsAppShareMessage(assignment: WhatsAppShareAssignment, o
       ? String(codedClasses[0]!.join_code)
       : codedClasses.map((kelas) => `${kelas.name} — ${kelas.join_code}`).join(" · ");
     lines.push(`Kode kelas: ${codes}`);
+  }
+  if (assignment.work_mode === "kelompok") {
+    lines.push("👥 Penugasan ini dikerjakan berkelompok — lihat kelompokmu di SIMAK.");
   }
   lines.push(
     "",

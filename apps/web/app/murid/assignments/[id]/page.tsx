@@ -14,6 +14,13 @@ type AssignmentDetail = {
     title: string;
     instructions: string | null;
     ruas_quiz_url: string | null;
+    work_mode?: "individu" | "kelompok";
+    group?: {
+      id: number;
+      name: string;
+      class_name: string;
+      members: { id: number; name: string; username: string }[];
+    } | null;
     opens_at: string;
     due_at: string;
     progress: string;
@@ -105,6 +112,20 @@ export default function AssignmentPage() {
       <h1 style={styles.title}>{data.assignment.title}</h1>
       {data.assignment.instructions ? <p style={styles.instructions}><MathText text={data.assignment.instructions} /></p> : null}
       <p style={styles.meta}>Status: <strong>{submissionStatusLabel(data.assignment.progress)}</strong> · batas {formatDate(data.assignment.due_at)}</p>
+      {data.assignment.work_mode === "kelompok" ? (
+        data.assignment.group ? (
+          <div style={styles.groupCard}>
+            <strong>👥 {data.assignment.group.name} · {data.assignment.group.class_name}</strong>
+            <span>Penugasan ini dikerjakan berkelompok — LKPD dikerjakan bersama dan dikumpulkan atas nama kelompok.</span>
+            <span>Anggota: {data.assignment.group.members.map((member) => member.name).join(", ")}</span>
+          </div>
+        ) : (
+          <div style={styles.groupCard}>
+            <strong>👥 Penugasan berkelompok</strong>
+            <span>Kamu belum masuk kelompok untuk penugasan ini. Hubungi gurumu.</span>
+          </div>
+        )
+      ) : null}
       {message ? <Toast message={message} onDismiss={() => setMessage("")} /> : null}
 
       <nav className="assignment-stepper" aria-label="Urutan penugasan">
@@ -188,6 +209,7 @@ const styles = {
   message: { color: "#175cd3", background: "#eff8ff", padding: 12, borderRadius: 8 },
   error: { color: "#b42318", background: "#fef3f2", padding: 12, borderRadius: 8 },
   panel: { border: "1px solid #eaecf0", borderRadius: 12, padding: 18, marginTop: 20, display: "grid", gap: 12 },
+  groupCard: { display: "grid", gap: 6, background: "#ecfdf3", border: "1px solid #a6f4c5", borderRadius: 10, padding: 14, marginTop: 16, color: "#05603a", lineHeight: 1.55, fontSize: 14 },
   heading: { fontSize: 20, margin: 0 },
   actionLink: { color: "#175cd3", fontWeight: 700, textDecoration: "none" },
   score: { margin: 0, fontWeight: 700 },

@@ -2,17 +2,17 @@ import { Hono } from "hono";
 import { and, asc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
 import { db, schema } from "@simak/db";
-import { exitTicketSchema, worksheetAnswersSchema } from "@simak/shared";
+import { contributionRatingsSchema, exitTicketSchema, worksheetAnswersSchema } from "@simak/shared";
 import { requireRole } from "../middleware/auth";
 import { fetchRuasQuizCompleted, parseRuasQuizUrl } from "../lib/ruas-status";
-import { loadStudentGroup, pickEffectiveAttempt, type AttemptSnapshot } from "../lib/groups";
+import { contributionWindowOpen, loadMemberScoreOverride, loadStudentGroup, pickEffectiveAttempt, type AttemptSnapshot } from "../lib/groups";
 
 // Beranda murid + detail penugasan — halaman paling ringan adalah prioritas.
 export const muridRoutes = new Hono();
 
 muridRoutes.use("*", requireRole("murid"));
 
-const { activityLogs, assignmentClasses, assignments, classes, classMembers, exitTickets, moduleBlocks, modules, users, worksheetAnswers, worksheetAttempts, worksheetItems, worksheets } = schema;
+const { activityLogs, assignmentClasses, assignments, classes, classMembers, exitTickets, groupContributionRatings, moduleBlocks, modules, users, worksheetAnswers, worksheetAttempts, worksheetItems, worksheets } = schema;
 
 type StudentGroupView = NonNullable<Awaited<ReturnType<typeof loadStudentGroup>>>;
 
@@ -168,6 +168,72 @@ async function resolveAttemptContext(studentId: number, worksheetId: number, ass
   return { kind: "ready", attempt: await getOrCreateGroupAttempt(worksheetId, group.id), group };
 }
 
+type ExistingGroupAttemptContext =
+  | { kind: "ready"; attempt: typeof worksheetAttempts.$inferSelect | null; group: StudentGroupView }
+  | { kind: "ungrouped" }
+  | { kind: "error"; status: 400 | 404; message: string };
+
+// Resolusi konteks kelompok TANPA membuat attempt — untuk penilaian
+// kontribusi (Tahap 2), yang hanya bermakna pada attempt kelompok yang
+// sudah ada. Konteks non-kelompok selalu berujung error di sini.
+async function resolveExistingGroupAttempt(studentId: number, worksheetId: number, assignmentIdParam: string | null): Promise<ExistingGroupAttemptContext> {
+  if (!assignmentIdParam) {
+    return { kind: "error", status: 400, message: "Penilaian kontribusi hanya tersedia pada penugasan kelompok." };
+  }
+  const assignmentId = Number(assignmentIdParam);
+  if (!Number.isInteger(assignmentId) || assignmentId <= 0) {
+    return { kind: "error", status: 400, message: "ID penugasan tidak valid." };
+  }
+  const assignment = await accessibleAssignment(studentId, assignmentId);
+  if (!assignment) {
+    return { kind: "error", status: 404, message: "Penugasan belum tersedia untuk kelas Anda." };
+  }
+  if (assignment.worksheetId !== worksheetId) {
+    return { kind: "error", status: 400, message: "Penugasan ini tidak terhubung ke LKPD ini." };
+  }
+  if (assignment.workMode !== "kelompok") {
+    return { kind: "error", status: 400, message: "Penugasan ini bukan penugasan kelompok." };
+  }
+  const group = await loadStudentGroup(assignmentId, studentId);
+  if (!group) return { kind: "ungrouped" };
+  const [attempt] = await db
+    .select()
+    .from(worksheetAttempts)
+    .where(and(eq(worksheetAttempts.worksheetId, worksheetId), eq(worksheetAttempts.groupId, group.id)))
+    .limit(1);
+  return { kind: "ready", attempt: attempt ?? null, group };
+}
+
+// Keadaan formulir penilaian kontribusi untuk murid yang meminta: hanya
+// nilai yang IA berikan ke tiap teman yang terkirim — penilaian orang lain
+// dan rata-rata tidak pernah keluar lewat endpoint murid.
+async function contributionRatingsState(studentId: number, context: { attempt: typeof worksheetAttempts.$inferSelect | null; group: StudentGroupView }) {
+  const myRatings = context.attempt
+    ? await db
+        .select({ rateeStudentId: groupContributionRatings.rateeStudentId, score: groupContributionRatings.score })
+        .from(groupContributionRatings)
+        .where(and(
+          eq(groupContributionRatings.attemptId, context.attempt.id),
+          eq(groupContributionRatings.raterStudentId, studentId),
+        ))
+    : [];
+  const myScoreByRatee = new Map(myRatings.map((rating) => [rating.rateeStudentId, rating.score]));
+  return {
+    attempt_id: context.attempt?.id ?? null,
+    status: context.attempt?.status ?? null,
+    can_rate: context.attempt ? contributionWindowOpen(context.attempt.status) : false,
+    group: { id: context.group.id, name: context.group.name },
+    teammates: context.group.members
+      .filter((member) => member.id !== studentId)
+      .map((member) => ({
+        id: member.id,
+        name: member.name,
+        username: member.username,
+        my_score: myScoreByRatee.get(member.id) ?? null,
+      })),
+  };
+}
+
 // Kunci perbandingan mapel: teks penuh (trim + huruf kecil) plus isi kurung
 // bila ada, mis. "Koding dan Kecerdasan Artifisial (KKA)" →
 // {"koding dan kecerdasan artifisial (kka)", "kka"}.
@@ -320,16 +386,26 @@ muridRoutes.get("/assignments/:id", async (c) => {
   // attempt individu dan attempt kelompok).
   let group: StudentGroupView | null = null;
   let attempt = individualAttempt;
+  // Tahap 2: bila attempt efektifnya adalah attempt kelompok, sertakan
+  // nilai kelompok + penyesuaian nilai milik murid ini (bila ada).
+  let groupScoreFields: { group_total_score: number | null; member_score: number | null } | null = null;
   if (assignment.workMode === "kelompok") {
     group = await loadStudentGroup(assignmentId, user.userId);
     if (group && assignment.worksheetId !== null) {
       const [groupAttempt] = await db
-        .select({ status: worksheetAttempts.status, totalScore: worksheetAttempts.totalScore, submittedAt: worksheetAttempts.submittedAt })
+        .select({ id: worksheetAttempts.id, status: worksheetAttempts.status, totalScore: worksheetAttempts.totalScore, submittedAt: worksheetAttempts.submittedAt })
         .from(worksheetAttempts)
         .where(and(eq(worksheetAttempts.worksheetId, assignment.worksheetId), eq(worksheetAttempts.groupId, group.id)))
         .limit(1);
       const effective = pickEffectiveAttempt(individualAttempt, groupAttempt);
       attempt = effective;
+      if (groupAttempt && effective === groupAttempt) {
+        const override = await loadMemberScoreOverride(groupAttempt.id, user.userId);
+        groupScoreFields = {
+          group_total_score: groupAttempt.totalScore === null ? null : Number(groupAttempt.totalScore),
+          member_score: override === null ? null : Number(override),
+        };
+      }
     }
   }
   const [exitTicket] = await db.select({ id: exitTickets.id }).from(exitTickets).where(and(eq(exitTickets.assignmentId, assignmentId), eq(exitTickets.studentId, user.userId))).limit(1);
@@ -350,7 +426,7 @@ muridRoutes.get("/assignments/:id", async (c) => {
     data: {
       assignment: serializeAssignmentForStudent(assignment, assignmentProgress(assignment, attempt), assignment.workMode === "kelompok" ? group : undefined),
       worksheet: worksheet ? { id: worksheet.id, title: worksheet.title } : null,
-      attempt: attempt ? { status: attempt.status, total_score: attempt.totalScore === null ? null : Number(attempt.totalScore), submitted_at: attempt.submittedAt } : null,
+      attempt: attempt ? { status: attempt.status, total_score: attempt.totalScore === null ? null : Number(attempt.totalScore), submitted_at: attempt.submittedAt, ...(groupScoreFields ?? {}) } : null,
       exit_ticket_submitted: Boolean(exitTicket),
       ruas_quiz_completed: ruasQuizCompleted,
     },
@@ -534,6 +610,11 @@ muridRoutes.get("/worksheets/:id/attempt", async (c) => {
         .limit(1);
       if (editor) lastEditedBy = editor;
     }
+    // Tahap 2: penyesuaian nilai individu milik murid yang meminta saja
+    // yang ikut terkirim (penyesuaian anggota lain tidak pernah bocor).
+    const memberScoreOverride = attempt.status === "dinilai"
+      ? await loadMemberScoreOverride(attempt.id, user.userId)
+      : null;
     groupExtras = {
       group: context.group,
       last_edited_by: lastEditedBy,
@@ -542,6 +623,7 @@ muridRoutes.get("/worksheets/:id/attempt", async (c) => {
         ? {
             total_score: attempt.totalScore === null ? null : Number(attempt.totalScore),
             teacher_comment: attempt.teacherComment,
+            member_score: memberScoreOverride === null ? null : Number(memberScoreOverride),
           }
         : {}),
     };
@@ -618,6 +700,56 @@ muridRoutes.post("/worksheets/:id/submit", async (c) => {
   if (attempt.status !== "draf") return c.json({ ok: false, message: "LKPD sudah dikumpulkan." }, 409);
   await db.update(worksheetAttempts).set({ status: "terkumpul", submittedAt: new Date() }).where(eq(worksheetAttempts.id, attempt.id));
   return c.json({ ok: true, data: { status: "terkumpul" } });
+});
+
+// Penilaian kontribusi antarteman (Tahap 2): jendela isian hanya saat
+// attempt kelompok berstatus "terkumpul". GET mengembalikan nilai yang
+// diberikan murid yang meminta saja; PUT adalah upsert per teman.
+muridRoutes.get("/worksheets/:id/contribution-ratings", async (c) => {
+  const user = c.get("user")!;
+  const worksheetId = Number(c.req.param("id"));
+  if (!Number.isInteger(worksheetId) || worksheetId <= 0) return c.json({ ok: false, message: "ID LKPD tidak valid." }, 400);
+  if (!(await accessibleWorksheet(user.userId, worksheetId))) return c.json({ ok: false, message: "LKPD belum tersedia untuk kelas Anda." }, 404);
+  const context = await resolveExistingGroupAttempt(user.userId, worksheetId, c.req.query("assignmentId") ?? null);
+  if (context.kind === "error") return c.json({ ok: false, message: context.message }, context.status);
+  if (context.kind === "ungrouped") return c.json({ ok: false, message: "Kamu belum masuk kelompok untuk penugasan ini. Hubungi gurumu." }, 403);
+  return c.json({ ok: true, data: await contributionRatingsState(user.userId, context) });
+});
+
+muridRoutes.put("/worksheets/:id/contribution-ratings", zValidator("json", contributionRatingsSchema), async (c) => {
+  const user = c.get("user")!;
+  const worksheetId = Number(c.req.param("id"));
+  if (!Number.isInteger(worksheetId) || worksheetId <= 0) return c.json({ ok: false, message: "ID LKPD tidak valid." }, 400);
+  if (!(await accessibleWorksheet(user.userId, worksheetId))) return c.json({ ok: false, message: "LKPD belum tersedia untuk kelas Anda." }, 404);
+  const context = await resolveExistingGroupAttempt(user.userId, worksheetId, c.req.query("assignmentId") ?? null);
+  if (context.kind === "error") return c.json({ ok: false, message: context.message }, context.status);
+  if (context.kind === "ungrouped") return c.json({ ok: false, message: "Kamu belum masuk kelompok untuk penugasan ini. Hubungi gurumu." }, 403);
+  const attempt = context.attempt;
+  if (!attempt || attempt.status === "draf") {
+    return c.json({ ok: false, message: "Penilaian kontribusi hanya dapat diisi setelah kelompok mengumpulkan LKPD." }, 403);
+  }
+  if (attempt.status === "dinilai") {
+    return c.json({ ok: false, message: "Penilaian kontribusi sudah ditutup karena LKPD ini sudah dinilai guru." }, 403);
+  }
+  const input = c.req.valid("json");
+  const memberIds = new Set(context.group.members.map((member) => member.id));
+  const ratingsByRatee = new Map<number, number>();
+  for (const rating of input.ratings) {
+    if (rating.rateeStudentId === user.userId) {
+      return c.json({ ok: false, message: "Kamu tidak dapat menilai kontribusimu sendiri." }, 400);
+    }
+    if (!memberIds.has(rating.rateeStudentId)) {
+      return c.json({ ok: false, message: "Ada penilaian untuk murid yang bukan anggota kelompokmu." }, 400);
+    }
+    ratingsByRatee.set(rating.rateeStudentId, rating.score);
+  }
+  for (const [rateeStudentId, score] of ratingsByRatee) {
+    await db
+      .insert(groupContributionRatings)
+      .values({ attemptId: attempt.id, raterStudentId: user.userId, rateeStudentId, score })
+      .onDuplicateKeyUpdate({ set: { score } });
+  }
+  return c.json({ ok: true, data: await contributionRatingsState(user.userId, context) });
 });
 
 muridRoutes.get("/assignments/:id", (c) => c.json({ ok: true, data: null }));

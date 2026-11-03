@@ -3,7 +3,7 @@ import { users } from "./users";
 import { classes, classMembers } from "./classes";
 import { modules, moduleBlocks } from "./modules";
 import { worksheets, worksheetItems } from "./worksheets";
-import { worksheetAttempts, worksheetAnswers } from "./worksheet-attempts";
+import { worksheetAttempts, worksheetAnswers, groupContributionRatings, worksheetAttemptMemberScores } from "./worksheet-attempts";
 import { assignments, assignmentClasses } from "./assignments";
 import { assignmentGroups, assignmentGroupMembers } from "./groups";
 import { submissions, submissionAnswers } from "./submissions";
@@ -60,6 +60,19 @@ export const worksheetAttemptsRelations = relations(worksheetAttempts, ({ one, m
   student: one(users, { fields: [worksheetAttempts.studentId], references: [users.id] }),
   group: one(assignmentGroups, { fields: [worksheetAttempts.groupId], references: [assignmentGroups.id] }),
   answers: many(worksheetAnswers),
+  contributionRatings: many(groupContributionRatings),
+  memberScores: many(worksheetAttemptMemberScores),
+}));
+
+export const groupContributionRatingsRelations = relations(groupContributionRatings, ({ one }) => ({
+  attempt: one(worksheetAttempts, { fields: [groupContributionRatings.attemptId], references: [worksheetAttempts.id] }),
+  rater: one(users, { fields: [groupContributionRatings.raterStudentId], references: [users.id] }),
+  ratee: one(users, { fields: [groupContributionRatings.rateeStudentId], references: [users.id] }),
+}));
+
+export const worksheetAttemptMemberScoresRelations = relations(worksheetAttemptMemberScores, ({ one }) => ({
+  attempt: one(worksheetAttempts, { fields: [worksheetAttemptMemberScores.attemptId], references: [worksheetAttempts.id] }),
+  student: one(users, { fields: [worksheetAttemptMemberScores.studentId], references: [users.id] }),
 }));
 
 export const worksheetAnswersRelations = relations(worksheetAnswers, ({ one }) => ({

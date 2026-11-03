@@ -12,6 +12,7 @@ import {
 } from "@simak/shared";
 import { requireRole } from "../middleware/auth";
 import { loadTeacherClassMemberships, resolveStudentClass } from "../lib/student-class";
+import { loadAttemptMemberScores, loadContributionSummary, resolveEffectiveMemberScore } from "../lib/groups";
 
 // LKPD + butir blok interaktifnya (Tahap 2).
 // Opsi butir divalidasi worksheetItemOptionsSchema dari @simak/shared.
@@ -245,8 +246,11 @@ worksheetRoutes.get("/:id/attempts/:attemptId", requireRole("guru"), async (c) =
     .limit(1);
   if (!attempt) return c.json({ ok: false, message: "Pengumpulan tidak ditemukan." }, 404);
 
-  // Attempt kelompok: sertakan daftar anggotanya untuk panel penilaian.
-  const groupMembers = attempt.groupId !== null
+  // Attempt kelompok: sertakan daftar anggotanya untuk panel penilaian,
+  // diperkaya (Tahap 2) dengan ringkasan kontribusi antarteman — informasi
+  // saja, tidak pernah diterapkan otomatis ke nilai — serta penyesuaian
+  // nilai individu dan nilai efektif tiap anggota.
+  const groupMemberRows = attempt.groupId !== null
     ? await db
         .select({ id: users.id, name: users.name, username: users.username })
         .from(assignmentGroupMembers)
@@ -254,6 +258,30 @@ worksheetRoutes.get("/:id/attempts/:attemptId", requireRole("guru"), async (c) =
         .where(eq(assignmentGroupMembers.groupId, attempt.groupId))
         .orderBy(asc(users.name))
     : [];
+  let groupMembers: (typeof groupMemberRows[number] & {
+    contribution_average: number | null;
+    contribution_raters: number;
+    member_score: number | null;
+    effective_score: number | null;
+  })[] = [];
+  if (attempt.groupId !== null) {
+    const memberIds = groupMemberRows.map((member) => member.id);
+    const [contributionSummary, memberScores] = await Promise.all([
+      loadContributionSummary(attemptId, memberIds),
+      loadAttemptMemberScores(attemptId),
+    ]);
+    groupMembers = groupMemberRows.map((member) => {
+      const contribution = contributionSummary.get(member.id) ?? { average: null, raters: 0 };
+      const override = memberScores.get(member.id) ?? null;
+      return {
+        ...member,
+        contribution_average: contribution.average,
+        contribution_raters: contribution.raters,
+        member_score: override === null ? null : Number(override),
+        effective_score: resolveEffectiveMemberScore(override, attempt.totalScore),
+      };
+    });
+  }
 
   const [items, answers] = await Promise.all([
     db.select().from(worksheetItems).where(eq(worksheetItems.worksheetId, worksheetId)).orderBy(asc(worksheetItems.sortOrder)),

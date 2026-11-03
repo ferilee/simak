@@ -276,4 +276,29 @@ export const addAssignmentGroupMemberSchema = z.object({
   studentId: z.number().int().positive(),
 });
 
+// Tahap 2 — salin susunan kelompok dari penugasan kelompok lain (guru yang
+// sama) untuk satu kelas tujuan.
+export const copyAssignmentGroupsSchema = z.object({
+  sourceAssignmentId: z.number().int().positive(),
+  classId: z.number().int().positive(),
+});
+
+// Tahap 2 — penilaian kontribusi antarteman oleh murid pada attempt
+// kelompoknya: satu kiriman boleh memuat beberapa nilai sekaligus
+// (upsert per pasangan penilai–dinilai). Skala 1–5.
+export const contributionRatingsSchema = z.object({
+  ratings: z.array(z.object({
+    rateeStudentId: z.number().int().positive(),
+    score: z.number().int().min(1).max(5),
+  })).min(1).max(100),
+});
+
+// Tahap 2 — penyesuaian nilai individu oleh guru pada attempt kelompok:
+// score null berarti hapus penyesuaian (kembali mewarisi nilai kelompok).
+// Batas atas terhadap total poin LKPD ditegakkan di route.
+export const memberScoreSchema = z.object({
+  studentId: z.number().int().positive(),
+  score: z.number().min(0).max(100000).nullable(),
+});
+
 export const moduleBlockTypeSchema = z.enum(MODULE_BLOCK_TYPES);

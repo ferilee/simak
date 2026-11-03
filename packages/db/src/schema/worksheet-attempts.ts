@@ -1,4 +1,4 @@
-import { bigint, datetime, decimal, index, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
+import { bigint, datetime, decimal, index, mysqlEnum, mysqlTable, text, timestamp, tinyint, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 import { users } from "./users";
 import { worksheets, worksheetItems } from "./worksheets";
 import { assignmentGroups } from "./groups";
@@ -55,4 +55,60 @@ export const worksheetAnswers = mysqlTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
   },
   (t) => [uniqueIndex("worksheet_answers_pair_unique").on(t.attemptId, t.worksheetItemId)],
+);
+
+// ---------------------------------------------------------------------------
+// LKPD Kelompok — Tahap 2: penilaian kontribusi antarteman + penyesuaian
+// nilai individu pada attempt kelompok.
+// ---------------------------------------------------------------------------
+
+// Nilai kontribusi yang diberikan seorang anggota kepada anggota lain pada
+// satu attempt kelompok (skala 1–5, ditegakkan zod + route). Hanya diisi
+// pada jendela attempt "terkumpul" (sesudah mengumpulkan, sebelum dinilai)
+// dan tidak pernah ditampilkan ke murid — hanya agregatnya yang dilihat
+// guru di panel penilaian.
+export const groupContributionRatings = mysqlTable(
+  "group_contribution_ratings",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    attemptId: bigint("attempt_id", { mode: "number" })
+      .notNull()
+      .references(() => worksheetAttempts.id, { onDelete: "cascade" }),
+    raterStudentId: bigint("rater_student_id", { mode: "number" })
+      .notNull()
+      .references(() => users.id),
+    rateeStudentId: bigint("ratee_student_id", { mode: "number" })
+      .notNull()
+      .references(() => users.id),
+    score: tinyint("score").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (t) => [
+    uniqueIndex("group_contribution_ratings_trio_unique").on(t.attemptId, t.raterStudentId, t.rateeStudentId),
+    index("group_contribution_ratings_attempt_idx").on(t.attemptId),
+  ],
+);
+
+// Nilai akhir khusus satu anggota pada attempt kelompok (penyesuaian guru).
+// Tanpa baris di tabel ini, nilai efektif anggota = nilai total kelompok;
+// dengan baris, nilai baris inilah yang tampil ke murid itu dan ke laporan.
+export const worksheetAttemptMemberScores = mysqlTable(
+  "worksheet_attempt_member_scores",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    attemptId: bigint("attempt_id", { mode: "number" })
+      .notNull()
+      .references(() => worksheetAttempts.id, { onDelete: "cascade" }),
+    studentId: bigint("student_id", { mode: "number" })
+      .notNull()
+      .references(() => users.id),
+    score: decimal("score", { precision: 8, scale: 2 }).notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (t) => [
+    uniqueIndex("worksheet_attempt_member_scores_pair_unique").on(t.attemptId, t.studentId),
+    index("worksheet_attempt_member_scores_attempt_idx").on(t.attemptId),
+  ],
 );

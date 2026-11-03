@@ -1,16 +1,18 @@
 import { Hono } from "hono";
 import { and, desc, eq, inArray } from "drizzle-orm";
+import { zValidator } from "@hono/zod-validator";
 import { db, schema } from "@simak/db";
+import { memberScoreSchema } from "@simak/shared";
 import { requireRole } from "../middleware/auth";
 import { loadTeacherClassMemberships, resolveStudentClass } from "../lib/student-class";
-import { mapGroupAttemptsToStudents, pickEffectiveAttempt } from "../lib/groups";
+import { loadAttemptMemberScores, mapGroupAttemptsToStudents, pickEffectiveAttempt, resolveEffectiveMemberScore } from "../lib/groups";
 
 // Ringkasan pengumpulan penugasan untuk panel guru.
 export const gradingRoutes = new Hono();
 
 gradingRoutes.use("*", requireRole("guru"));
 
-const { assignmentClasses, assignmentGroupMembers, assignmentGroups, assignments, classMembers, classes, exitTickets, modules, users, worksheetAttempts, worksheets } = schema;
+const { assignmentClasses, assignmentGroupMembers, assignmentGroups, assignments, classMembers, classes, exitTickets, modules, users, worksheetAttemptMemberScores, worksheetAttempts, worksheetItems, worksheets } = schema;
 
 function serializeScore(score: string | null) {
   return score === null ? null : Number(score);
@@ -166,16 +168,34 @@ gradingRoutes.get("/assignments/:id", async (c) => {
     const groupIds = groupRows.map((row) => row.groupId);
     const groupAttempts = groupIds.length
       ? await db
-          .select({ groupId: worksheetAttempts.groupId, status: worksheetAttempts.status, submittedAt: worksheetAttempts.submittedAt, totalScore: worksheetAttempts.totalScore })
+          .select({ id: worksheetAttempts.id, groupId: worksheetAttempts.groupId, status: worksheetAttempts.status, submittedAt: worksheetAttempts.submittedAt, totalScore: worksheetAttempts.totalScore })
           .from(worksheetAttempts)
           .where(and(eq(worksheetAttempts.worksheetId, assignment.worksheetId), inArray(worksheetAttempts.groupId, groupIds)))
       : [];
     const attemptsByGroup = new Map(groupAttempts.flatMap((attempt) => (attempt.groupId === null ? [] : [[attempt.groupId, attempt] as const])));
     const groupAttemptByStudent = mapGroupAttemptsToStudents(memberRows, attemptsByGroup);
+    // Tahap 2: penyesuaian nilai individu (bila attempt efektifnya adalah
+    // attempt kelompok) menggantikan nilai kelompok yang diwarisi.
+    const groupIdByStudent = new Map(memberRows.map((row) => [row.studentId, row.groupId]));
+    const overrideRows = groupAttempts.length
+      ? await db
+          .select({ attemptId: worksheetAttemptMemberScores.attemptId, studentId: worksheetAttemptMemberScores.studentId, score: worksheetAttemptMemberScores.score })
+          .from(worksheetAttemptMemberScores)
+          .where(inArray(worksheetAttemptMemberScores.attemptId, groupAttempts.map((attempt) => attempt.id)))
+      : [];
+    const overrideByAttemptStudent = new Map(overrideRows.map((row) => [`${row.attemptId}:${row.studentId}`, row.score]));
     for (const student of uniqueStudents) {
-      const effective = pickEffectiveAttempt(attemptByStudent.get(student.id), groupAttemptByStudent.get(student.id));
+      const groupSnapshot = groupAttemptByStudent.get(student.id);
+      const effective = pickEffectiveAttempt(attemptByStudent.get(student.id), groupSnapshot);
       if (effective) {
-        attemptByStudent.set(student.id, { studentId: student.id, ...effective });
+        let totalScore = effective.totalScore;
+        if (groupSnapshot && effective === groupSnapshot) {
+          const groupAttemptId = attemptsByGroup.get(groupIdByStudent.get(student.id)!)?.id;
+          const override = groupAttemptId === undefined ? null : (overrideByAttemptStudent.get(`${groupAttemptId}:${student.id}`) ?? null);
+          const effectiveScore = resolveEffectiveMemberScore(override, effective.totalScore);
+          totalScore = effectiveScore === null ? null : effectiveScore.toFixed(2);
+        }
+        attemptByStudent.set(student.id, { studentId: student.id, ...effective, totalScore });
       }
     }
   }
@@ -221,6 +241,73 @@ gradingRoutes.get("/assignments/:id", async (c) => {
             : null,
         };
       }),
+    },
+  });
+});
+
+// Tahap 2 — penyesuaian nilai individu pada attempt kelompok. Hanya untuk
+// attempt kelompok milik LKPD guru yang meminta; score null menghapus
+// penyesuaian (anggota kembali mewarisi nilai total kelompok). Batas atas
+// nilai adalah jumlah poin semua butir LKPD.
+gradingRoutes.put("/attempts/:attemptId/member-scores", zValidator("json", memberScoreSchema), async (c) => {
+  const user = c.get("user")!;
+  const attemptId = Number(c.req.param("attemptId"));
+  if (!Number.isInteger(attemptId) || attemptId <= 0) return c.json({ ok: false, message: "ID pengumpulan tidak valid." }, 400);
+
+  const [attempt] = await db
+    .select({
+      id: worksheetAttempts.id,
+      worksheetId: worksheetAttempts.worksheetId,
+      groupId: worksheetAttempts.groupId,
+      totalScore: worksheetAttempts.totalScore,
+    })
+    .from(worksheetAttempts)
+    .innerJoin(worksheets, eq(worksheets.id, worksheetAttempts.worksheetId))
+    .where(and(eq(worksheetAttempts.id, attemptId), eq(worksheets.teacherId, user.userId)))
+    .limit(1);
+  if (!attempt) return c.json({ ok: false, message: "Pengumpulan tidak ditemukan." }, 404);
+  if (attempt.groupId === null) {
+    return c.json({ ok: false, message: "Penyesuaian nilai hanya berlaku untuk pengumpulan kelompok." }, 400);
+  }
+  const { studentId, score } = c.req.valid("json");
+  const [membership] = await db
+    .select({ id: assignmentGroupMembers.id })
+    .from(assignmentGroupMembers)
+    .where(and(eq(assignmentGroupMembers.groupId, attempt.groupId), eq(assignmentGroupMembers.studentId, studentId)))
+    .limit(1);
+  if (!membership) {
+    return c.json({ ok: false, message: "Murid ini bukan anggota kelompok pengumpulan ini." }, 400);
+  }
+  if (score !== null) {
+    const items = await db
+      .select({ points: worksheetItems.points })
+      .from(worksheetItems)
+      .where(eq(worksheetItems.worksheetId, attempt.worksheetId));
+    const maxScore = items.reduce((sum, item) => sum + item.points, 0);
+    if (score > maxScore) {
+      return c.json({ ok: false, message: `Nilai harus berada antara 0 dan ${maxScore} (total poin LKPD ini).` }, 400);
+    }
+    await db
+      .insert(worksheetAttemptMemberScores)
+      .values({ attemptId, studentId, score: score.toFixed(2) })
+      .onDuplicateKeyUpdate({ set: { score: score.toFixed(2) } });
+  } else {
+    await db
+      .delete(worksheetAttemptMemberScores)
+      .where(and(
+        eq(worksheetAttemptMemberScores.attemptId, attemptId),
+        eq(worksheetAttemptMemberScores.studentId, studentId),
+      ));
+  }
+  const memberScores = await loadAttemptMemberScores(attemptId);
+  const override = memberScores.get(studentId) ?? null;
+  return c.json({
+    ok: true,
+    data: {
+      attempt_id: attemptId,
+      student_id: studentId,
+      member_score: override === null ? null : Number(override),
+      effective_score: resolveEffectiveMemberScore(override, attempt.totalScore),
     },
   });
 });

@@ -2,14 +2,14 @@ import { Hono } from "hono";
 import { and, eq, gte, inArray, lt } from "drizzle-orm";
 import { db, schema } from "@simak/db";
 import { requireRole } from "../middleware/auth";
-import { mapGroupAttemptsToStudents, pickEffectiveAttempt } from "../lib/groups";
+import { mapGroupAttemptsToStudents, pickEffectiveAttempt, resolveEffectiveMemberScore } from "../lib/groups";
 
 // Rekap bukti = agregasi activity_logs + worksheet_attempts + exit_tickets.
 // Format laporan: JSON (default), CSV yang dapat dibuka di Excel, atau PDF.
 export const reportRoutes = new Hono();
 reportRoutes.use("*", requireRole("guru"));
 
-const { activityLogs, assignmentClasses, assignmentGroupMembers, assignmentGroups, assignments, classes, classMembers, exitTickets, ruasScores, users, worksheetAttempts } = schema;
+const { activityLogs, assignmentClasses, assignmentGroupMembers, assignmentGroups, assignments, classes, classMembers, exitTickets, ruasScores, users, worksheetAttemptMemberScores, worksheetAttempts } = schema;
 type TargetStudent = { id: number; name: string; username: string; nis: string | null; classId: number; className: string };
 type ReportRow = {
   student_id: number; name: string; username: string; class_name: string; hadir: boolean; opened_at: Date | null;
@@ -70,16 +70,34 @@ async function loadSessionReportData(userId: number, assignmentId: number): Prom
     const groupIds = groupRows.map((row) => row.id);
     const groupAttempts = groupIds.length
       ? await db
-          .select({ groupId: worksheetAttempts.groupId, status: worksheetAttempts.status, submittedAt: worksheetAttempts.submittedAt, totalScore: worksheetAttempts.totalScore })
+          .select({ id: worksheetAttempts.id, groupId: worksheetAttempts.groupId, status: worksheetAttempts.status, submittedAt: worksheetAttempts.submittedAt, totalScore: worksheetAttempts.totalScore })
           .from(worksheetAttempts)
           .where(and(eq(worksheetAttempts.worksheetId, assignment.worksheetId), inArray(worksheetAttempts.groupId, groupIds)))
       : [];
     const attemptsByGroup = new Map(groupAttempts.flatMap((attempt) => (attempt.groupId === null ? [] : [[attempt.groupId, attempt] as const])));
     const groupAttemptByStudent = mapGroupAttemptsToStudents(memberRows, attemptsByGroup);
+    // Tahap 2: penyesuaian nilai individu menggantikan warisan nilai
+    // kelompok pada nilai laporan (status dan waktu kumpul tidak berubah).
+    const groupIdByStudent = new Map(memberRows.map((row) => [row.studentId, row.groupId]));
+    const overrideRows = groupAttempts.length
+      ? await db
+          .select({ attemptId: worksheetAttemptMemberScores.attemptId, studentId: worksheetAttemptMemberScores.studentId, score: worksheetAttemptMemberScores.score })
+          .from(worksheetAttemptMemberScores)
+          .where(inArray(worksheetAttemptMemberScores.attemptId, groupAttempts.map((attempt) => attempt.id)))
+      : [];
+    const overrideByAttemptStudent = new Map(overrideRows.map((row) => [`${row.attemptId}:${row.studentId}`, row.score]));
     for (const studentId of studentIds) {
-      const effective = pickEffectiveAttempt(attemptsByStudent.get(studentId), groupAttemptByStudent.get(studentId));
+      const groupSnapshot = groupAttemptByStudent.get(studentId);
+      const effective = pickEffectiveAttempt(attemptsByStudent.get(studentId), groupSnapshot);
       if (effective) {
-        attemptsByStudent.set(studentId, { studentId, status: effective.status, submittedAt: effective.submittedAt, totalScore: effective.totalScore });
+        let totalScore = effective.totalScore;
+        if (groupSnapshot && effective === groupSnapshot) {
+          const groupAttemptId = attemptsByGroup.get(groupIdByStudent.get(studentId)!)?.id;
+          const override = groupAttemptId === undefined ? null : (overrideByAttemptStudent.get(`${groupAttemptId}:${studentId}`) ?? null);
+          const effectiveScore = resolveEffectiveMemberScore(override, effective.totalScore);
+          totalScore = effectiveScore === null ? null : effectiveScore.toFixed(2);
+        }
+        attemptsByStudent.set(studentId, { studentId, status: effective.status, submittedAt: effective.submittedAt, totalScore });
       }
     }
   }

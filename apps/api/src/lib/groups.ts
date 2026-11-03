@@ -9,7 +9,7 @@ import { db, schema } from "@simak/db";
 // kelompok ke murid untuk laporan) dari operasi basis data, supaya aturan
 // mainnya terkunci oleh tes unit (groups.test.mjs).
 
-const { assignmentClasses, assignmentGroupMembers, assignmentGroups, classMembers, classes, users, worksheetAnswers, worksheetAttempts } = schema;
+const { assignmentClasses, assignmentGroupMembers, assignmentGroups, assignments, classMembers, classes, groupContributionRatings, users, worksheetAnswers, worksheetAttemptMemberScores, worksheetAttempts } = schema;
 
 export const DEFAULT_GROUP_SIZE = 4;
 
@@ -97,6 +97,99 @@ export function pickEffectiveAttempt(
   if (!individual) return group;
   if (!group) return individual;
   return attemptStatusRank(group.status) >= attemptStatusRank(individual.status) ? group : individual;
+}
+
+// ---------------------------------------------------------------------------
+// Tahap 2 — logika murni: salin kelompok, kontribusi, nilai anggota.
+// ---------------------------------------------------------------------------
+
+export type SourceGroupComposition = { name: string; memberIds: number[] };
+
+/**
+ * Susunan salinan kelompok: nama + keanggotaan dari penugasan sumber
+ * dipotong dengan daftar murid kelas tujuan SAAT INI — murid yang sudah
+ * keluar dari kelas dibuang, urutan dan nama kelompok dipertahankan apa
+ * adanya (tidak dinomori ulang), dan kelompok yang kehilangan seluruh
+ * anggotanya tidak ikut disalin. Murid kelas yang belum ada di sumber
+ * tidak muncul di hasil (mereka tetap belum berkelompok).
+ */
+export function planCopiedGroups(
+  sourceGroups: readonly SourceGroupComposition[],
+  rosterIds: ReadonlySet<number> | readonly number[],
+): SourceGroupComposition[] {
+  const roster = rosterIds instanceof Set ? rosterIds : new Set(rosterIds);
+  const copied: SourceGroupComposition[] = [];
+  for (const group of sourceGroups) {
+    const memberIds = group.memberIds.filter((studentId) => roster.has(studentId));
+    if (memberIds.length > 0) copied.push({ name: group.name, memberIds });
+  }
+  return copied;
+}
+
+export type ContributionSummary = { average: number | null; raters: number };
+
+/**
+ * Ringkasan kontribusi per anggota dari baris-baris penilaian mentah:
+ * rata-rata dibulatkan ke 1 desimal dan jumlah penilai yang berbeda.
+ * Anggota tanpa penilaian mana pun mendapat { average: null, raters: 0 }.
+ * Penilaian dari/untuk non-anggota diabaikan (route sudah memvalidasi,
+ * ini pagar kedua agar agregat tidak pernah tercemar).
+ */
+export function summarizeContributionRatings(
+  ratings: readonly { raterStudentId: number; rateeStudentId: number; score: number }[],
+  memberIds: readonly number[],
+): Map<number, ContributionSummary> {
+  const memberSet = new Set(memberIds);
+  const totals = new Map<number, { sum: number; raters: Set<number> }>();
+  for (const rating of ratings) {
+    if (!memberSet.has(rating.rateeStudentId) || !memberSet.has(rating.raterStudentId)) continue;
+    if (rating.raterStudentId === rating.rateeStudentId) continue;
+    const entry = totals.get(rating.rateeStudentId) ?? { sum: 0, raters: new Set<number>() };
+    if (!entry.raters.has(rating.raterStudentId)) {
+      entry.raters.add(rating.raterStudentId);
+      entry.sum += rating.score;
+    }
+    totals.set(rating.rateeStudentId, entry);
+  }
+  const summary = new Map<number, ContributionSummary>();
+  for (const memberId of memberIds) {
+    const entry = totals.get(memberId);
+    summary.set(memberId, entry && entry.raters.size > 0
+      ? { average: Math.round((entry.sum / entry.raters.size) * 10) / 10, raters: entry.raters.size }
+      : { average: null, raters: 0 });
+  }
+  return summary;
+}
+
+/**
+ * Nilai efektif seorang anggota attempt kelompok: penyesuaian guru
+ * (override) menang atas nilai total kelompok; tanpa override, nilai
+ * kelompok yang berlaku. Masukan berupa string decimal dari basis data.
+ */
+export function resolveEffectiveMemberScore(
+  overrideScore: string | null | undefined,
+  groupTotalScore: string | null | undefined,
+): number | null {
+  if (overrideScore !== null && overrideScore !== undefined) return Number(overrideScore);
+  if (groupTotalScore !== null && groupTotalScore !== undefined) return Number(groupTotalScore);
+  return null;
+}
+
+/**
+ * Jendela penilaian kontribusi: hanya terbuka saat attempt kelompok sudah
+ * terkumpul tetapi belum dinilai guru.
+ */
+export function contributionWindowOpen(status: "draf" | "terkumpul" | "dinilai"): boolean {
+  return status === "terkumpul";
+}
+
+/**
+ * Anggota boleh dikeluarkan dari kelompoknya selama attempt kelompok itu
+ * belum ada (null) atau masih berstatus draf; attempt terkumpul/dinilai
+ * mengunci susunan anggota.
+ */
+export function groupMemberRemovalAllowed(attemptStatus: "draf" | "terkumpul" | "dinilai" | null): boolean {
+  return attemptStatus === null || attemptStatus === "draf";
 }
 
 // ---------------------------------------------------------------------------
@@ -219,18 +312,61 @@ export async function regenerateGroupsForClass(assignment: AssignmentRow, classI
 }
 
 export type AssignmentGroupMemberView = { id: number; name: string; username: string };
-export type AssignmentGroupView = { id: number; name: string; members: AssignmentGroupMemberView[] };
+export type AssignmentGroupView = {
+  id: number;
+  name: string;
+  members: AssignmentGroupMemberView[];
+  // Status attempt kelompok ini pada LKPD penugasan (null = belum ada
+  // attempt) — UI memakainya untuk menonaktifkan pengeluaran anggota.
+  attempt_status: "draf" | "terkumpul" | "dinilai" | null;
+};
+export type AssignmentGroupCopySource = { assignment_id: number; title: string };
 export type AssignmentClassGroupsView = {
   class_id: number;
   class_name: string;
   shuffle_locked: boolean;
   groups: AssignmentGroupView[];
   ungrouped: AssignmentGroupMemberView[];
+  // Penugasan kelompok lain milik guru yang sama yang sudah mempunyai
+  // kelompok untuk kelas ini — kandidat sumber salinan (Tahap 2).
+  copy_sources: AssignmentGroupCopySource[];
 };
+
+/** Kandidat sumber salinan per kelas: penugasan kelompok LAIN milik guru yang sama yang sudah mempunyai kelompok untuk kelas itu. */
+export async function loadCopySources(
+  teacherId: number,
+  excludeAssignmentId: number,
+  classIds: readonly number[],
+): Promise<Map<number, AssignmentGroupCopySource[]>> {
+  const byClass = new Map<number, AssignmentGroupCopySource[]>();
+  if (classIds.length === 0) return byClass;
+  const rows = await db
+    .select({ classId: assignmentGroups.classId, assignmentId: assignments.id, title: assignments.title })
+    .from(assignmentGroups)
+    .innerJoin(assignments, eq(assignments.id, assignmentGroups.assignmentId))
+    .where(and(
+      eq(assignments.teacherId, teacherId),
+      eq(assignments.workMode, "kelompok"),
+      inArray(assignmentGroups.classId, [...classIds]),
+    ))
+    .orderBy(assignments.id);
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (row.assignmentId === excludeAssignmentId) continue;
+    const key = `${row.classId}:${row.assignmentId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const list = byClass.get(row.classId) ?? [];
+    list.push({ assignment_id: row.assignmentId, title: row.title });
+    byClass.set(row.classId, list);
+  }
+  return byClass;
+}
 
 /** Data lengkap panel Kelompok guru: per kelas tujuan (termasuk arsip? tidak — hanya yang aktif, sama seperti targetClasses). */
 export async function loadAssignmentGroupsView(assignment: AssignmentRow): Promise<AssignmentClassGroupsView[]> {
   const kelasList = await targetClasses(assignment.id);
+  const copySources = await loadCopySources(assignment.teacherId, assignment.id, kelasList.map((kelas) => kelas.id));
   const views: AssignmentClassGroupsView[] = [];
   for (const kelas of kelasList) {
     const [groupRows, classMemberRows] = await Promise.all([
@@ -262,15 +398,148 @@ export async function loadAssignmentGroupsView(assignment: AssignmentRow): Promi
       membersByGroup.set(row.groupId, list);
       groupedStudentIds.add(row.id);
     }
+    // Status attempt per kelompok pada LKPD penugasan (untuk kunci
+    // pengeluaran anggota di UI) — satu kueri per kelas.
+    const attemptStatusByGroup = new Map<number, "draf" | "terkumpul" | "dinilai">();
+    if (assignment.worksheetId !== null && groupRows.length > 0) {
+      const attemptRows = await db
+        .select({ groupId: worksheetAttempts.groupId, status: worksheetAttempts.status })
+        .from(worksheetAttempts)
+        .where(and(
+          eq(worksheetAttempts.worksheetId, assignment.worksheetId),
+          inArray(worksheetAttempts.groupId, groupRows.map((row) => row.id)),
+        ));
+      for (const row of attemptRows) {
+        if (row.groupId !== null) attemptStatusByGroup.set(row.groupId, row.status);
+      }
+    }
     views.push({
       class_id: kelas.id,
       class_name: kelas.name,
       shuffle_locked: await classShuffleLocked(assignment, kelas.id),
-      groups: groupRows.map((row) => ({ id: row.id, name: row.name, members: membersByGroup.get(row.id) ?? [] })),
+      groups: groupRows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        members: membersByGroup.get(row.id) ?? [],
+        attempt_status: attemptStatusByGroup.get(row.id) ?? null,
+      })),
       ungrouped: classMemberRows.filter((row) => !groupedStudentIds.has(row.id)),
+      copy_sources: copySources.get(kelas.id) ?? [],
     });
   }
   return views;
+}
+
+/**
+ * Salin susunan kelompok satu kelas dari penugasan sumber ke penugasan
+ * tujuan, dalam satu transaksi: kelompok tujuan yang ada untuk kelas itu
+ * dihapus lebih dulu (pemanggil wajib memastikan kelas tidak terkunci),
+ * lalu susunan sumber yang sudah dipotong dengan daftar kelas saat ini
+ * (planCopiedGroups) ditulis sebagai kelompok baru. Mengembalikan jumlah
+ * kelompok dan anggota yang tersalin.
+ */
+export async function copyGroupsForClass(
+  target: AssignmentRow,
+  source: AssignmentRow,
+  classId: number,
+): Promise<{ groups: number; members: number }> {
+  const [sourceGroupRows, rosterRows] = await Promise.all([
+    db
+      .select({ id: assignmentGroups.id, name: assignmentGroups.name })
+      .from(assignmentGroups)
+      .where(and(eq(assignmentGroups.assignmentId, source.id), eq(assignmentGroups.classId, classId)))
+      .orderBy(assignmentGroups.id),
+    db
+      .select({ studentId: classMembers.studentId })
+      .from(classMembers)
+      .where(eq(classMembers.classId, classId)),
+  ]);
+  const sourceMembers = sourceGroupRows.length
+    ? await db
+        .select({ groupId: assignmentGroupMembers.groupId, studentId: assignmentGroupMembers.studentId })
+        .from(assignmentGroupMembers)
+        .where(inArray(assignmentGroupMembers.groupId, sourceGroupRows.map((row) => row.id)))
+        .orderBy(assignmentGroupMembers.studentId)
+    : [];
+  const membersByGroup = new Map<number, number[]>();
+  for (const row of sourceMembers) {
+    const list = membersByGroup.get(row.groupId) ?? [];
+    list.push(row.studentId);
+    membersByGroup.set(row.groupId, list);
+  }
+  const planned = planCopiedGroups(
+    sourceGroupRows.map((row) => ({ name: row.name, memberIds: membersByGroup.get(row.id) ?? [] })),
+    rosterRows.map((row) => row.studentId),
+  );
+  let memberCount = 0;
+  await db.transaction(async (tx) => {
+    await tx.delete(assignmentGroups).where(
+      and(eq(assignmentGroups.assignmentId, target.id), eq(assignmentGroups.classId, classId)),
+    );
+    for (const group of planned) {
+      const [created] = await tx
+        .insert(assignmentGroups)
+        .values({ assignmentId: target.id, classId, name: group.name })
+        .$returningId();
+      await tx.insert(assignmentGroupMembers).values(
+        group.memberIds.map((studentId) => ({ groupId: created!.id, assignmentId: target.id, studentId })),
+      );
+      memberCount += group.memberIds.length;
+    }
+  });
+  return { groups: planned.length, members: memberCount };
+}
+
+/** Status attempt satu kelompok pada LKPD penugasan (null bila belum ada attempt atau penugasan tanpa LKPD). */
+export async function loadGroupAttemptStatus(
+  assignment: AssignmentRow,
+  groupId: number,
+): Promise<"draf" | "terkumpul" | "dinilai" | null> {
+  if (assignment.worksheetId === null) return null;
+  const [attempt] = await db
+    .select({ status: worksheetAttempts.status })
+    .from(worksheetAttempts)
+    .where(and(eq(worksheetAttempts.worksheetId, assignment.worksheetId), eq(worksheetAttempts.groupId, groupId)))
+    .limit(1);
+  return attempt?.status ?? null;
+}
+
+/** Peta penyesuaian nilai per anggota untuk satu attempt: studentId → skor decimal (string). */
+export async function loadAttemptMemberScores(attemptId: number): Promise<Map<number, string>> {
+  const rows = await db
+    .select({ studentId: worksheetAttemptMemberScores.studentId, score: worksheetAttemptMemberScores.score })
+    .from(worksheetAttemptMemberScores)
+    .where(eq(worksheetAttemptMemberScores.attemptId, attemptId));
+  return new Map(rows.map((row) => [row.studentId, row.score]));
+}
+
+/** Penyesuaian nilai satu murid pada satu attempt (string decimal), atau null bila tidak ada. */
+export async function loadMemberScoreOverride(attemptId: number, studentId: number): Promise<string | null> {
+  const [row] = await db
+    .select({ score: worksheetAttemptMemberScores.score })
+    .from(worksheetAttemptMemberScores)
+    .where(and(
+      eq(worksheetAttemptMemberScores.attemptId, attemptId),
+      eq(worksheetAttemptMemberScores.studentId, studentId),
+    ))
+    .limit(1);
+  return row?.score ?? null;
+}
+
+/** Ringkasan kontribusi per anggota untuk tampilan guru pada satu attempt kelompok. */
+export async function loadContributionSummary(
+  attemptId: number,
+  memberIds: readonly number[],
+): Promise<Map<number, ContributionSummary>> {
+  const rows = await db
+    .select({
+      raterStudentId: groupContributionRatings.raterStudentId,
+      rateeStudentId: groupContributionRatings.rateeStudentId,
+      score: groupContributionRatings.score,
+    })
+    .from(groupContributionRatings)
+    .where(eq(groupContributionRatings.attemptId, attemptId));
+  return summarizeContributionRatings(rows, memberIds);
 }
 
 /** Kelompok seorang murid pada satu penugasan (+ anggota dan nama kelas), atau null bila belum berkelompok. */

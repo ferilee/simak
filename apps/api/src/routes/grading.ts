@@ -3,13 +3,14 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@simak/db";
 import { requireRole } from "../middleware/auth";
 import { loadTeacherClassMemberships, resolveStudentClass } from "../lib/student-class";
+import { mapGroupAttemptsToStudents, pickEffectiveAttempt } from "../lib/groups";
 
 // Ringkasan pengumpulan penugasan untuk panel guru.
 export const gradingRoutes = new Hono();
 
 gradingRoutes.use("*", requireRole("guru"));
 
-const { assignmentClasses, assignments, classMembers, classes, exitTickets, modules, users, worksheetAttempts, worksheets } = schema;
+const { assignmentClasses, assignmentGroupMembers, assignmentGroups, assignments, classMembers, classes, exitTickets, modules, users, worksheetAttempts, worksheets } = schema;
 
 function serializeScore(score: string | null) {
   return score === null ? null : Number(score);
@@ -20,6 +21,9 @@ function serializeScore(score: string | null) {
 // daftar per-LKPD di routes/worksheets.ts, ditambah identitas LKPD asal
 // setiap attempt agar rincian penilaian bisa dibuka dari daftar gabungan,
 // dan kelas murid (lib/student-class) untuk saringan kelas di panel.
+// Attempt kelompok (student_id NULL) ikut tampil sebagai SATU unit
+// penilaian: student_name diisi nama kelompok, kelasnya adalah kelas
+// kelompok itu sendiri, dan daftar nama anggota disertakan.
 gradingRoutes.get("/attempts", async (c) => {
   const user = c.get("user")!;
 
@@ -33,6 +37,10 @@ gradingRoutes.get("/attempts", async (c) => {
         studentId: worksheetAttempts.studentId,
         studentName: users.name,
         username: users.username,
+        groupId: worksheetAttempts.groupId,
+        groupName: assignmentGroups.name,
+        groupClassId: assignmentGroups.classId,
+        groupClassName: classes.name,
         status: worksheetAttempts.status,
         submittedAt: worksheetAttempts.submittedAt,
         totalScore: worksheetAttempts.totalScore,
@@ -41,16 +49,54 @@ gradingRoutes.get("/attempts", async (c) => {
       .from(worksheetAttempts)
       .innerJoin(worksheets, eq(worksheets.id, worksheetAttempts.worksheetId))
       .leftJoin(modules, eq(modules.id, worksheets.moduleId))
-      .innerJoin(users, eq(users.id, worksheetAttempts.studentId))
+      .leftJoin(users, eq(users.id, worksheetAttempts.studentId))
+      .leftJoin(assignmentGroups, eq(assignmentGroups.id, worksheetAttempts.groupId))
+      .leftJoin(classes, eq(classes.id, assignmentGroups.classId))
       .where(eq(worksheets.teacherId, user.userId))
       .orderBy(desc(worksheetAttempts.updatedAt)),
     loadTeacherClassMemberships(user.userId),
   ]);
 
+  const groupIds = [...new Set(rows.flatMap((row) => (row.groupId === null ? [] : [row.groupId])))];
+  const memberRows = groupIds.length
+    ? await db
+        .select({ groupId: assignmentGroupMembers.groupId, name: users.name })
+        .from(assignmentGroupMembers)
+        .innerJoin(users, eq(users.id, assignmentGroupMembers.studentId))
+        .where(inArray(assignmentGroupMembers.groupId, groupIds))
+        .orderBy(users.name)
+    : [];
+  const memberNamesByGroup = new Map<number, string[]>();
+  for (const row of memberRows) {
+    const list = memberNamesByGroup.get(row.groupId) ?? [];
+    list.push(row.name);
+    memberNamesByGroup.set(row.groupId, list);
+  }
+
   return c.json({
     ok: true,
     data: rows.map((row) => {
-      const studentClass = resolveStudentClass(membershipsByStudent.get(row.studentId) ?? [], row.moduleSubject);
+      if (row.groupId !== null) {
+        return {
+          id: row.id,
+          worksheet_id: row.worksheetId,
+          worksheet_title: row.worksheetTitle,
+          student_id: null,
+          student_name: row.groupName ?? "Kelompok",
+          username: "",
+          status: row.status,
+          submitted_at: row.submittedAt,
+          total_score: serializeScore(row.totalScore),
+          updated_at: row.updatedAt,
+          class_id: row.groupClassId,
+          class_name: row.groupClassName,
+          is_group: true,
+          group_id: row.groupId,
+          group_name: row.groupName,
+          member_names: memberNamesByGroup.get(row.groupId) ?? [],
+        };
+      }
+      const studentClass = resolveStudentClass(membershipsByStudent.get(row.studentId!) ?? [], row.moduleSubject);
       return {
         id: row.id,
         worksheet_id: row.worksheetId,
@@ -64,6 +110,10 @@ gradingRoutes.get("/attempts", async (c) => {
         updated_at: row.updatedAt,
         class_id: studentClass?.id ?? null,
         class_name: studentClass?.name ?? null,
+        is_group: false,
+        group_id: null,
+        group_name: null,
+        member_names: [],
       };
     }),
   });
@@ -99,6 +149,36 @@ gradingRoutes.get("/assignments/:id", async (c) => {
         .from(worksheetAttempts)
         .where(and(eq(worksheetAttempts.worksheetId, assignment.worksheetId), inArray(worksheetAttempts.studentId, uniqueStudents.map((student) => student.id))));
   const attemptByStudent = new Map(attempts.map((attempt) => [attempt.studentId, attempt]));
+  // Penugasan kelompok: status per murid mengikuti attempt efektif —
+  // attempt bersama kelompoknya diperhitungkan persis seperti pada rekap
+  // sesi (routes/reports.ts), agar kedua tampilan tidak bertentangan.
+  if (assignment.workMode === "kelompok" && assignment.worksheetId !== null && uniqueStudents.length > 0) {
+    const [groupRows, memberRows] = await Promise.all([
+      db
+        .select({ groupId: assignmentGroups.id })
+        .from(assignmentGroups)
+        .where(eq(assignmentGroups.assignmentId, assignmentId)),
+      db
+        .select({ studentId: assignmentGroupMembers.studentId, groupId: assignmentGroupMembers.groupId })
+        .from(assignmentGroupMembers)
+        .where(eq(assignmentGroupMembers.assignmentId, assignmentId)),
+    ]);
+    const groupIds = groupRows.map((row) => row.groupId);
+    const groupAttempts = groupIds.length
+      ? await db
+          .select({ groupId: worksheetAttempts.groupId, status: worksheetAttempts.status, submittedAt: worksheetAttempts.submittedAt, totalScore: worksheetAttempts.totalScore })
+          .from(worksheetAttempts)
+          .where(and(eq(worksheetAttempts.worksheetId, assignment.worksheetId), inArray(worksheetAttempts.groupId, groupIds)))
+      : [];
+    const attemptsByGroup = new Map(groupAttempts.flatMap((attempt) => (attempt.groupId === null ? [] : [[attempt.groupId, attempt] as const])));
+    const groupAttemptByStudent = mapGroupAttemptsToStudents(memberRows, attemptsByGroup);
+    for (const student of uniqueStudents) {
+      const effective = pickEffectiveAttempt(attemptByStudent.get(student.id), groupAttemptByStudent.get(student.id));
+      if (effective) {
+        attemptByStudent.set(student.id, { studentId: student.id, ...effective });
+      }
+    }
+  }
   const exitTicketRows = uniqueStudents.length
     ? await db
         .select({

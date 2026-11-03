@@ -2,13 +2,20 @@ import { Hono } from "hono";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
 import { db, schema } from "@simak/db";
-import { createAssignmentSchema, updateAssignmentSchema } from "@simak/shared";
+import { addAssignmentGroupMemberSchema, createAssignmentSchema, shuffleAssignmentGroupsSchema, updateAssignmentSchema } from "@simak/shared";
 import { requireRole } from "../middleware/auth";
+import {
+  assignmentHasGroupWork,
+  classShuffleLocked,
+  ensureGroupsForAssignment,
+  loadAssignmentGroupsView,
+  regenerateGroupsForClass,
+} from "../lib/groups";
 
 // Penugasan ke kelas: jadwal buka/tutup dan tautan kuis RUAS.
 export const assignmentRoutes = new Hono();
 
-const { assignmentClasses, assignments, classMembers, classes, exitTickets, modules, worksheetAttempts, worksheets } = schema;
+const { assignmentClasses, assignmentGroupMembers, assignmentGroups, assignments, classMembers, classes, exitTickets, modules, users, worksheetAttempts, worksheets } = schema;
 
 function serializeAssignment(
   assignment: typeof assignments.$inferSelect,
@@ -21,6 +28,8 @@ function serializeAssignment(
     title: assignment.title,
     instructions: assignment.instructions,
     ruas_quiz_url: assignment.ruasQuizUrl,
+    work_mode: assignment.workMode,
+    group_size: assignment.groupSize,
     opens_at: assignment.opensAt,
     due_at: assignment.dueAt,
     status: assignment.status,
@@ -163,6 +172,8 @@ assignmentRoutes.post("/", zValidator("json", createAssignmentSchema), async (c)
       title: input.title,
       instructions: input.instructions,
       ruasQuizUrl: input.ruasQuizUrl,
+      workMode: input.workMode,
+      groupSize: input.workMode === "kelompok" ? (input.groupSize ?? 4) : (input.groupSize ?? null),
       opensAt: input.opensAt,
       dueAt: input.dueAt,
     }).$returningId();
@@ -186,9 +197,24 @@ assignmentRoutes.patch("/:id", zValidator("json", updateAssignmentSchema), async
   // field status, karena UI membuka kembali penugasan ditutup lewat tombol
   // "Terbitkan" yang mengirim body { status } saja.
   if (current.status === "ditutup") {
-    const contentKeys = ["moduleId", "worksheetId", "title", "instructions", "ruasQuizUrl", "opensAt", "dueAt", "classIds"] as const;
+    const contentKeys = ["moduleId", "worksheetId", "title", "instructions", "ruasQuizUrl", "workMode", "groupSize", "opensAt", "dueAt", "classIds"] as const;
     if (contentKeys.some((key) => input[key] !== undefined)) {
       return c.json({ ok: false, message: "Penugasan yang sudah ditutup tidak dapat diubah." }, 409);
+    }
+  }
+  // Pagar mode pengerjaan — pada penugasan terbit, mode pengerjaan dan
+  // ukuran kelompok terkunci begitu ada aktivitas murid: predikat yang
+  // dipakai adalah assignmentHasStudentActivity yang sama dengan pagar
+  // modul/LKPD/kelas di bawah (attempt individu murid sasaran atau exit
+  // ticket) ATAU assignmentHasGroupWork (attempt kelompok yang sudah
+  // mempunyai jawaban atau berstatus bukan draf). Mengganti mode di tengah
+  // jalan akan mengacaukan pasangan attempt–penugasan yang menjadi dasar
+  // pengumpulan dan rekap.
+  const workModeChanged = input.workMode !== undefined && input.workMode !== current.workMode;
+  const groupSizeChanged = input.groupSize !== undefined && input.groupSize !== current.groupSize;
+  if (current.status === "terbit" && (workModeChanged || groupSizeChanged)) {
+    if ((await assignmentHasStudentActivity(current)) || (await assignmentHasGroupWork(current))) {
+      return c.json({ ok: false, message: "Mode pengerjaan dan ukuran kelompok tidak dapat diubah karena sudah ada murid yang mengerjakan penugasan ini." }, 409);
     }
   }
   // Pagar status — pada penugasan terbit yang sudah dikerjakan murid, modul,
@@ -230,5 +256,144 @@ assignmentRoutes.patch("/:id", zValidator("json", updateAssignmentSchema), async
   });
 
   const [updated] = await db.select().from(assignments).where(eq(assignments.id, assignmentId)).limit(1);
+  // Kelompok acak otomatis: penugasan kelompok yang berstatus terbit selalu
+  // dipastikan mempunyai kelompok di semua kelas tujuannya (transisi ke
+  // terbit, kelas tujuan yang baru ditambahkan, maupun kelompok yang belum
+  // sempat terbentuk). ensureGroupsForAssignment bersifat idempoten.
+  if (updated!.workMode === "kelompok" && updated!.status === "terbit") {
+    await ensureGroupsForAssignment(updated!);
+  } else if (groupSizeChanged && updated!.workMode === "kelompok") {
+    // Ukuran berubah saat masih draf dan kelompok sudah dibentuk lebih dulu
+    // lewat panel Kelompok: bentuk ulang kelas yang belum terkunci agar
+    // ukurannya mengikuti pengaturan baru.
+    const linkedClasses = await getLinkedClasses(assignmentId);
+    for (const kelas of linkedClasses) {
+      const [existing] = await db
+        .select({ id: assignmentGroups.id })
+        .from(assignmentGroups)
+        .where(and(eq(assignmentGroups.assignmentId, assignmentId), eq(assignmentGroups.classId, kelas.id)))
+        .limit(1);
+      if (existing && !(await classShuffleLocked(updated!, kelas.id))) {
+        await regenerateGroupsForClass(updated!, kelas.id);
+      }
+    }
+  }
   return c.json({ ok: true, data: serializeAssignment(updated!, await getLinkedClasses(assignmentId)) });
+});
+
+// ---------------------------------------------------------------------------
+// Kelompok penugasan (mode "kelompok") — panel guru.
+// ---------------------------------------------------------------------------
+
+assignmentRoutes.get("/:id/groups", async (c) => {
+  const user = c.get("user")!;
+  const assignmentId = Number(c.req.param("id"));
+  if (!Number.isInteger(assignmentId) || assignmentId <= 0) return c.json({ ok: false, message: "ID penugasan tidak valid." }, 400);
+  const assignment = await ownedAssignment(user.userId, assignmentId);
+  if (!assignment) return c.json({ ok: false, message: "Penugasan tidak ditemukan." }, 404);
+  return c.json({
+    ok: true,
+    data: {
+      assignment_id: assignment.id,
+      work_mode: assignment.workMode,
+      group_size: assignment.groupSize,
+      classes: await loadAssignmentGroupsView(assignment),
+    },
+  });
+});
+
+assignmentRoutes.post("/:id/groups/generate", async (c) => {
+  const user = c.get("user")!;
+  const assignmentId = Number(c.req.param("id"));
+  if (!Number.isInteger(assignmentId) || assignmentId <= 0) return c.json({ ok: false, message: "ID penugasan tidak valid." }, 400);
+  const assignment = await ownedAssignment(user.userId, assignmentId);
+  if (!assignment) return c.json({ ok: false, message: "Penugasan tidak ditemukan." }, 404);
+  if (assignment.workMode !== "kelompok") {
+    return c.json({ ok: false, message: "Penugasan ini bukan penugasan kelompok." }, 400);
+  }
+  await ensureGroupsForAssignment(assignment);
+  return c.json({
+    ok: true,
+    data: {
+      assignment_id: assignment.id,
+      work_mode: assignment.workMode,
+      group_size: assignment.groupSize,
+      classes: await loadAssignmentGroupsView(assignment),
+    },
+  });
+});
+
+assignmentRoutes.post("/:id/groups/shuffle", zValidator("json", shuffleAssignmentGroupsSchema), async (c) => {
+  const user = c.get("user")!;
+  const assignmentId = Number(c.req.param("id"));
+  if (!Number.isInteger(assignmentId) || assignmentId <= 0) return c.json({ ok: false, message: "ID penugasan tidak valid." }, 400);
+  const assignment = await ownedAssignment(user.userId, assignmentId);
+  if (!assignment) return c.json({ ok: false, message: "Penugasan tidak ditemukan." }, 404);
+  if (assignment.workMode !== "kelompok") {
+    return c.json({ ok: false, message: "Penugasan ini bukan penugasan kelompok." }, 400);
+  }
+  const { classId } = c.req.valid("json");
+  const linkedClasses = await getLinkedClasses(assignmentId);
+  if (!linkedClasses.some((kelas) => kelas.id === classId)) {
+    return c.json({ ok: false, message: "Kelas ini bukan kelas tujuan penugasan." }, 400);
+  }
+  if (await classShuffleLocked(assignment, classId)) {
+    return c.json({ ok: false, message: "Kelompok kelas ini tidak dapat diacak ulang karena sudah ada kelompok yang mulai mengerjakan." }, 409);
+  }
+  await regenerateGroupsForClass(assignment, classId);
+  return c.json({
+    ok: true,
+    data: {
+      assignment_id: assignment.id,
+      work_mode: assignment.workMode,
+      group_size: assignment.groupSize,
+      classes: await loadAssignmentGroupsView(assignment),
+    },
+  });
+});
+
+assignmentRoutes.post("/:id/groups/:groupId/members", zValidator("json", addAssignmentGroupMemberSchema), async (c) => {
+  const user = c.get("user")!;
+  const assignmentId = Number(c.req.param("id"));
+  const groupId = Number(c.req.param("groupId"));
+  if (![assignmentId, groupId].every((value) => Number.isInteger(value) && value > 0)) {
+    return c.json({ ok: false, message: "ID penugasan atau kelompok tidak valid." }, 400);
+  }
+  const assignment = await ownedAssignment(user.userId, assignmentId);
+  if (!assignment) return c.json({ ok: false, message: "Penugasan tidak ditemukan." }, 404);
+  const [group] = await db
+    .select({ id: assignmentGroups.id, classId: assignmentGroups.classId })
+    .from(assignmentGroups)
+    .where(and(eq(assignmentGroups.id, groupId), eq(assignmentGroups.assignmentId, assignmentId)))
+    .limit(1);
+  if (!group) return c.json({ ok: false, message: "Kelompok tidak ditemukan pada penugasan ini." }, 404);
+  const { studentId } = c.req.valid("json");
+  const [membership] = await db
+    .select({ id: classMembers.id })
+    .from(classMembers)
+    .where(and(eq(classMembers.classId, group.classId), eq(classMembers.studentId, studentId)))
+    .limit(1);
+  if (!membership) {
+    return c.json({ ok: false, message: "Murid ini bukan anggota kelas kelompok tersebut." }, 400);
+  }
+  const [alreadyGrouped] = await db
+    .select({ id: assignmentGroupMembers.id })
+    .from(assignmentGroupMembers)
+    .where(and(eq(assignmentGroupMembers.assignmentId, assignmentId), eq(assignmentGroupMembers.studentId, studentId)))
+    .limit(1);
+  if (alreadyGrouped) {
+    return c.json({ ok: false, message: "Murid ini sudah tergabung dalam kelompok lain pada penugasan ini." }, 409);
+  }
+  const [student] = await db.select({ id: users.id }).from(users).where(eq(users.id, studentId)).limit(1);
+  if (!student) return c.json({ ok: false, message: "Murid tidak ditemukan." }, 404);
+  await db.insert(assignmentGroupMembers).values({ groupId, assignmentId, studentId });
+  return c.json({
+    ok: true,
+    data: {
+      assignment_id: assignment.id,
+      work_mode: assignment.workMode,
+      group_size: assignment.groupSize,
+      classes: await loadAssignmentGroupsView(assignment),
+    },
+  });
 });

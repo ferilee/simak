@@ -5,13 +5,16 @@ import { db, schema } from "@simak/db";
 import { exitTicketSchema, worksheetAnswersSchema } from "@simak/shared";
 import { requireRole } from "../middleware/auth";
 import { fetchRuasQuizCompleted, parseRuasQuizUrl } from "../lib/ruas-status";
+import { loadStudentGroup, pickEffectiveAttempt, type AttemptSnapshot } from "../lib/groups";
 
 // Beranda murid + detail penugasan — halaman paling ringan adalah prioritas.
 export const muridRoutes = new Hono();
 
 muridRoutes.use("*", requireRole("murid"));
 
-const { activityLogs, assignmentClasses, assignments, classes, classMembers, exitTickets, moduleBlocks, modules, worksheetAnswers, worksheetAttempts, worksheetItems, worksheets } = schema;
+const { activityLogs, assignmentClasses, assignments, classes, classMembers, exitTickets, moduleBlocks, modules, users, worksheetAnswers, worksheetAttempts, worksheetItems, worksheets } = schema;
+
+type StudentGroupView = NonNullable<Awaited<ReturnType<typeof loadStudentGroup>>>;
 
 async function accessibleAssignment(studentId: number, assignmentId: number) {
   const [assignment] = await db
@@ -23,6 +26,7 @@ async function accessibleAssignment(studentId: number, assignmentId: number) {
       title: assignments.title,
       instructions: assignments.instructions,
       ruasQuizUrl: assignments.ruasQuizUrl,
+      workMode: assignments.workMode,
       opensAt: assignments.opensAt,
       dueAt: assignments.dueAt,
       status: assignments.status,
@@ -52,8 +56,9 @@ function assignmentProgress(assignment: { opensAt: Date; dueAt: Date }, attempt?
 }
 
 function serializeAssignmentForStudent(
-  assignment: { id: number; moduleId: number | null; worksheetId: number | null; title: string; instructions: string | null; ruasQuizUrl: string | null; opensAt: Date; dueAt: Date; status: "draf" | "terbit" | "ditutup" },
+  assignment: { id: number; moduleId: number | null; worksheetId: number | null; title: string; instructions: string | null; ruasQuizUrl: string | null; workMode?: "individu" | "kelompok"; opensAt: Date; dueAt: Date; status: "draf" | "terbit" | "ditutup" },
   progress: string,
+  group?: StudentGroupView | null,
 ) {
   return {
     id: assignment.id,
@@ -62,10 +67,14 @@ function serializeAssignmentForStudent(
     title: assignment.title,
     instructions: assignment.instructions,
     ruas_quiz_url: assignment.ruasQuizUrl,
+    work_mode: assignment.workMode ?? "individu",
     opens_at: assignment.opensAt,
     due_at: assignment.dueAt,
     status: assignment.status,
     progress,
+    // Kelompok murid yang meminta (mode kelompok saja) — kelompok lain
+    // pada penugasan yang sama tidak pernah ikut terkirim.
+    ...(group !== undefined ? { group } : {}),
   };
 }
 
@@ -111,6 +120,52 @@ async function getOrCreateAttempt(studentId: number, worksheetId: number) {
   const [created] = await db.insert(worksheetAttempts).values({ studentId, worksheetId }).$returningId();
   const [attempt] = await db.select().from(worksheetAttempts).where(eq(worksheetAttempts.id, created!.id)).limit(1);
   return attempt!;
+}
+
+async function getOrCreateGroupAttempt(worksheetId: number, groupId: number) {
+  const [existing] = await db
+    .select()
+    .from(worksheetAttempts)
+    .where(and(eq(worksheetAttempts.worksheetId, worksheetId), eq(worksheetAttempts.groupId, groupId)))
+    .limit(1);
+  if (existing) return existing;
+  const [created] = await db.insert(worksheetAttempts).values({ worksheetId, groupId }).$returningId();
+  const [attempt] = await db.select().from(worksheetAttempts).where(eq(worksheetAttempts.id, created!.id)).limit(1);
+  return attempt!;
+}
+
+type AttemptContext =
+  | { kind: "ready"; attempt: typeof worksheetAttempts.$inferSelect; group: StudentGroupView | null }
+  | { kind: "ungrouped" }
+  | { kind: "error"; status: 400 | 404; message: string };
+
+// Resolusi attempt untuk endpoint LKPD murid. Tanpa konteks penugasan —
+// atau penugasannya individu — perilakunya persis seperti sebelumnya:
+// attempt individu murid itu sendiri. Dengan konteks penugasan kelompok,
+// attempt yang dipakai adalah attempt BERSAMA kelompok murid tersebut;
+// murid yang belum masuk kelompok mana pun pada penugasan itu mendapat
+// keadaan "ungrouped" dan tidak dibuatkan attempt apa pun.
+async function resolveAttemptContext(studentId: number, worksheetId: number, assignmentIdParam: string | null): Promise<AttemptContext> {
+  if (!assignmentIdParam) {
+    return { kind: "ready", attempt: await getOrCreateAttempt(studentId, worksheetId), group: null };
+  }
+  const assignmentId = Number(assignmentIdParam);
+  if (!Number.isInteger(assignmentId) || assignmentId <= 0) {
+    return { kind: "error", status: 400, message: "ID penugasan tidak valid." };
+  }
+  const assignment = await accessibleAssignment(studentId, assignmentId);
+  if (!assignment) {
+    return { kind: "error", status: 404, message: "Penugasan belum tersedia untuk kelas Anda." };
+  }
+  if (assignment.worksheetId !== worksheetId) {
+    return { kind: "error", status: 400, message: "Penugasan ini tidak terhubung ke LKPD ini." };
+  }
+  if (assignment.workMode !== "kelompok") {
+    return { kind: "ready", attempt: await getOrCreateAttempt(studentId, worksheetId), group: null };
+  }
+  const group = await loadStudentGroup(assignmentId, studentId);
+  if (!group) return { kind: "ungrouped" };
+  return { kind: "ready", attempt: await getOrCreateGroupAttempt(worksheetId, group.id), group };
 }
 
 // Kunci perbandingan mapel: teks penuh (trim + huruf kecil) plus isi kurung
@@ -174,6 +229,24 @@ muridRoutes.get("/today", async (c) => {
     : [];
   const attemptsByWorksheet = new Map(attempts.map((attempt) => [attempt.worksheetId, attempt]));
 
+  // Penugasan kelompok: kelompok murid ini + attempt bersama kelompoknya,
+  // agar lencana kelompok dan progres di beranda mengikuti kerja kelompok.
+  const groupByAssignment = new Map<number, StudentGroupView>();
+  const groupAttemptByAssignment = new Map<number, AttemptSnapshot>();
+  await Promise.all(uniqueAssignments.filter((assignment) => assignment.workMode === "kelompok").map(async (assignment) => {
+    const group = await loadStudentGroup(assignment.id, user.userId);
+    if (!group) return;
+    groupByAssignment.set(assignment.id, group);
+    if (assignment.worksheetId !== null) {
+      const [groupAttempt] = await db
+        .select({ status: worksheetAttempts.status, submittedAt: worksheetAttempts.submittedAt, totalScore: worksheetAttempts.totalScore })
+        .from(worksheetAttempts)
+        .where(and(eq(worksheetAttempts.worksheetId, assignment.worksheetId), eq(worksheetAttempts.groupId, group.id)))
+        .limit(1);
+      if (groupAttempt) groupAttemptByAssignment.set(assignment.id, groupAttempt);
+    }
+  }));
+
   // Sinyal langkah "Materi" di beranda: murid sudah pernah membuka minimal
   // satu materi. Predikat sama dengan agregasi penonton guru di
   // routes/modules.ts — baris activity_logs event "buka_materi" yang
@@ -209,10 +282,20 @@ muridRoutes.get("/today", async (c) => {
         status: module.status,
         updated_at: module.updatedAt,
       })),
-      assignments: uniqueAssignments.map((assignment) => serializeAssignmentForStudent(
-        assignment,
-        assignmentProgress(assignment, assignment.worksheetId === null ? undefined : attemptsByWorksheet.get(assignment.worksheetId)),
-      )),
+      assignments: uniqueAssignments.map((assignment) => {
+        const individual = assignment.worksheetId === null ? undefined : attemptsByWorksheet.get(assignment.worksheetId);
+        const effective = assignment.workMode === "kelompok"
+          ? pickEffectiveAttempt(
+              individual ? { status: individual.status, submittedAt: individual.submittedAt, totalScore: null } : undefined,
+              groupAttemptByAssignment.get(assignment.id),
+            )
+          : individual;
+        return serializeAssignmentForStudent(
+          assignment,
+          assignmentProgress(assignment, effective),
+          assignment.workMode === "kelompok" ? (groupByAssignment.get(assignment.id) ?? null) : undefined,
+        );
+      }),
       has_viewed_material: hasViewedMaterial,
     },
   });
@@ -229,9 +312,26 @@ muridRoutes.get("/assignments/:id", async (c) => {
   if (now < assignment.opensAt.getTime()) return c.json({ ok: false, message: "Penugasan belum dibuka." }, 403);
   await db.insert(activityLogs).values({ studentId: user.userId, assignmentId, moduleId: assignment.moduleId, event: "buka_materi" });
 
-  const [attempt] = assignment.worksheetId === null
+  const [individualAttempt] = assignment.worksheetId === null
     ? []
     : await db.select({ status: worksheetAttempts.status, totalScore: worksheetAttempts.totalScore, submittedAt: worksheetAttempts.submittedAt }).from(worksheetAttempts).where(and(eq(worksheetAttempts.studentId, user.userId), eq(worksheetAttempts.worksheetId, assignment.worksheetId))).limit(1);
+  // Mode kelompok: progres dan nilai mengikuti attempt bersama kelompok
+  // murid ini (attempt efektif = yang statusnya lebih maju di antara
+  // attempt individu dan attempt kelompok).
+  let group: StudentGroupView | null = null;
+  let attempt = individualAttempt;
+  if (assignment.workMode === "kelompok") {
+    group = await loadStudentGroup(assignmentId, user.userId);
+    if (group && assignment.worksheetId !== null) {
+      const [groupAttempt] = await db
+        .select({ status: worksheetAttempts.status, totalScore: worksheetAttempts.totalScore, submittedAt: worksheetAttempts.submittedAt })
+        .from(worksheetAttempts)
+        .where(and(eq(worksheetAttempts.worksheetId, assignment.worksheetId), eq(worksheetAttempts.groupId, group.id)))
+        .limit(1);
+      const effective = pickEffectiveAttempt(individualAttempt, groupAttempt);
+      attempt = effective;
+    }
+  }
   const [exitTicket] = await db.select({ id: exitTickets.id }).from(exitTickets).where(and(eq(exitTickets.assignmentId, assignmentId), eq(exitTickets.studentId, user.userId))).limit(1);
   const [worksheet] = assignment.worksheetId === null
     ? []
@@ -248,7 +348,7 @@ muridRoutes.get("/assignments/:id", async (c) => {
   return c.json({
     ok: true,
     data: {
-      assignment: serializeAssignmentForStudent(assignment, assignmentProgress(assignment, attempt)),
+      assignment: serializeAssignmentForStudent(assignment, assignmentProgress(assignment, attempt), assignment.workMode === "kelompok" ? group : undefined),
       worksheet: worksheet ? { id: worksheet.id, title: worksheet.title } : null,
       attempt: attempt ? { status: attempt.status, total_score: attempt.totalScore === null ? null : Number(attempt.totalScore), submitted_at: attempt.submittedAt } : null,
       exit_ticket_submitted: Boolean(exitTicket),
@@ -400,7 +500,14 @@ muridRoutes.get("/worksheets/:id/attempt", async (c) => {
   const worksheetId = Number(c.req.param("id"));
   if (!Number.isInteger(worksheetId) || worksheetId <= 0) return c.json({ ok: false, message: "ID LKPD tidak valid." }, 400);
   if (!(await accessibleWorksheet(user.userId, worksheetId))) return c.json({ ok: false, message: "LKPD belum tersedia untuk kelas Anda." }, 404);
-  const attempt = await getOrCreateAttempt(user.userId, worksheetId);
+  const context = await resolveAttemptContext(user.userId, worksheetId, c.req.query("assignmentId") ?? null);
+  if (context.kind === "error") return c.json({ ok: false, message: context.message }, context.status);
+  if (context.kind === "ungrouped") {
+    // Keadaan yang bisa dibedakan sisi klien: murid belum masuk kelompok
+    // mana pun pada penugasan ini — tidak ada attempt yang dibuat.
+    return c.json({ ok: true, data: { ungrouped: true, status: null, submitted_at: null, answers: [], group: null } });
+  }
+  const attempt = context.attempt;
   const answers = await db.select().from(worksheetAnswers).where(eq(worksheetAnswers.attemptId, attempt.id));
   // Pembahasan hanya dibuka setelah LKPD dikumpulkan/dinilai. Kunci jawaban
   // (answer_key) tidak pernah dikirim ke murid.
@@ -414,6 +521,31 @@ muridRoutes.get("/worksheets/:id/attempt", async (c) => {
       items.filter((item) => item.explanation).map((item) => [item.id, item.explanation!]),
     );
   }
+  // Konteks kelompok: identitas kelompok, penanda pengedit terakhir, dan —
+  // setelah dinilai — nilai serta komentar guru untuk seluruh anggota.
+  let groupExtras: Record<string, unknown> = {};
+  if (context.group) {
+    let lastEditedBy: { id: number; name: string } | null = null;
+    if (attempt.lastEditedBy) {
+      const [editor] = await db
+        .select({ id: users.id, name: users.name })
+        .from(users)
+        .where(eq(users.id, attempt.lastEditedBy))
+        .limit(1);
+      if (editor) lastEditedBy = editor;
+    }
+    groupExtras = {
+      group: context.group,
+      last_edited_by: lastEditedBy,
+      last_edited_at: attempt.lastEditedBy ? attempt.updatedAt : null,
+      ...(attempt.status === "dinilai"
+        ? {
+            total_score: attempt.totalScore === null ? null : Number(attempt.totalScore),
+            teacher_comment: attempt.teacherComment,
+          }
+        : {}),
+    };
+  }
   return c.json({
     ok: true,
     data: {
@@ -426,6 +558,7 @@ muridRoutes.get("/worksheets/:id/attempt", async (c) => {
         attachment_key: answer.attachmentKey,
       })),
       ...(explanations ? { explanations } : {}),
+      ...groupExtras,
     },
   });
 });
@@ -435,7 +568,10 @@ muridRoutes.put("/worksheets/:id/answers", zValidator("json", worksheetAnswersSc
   const worksheetId = Number(c.req.param("id"));
   if (!Number.isInteger(worksheetId) || worksheetId <= 0) return c.json({ ok: false, message: "ID LKPD tidak valid." }, 400);
   if (!(await accessibleWorksheet(user.userId, worksheetId))) return c.json({ ok: false, message: "LKPD belum tersedia untuk kelas Anda." }, 404);
-  const attempt = await getOrCreateAttempt(user.userId, worksheetId);
+  const context = await resolveAttemptContext(user.userId, worksheetId, c.req.query("assignmentId") ?? null);
+  if (context.kind === "error") return c.json({ ok: false, message: context.message }, context.status);
+  if (context.kind === "ungrouped") return c.json({ ok: false, message: "Kamu belum masuk kelompok untuk penugasan ini. Hubungi gurumu." }, 403);
+  const attempt = context.attempt;
   if (attempt.status !== "draf") return c.json({ ok: false, message: "LKPD sudah dikumpulkan dan sedang diperiksa." }, 409);
 
   const input = c.req.valid("json");
@@ -462,7 +598,11 @@ muridRoutes.put("/worksheets/:id/answers", zValidator("json", worksheetAnswersSc
       });
     }
   }
-  await db.update(worksheetAttempts).set({ status: "draf" }).where(eq(worksheetAttempts.id, attempt.id));
+  // Attempt kelompok mencatat siapa pengedit terakhir pada setiap simpan.
+  await db.update(worksheetAttempts).set({
+    status: "draf",
+    ...(context.group ? { lastEditedBy: user.userId } : {}),
+  }).where(eq(worksheetAttempts.id, attempt.id));
   return c.json({ ok: true, data: { status: "draf" } });
 });
 
@@ -471,7 +611,10 @@ muridRoutes.post("/worksheets/:id/submit", async (c) => {
   const worksheetId = Number(c.req.param("id"));
   if (!Number.isInteger(worksheetId) || worksheetId <= 0) return c.json({ ok: false, message: "ID LKPD tidak valid." }, 400);
   if (!(await accessibleWorksheet(user.userId, worksheetId))) return c.json({ ok: false, message: "LKPD belum tersedia untuk kelas Anda." }, 404);
-  const attempt = await getOrCreateAttempt(user.userId, worksheetId);
+  const context = await resolveAttemptContext(user.userId, worksheetId, c.req.query("assignmentId") ?? null);
+  if (context.kind === "error") return c.json({ ok: false, message: context.message }, context.status);
+  if (context.kind === "ungrouped") return c.json({ ok: false, message: "Kamu belum masuk kelompok untuk penugasan ini. Hubungi gurumu." }, 403);
+  const attempt = context.attempt;
   if (attempt.status !== "draf") return c.json({ ok: false, message: "LKPD sudah dikumpulkan." }, 409);
   await db.update(worksheetAttempts).set({ status: "terkumpul", submittedAt: new Date() }).where(eq(worksheetAttempts.id, attempt.id));
   return c.json({ ok: true, data: { status: "terkumpul" } });

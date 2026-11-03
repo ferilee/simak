@@ -4,6 +4,7 @@ export * from "./modules";
 export * from "./worksheets";
 export * from "./worksheet-attempts";
 export * from "./assignments";
+export * from "./groups";
 export * from "./submissions";
 export * from "./activity";
 export * from "./integrity";

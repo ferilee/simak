@@ -1,4 +1,4 @@
-import { bigint, datetime, index, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
+import { bigint, datetime, index, int, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 import { users } from "./users";
 import { classes } from "./classes";
 import { modules } from "./modules";
@@ -16,6 +16,10 @@ export const assignments = mysqlTable(
     title: varchar("title", { length: 200 }).notNull(),
     instructions: text("instructions"),
     ruasQuizUrl: varchar("ruas_quiz_url", { length: 1024 }),
+    // Mode pengerjaan LKPD: individu (bawaan, perilaku lama) atau kelompok
+    // (satu attempt bersama per kelompok — lihat schema/groups.ts).
+    workMode: mysqlEnum("work_mode", ["individu", "kelompok"]).notNull().default("individu"),
+    groupSize: int("group_size"),
     opensAt: datetime("opens_at", { mode: "date" }).notNull(),
     dueAt: datetime("due_at", { mode: "date" }).notNull(),
     status: mysqlEnum("status", ["draf", "terbit", "ditutup"]).notNull().default("draf"),

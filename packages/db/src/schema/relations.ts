@@ -5,6 +5,7 @@ import { modules, moduleBlocks } from "./modules";
 import { worksheets, worksheetItems } from "./worksheets";
 import { worksheetAttempts, worksheetAnswers } from "./worksheet-attempts";
 import { assignments, assignmentClasses } from "./assignments";
+import { assignmentGroups, assignmentGroupMembers } from "./groups";
 import { submissions, submissionAnswers } from "./submissions";
 import { activityLogs, exitTickets } from "./activity";
 import { integrityEvents } from "./integrity";
@@ -57,6 +58,7 @@ export const worksheetItemsRelations = relations(worksheetItems, ({ one, many })
 export const worksheetAttemptsRelations = relations(worksheetAttempts, ({ one, many }) => ({
   worksheet: one(worksheets, { fields: [worksheetAttempts.worksheetId], references: [worksheets.id] }),
   student: one(users, { fields: [worksheetAttempts.studentId], references: [users.id] }),
+  group: one(assignmentGroups, { fields: [worksheetAttempts.groupId], references: [assignmentGroups.id] }),
   answers: many(worksheetAnswers),
 }));
 
@@ -70,6 +72,7 @@ export const assignmentsRelations = relations(assignments, ({ one, many }) => ({
   module: one(modules, { fields: [assignments.moduleId], references: [modules.id] }),
   worksheet: one(worksheets, { fields: [assignments.worksheetId], references: [worksheets.id] }),
   classLinks: many(assignmentClasses),
+  groups: many(assignmentGroups),
   submissions: many(submissions),
   exitTickets: many(exitTickets),
   integrityEvents: many(integrityEvents),
@@ -79,6 +82,19 @@ export const assignmentsRelations = relations(assignments, ({ one, many }) => ({
 export const assignmentClassesRelations = relations(assignmentClasses, ({ one }) => ({
   assignment: one(assignments, { fields: [assignmentClasses.assignmentId], references: [assignments.id] }),
   class: one(classes, { fields: [assignmentClasses.classId], references: [classes.id] }),
+}));
+
+export const assignmentGroupsRelations = relations(assignmentGroups, ({ one, many }) => ({
+  assignment: one(assignments, { fields: [assignmentGroups.assignmentId], references: [assignments.id] }),
+  class: one(classes, { fields: [assignmentGroups.classId], references: [classes.id] }),
+  members: many(assignmentGroupMembers),
+  attempts: many(worksheetAttempts),
+}));
+
+export const assignmentGroupMembersRelations = relations(assignmentGroupMembers, ({ one }) => ({
+  group: one(assignmentGroups, { fields: [assignmentGroupMembers.groupId], references: [assignmentGroups.id] }),
+  assignment: one(assignments, { fields: [assignmentGroupMembers.assignmentId], references: [assignments.id] }),
+  student: one(users, { fields: [assignmentGroupMembers.studentId], references: [users.id] }),
 }));
 
 export const submissionsRelations = relations(submissions, ({ one, many }) => ({

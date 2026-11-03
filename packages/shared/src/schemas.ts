@@ -235,6 +235,10 @@ export const createAssignmentSchema = z.object({
   title: z.string().min(1).max(200),
   instructions: z.string().max(5000).optional(),
   ruasQuizUrl: z.string().url().max(1024).optional(),
+  // Mode pengerjaan LKPD: "kelompok" memakai kelompok acak otomatis dengan
+  // target anggota per kelompok 2–10 (bawaan 4 ditegakkan di route/UI).
+  workMode: z.enum(["individu", "kelompok"]).default("individu"),
+  groupSize: z.number().int().min(2).max(10).optional(),
   opensAt: z.coerce.date(),
   dueAt: z.coerce.date(),
   classIds: z.array(z.number().int().positive()).min(1).max(50).refine((ids) => new Set(ids).size === ids.length, "Kelas tujuan tidak boleh duplikat."),
@@ -252,6 +256,8 @@ export const updateAssignmentSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   instructions: z.string().max(5000).optional(),
   ruasQuizUrl: z.string().url().max(1024).optional(),
+  workMode: z.enum(["individu", "kelompok"]).optional(),
+  groupSize: z.number().int().min(2).max(10).nullable().optional(),
   opensAt: z.coerce.date().optional(),
   dueAt: z.coerce.date().optional(),
   status: z.enum(["draf", "terbit", "ditutup"]).optional(),
@@ -260,6 +266,14 @@ export const updateAssignmentSchema = z.object({
   if (value.opensAt && value.dueAt && value.dueAt < value.opensAt) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "Batas pengumpulan harus setelah waktu buka.", path: ["dueAt"] });
   }
+});
+
+export const shuffleAssignmentGroupsSchema = z.object({
+  classId: z.number().int().positive(),
+});
+
+export const addAssignmentGroupMemberSchema = z.object({
+  studentId: z.number().int().positive(),
 });
 
 export const moduleBlockTypeSchema = z.enum(MODULE_BLOCK_TYPES);

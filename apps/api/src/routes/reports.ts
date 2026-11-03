@@ -2,13 +2,14 @@ import { Hono } from "hono";
 import { and, eq, gte, inArray, lt } from "drizzle-orm";
 import { db, schema } from "@simak/db";
 import { requireRole } from "../middleware/auth";
+import { mapGroupAttemptsToStudents, pickEffectiveAttempt } from "../lib/groups";
 
 // Rekap bukti = agregasi activity_logs + worksheet_attempts + exit_tickets.
 // Format laporan: JSON (default), CSV yang dapat dibuka di Excel, atau PDF.
 export const reportRoutes = new Hono();
 reportRoutes.use("*", requireRole("guru"));
 
-const { activityLogs, assignmentClasses, assignments, classes, classMembers, exitTickets, ruasScores, users, worksheetAttempts } = schema;
+const { activityLogs, assignmentClasses, assignmentGroupMembers, assignmentGroups, assignments, classes, classMembers, exitTickets, ruasScores, users, worksheetAttempts } = schema;
 type TargetStudent = { id: number; name: string; username: string; nis: string | null; classId: number; className: string };
 type ReportRow = {
   student_id: number; name: string; username: string; class_name: string; hadir: boolean; opened_at: Date | null;
@@ -54,6 +55,34 @@ async function loadSessionReportData(userId: number, assignmentId: number): Prom
   const activitiesByStudent = new Map<number, typeof activities>();
   for (const activity of activities) activitiesByStudent.set(activity.studentId, [...(activitiesByStudent.get(activity.studentId) ?? []), activity]);
   const attemptsByStudent = new Map(attempts.map((attempt) => [attempt.studentId, attempt]));
+  // Penugasan kelompok: seorang murid terhitung dari attempt efektifnya —
+  // attempt individu ATAU attempt bersama kelompoknya, yang statusnya
+  // lebih maju yang dipakai (nilai kelompok diwarisi semua anggota).
+  // Murid tanpa kelompok dan tanpa attempt individu tetap "belum".
+  if (assignment.workMode === "kelompok" && assignment.worksheetId !== null && studentIds.length > 0) {
+    const [groupRows, memberRows] = await Promise.all([
+      db.select({ id: assignmentGroups.id }).from(assignmentGroups).where(eq(assignmentGroups.assignmentId, assignmentId)),
+      db
+        .select({ studentId: assignmentGroupMembers.studentId, groupId: assignmentGroupMembers.groupId })
+        .from(assignmentGroupMembers)
+        .where(eq(assignmentGroupMembers.assignmentId, assignmentId)),
+    ]);
+    const groupIds = groupRows.map((row) => row.id);
+    const groupAttempts = groupIds.length
+      ? await db
+          .select({ groupId: worksheetAttempts.groupId, status: worksheetAttempts.status, submittedAt: worksheetAttempts.submittedAt, totalScore: worksheetAttempts.totalScore })
+          .from(worksheetAttempts)
+          .where(and(eq(worksheetAttempts.worksheetId, assignment.worksheetId), inArray(worksheetAttempts.groupId, groupIds)))
+      : [];
+    const attemptsByGroup = new Map(groupAttempts.flatMap((attempt) => (attempt.groupId === null ? [] : [[attempt.groupId, attempt] as const])));
+    const groupAttemptByStudent = mapGroupAttemptsToStudents(memberRows, attemptsByGroup);
+    for (const studentId of studentIds) {
+      const effective = pickEffectiveAttempt(attemptsByStudent.get(studentId), groupAttemptByStudent.get(studentId));
+      if (effective) {
+        attemptsByStudent.set(studentId, { studentId, status: effective.status, submittedAt: effective.submittedAt, totalScore: effective.totalScore });
+      }
+    }
+  }
   const ticketsByStudent = new Map(tickets.map((ticket) => [ticket.studentId, ticket]));
   const ruasByStudent = new Map<number, (typeof importedRuas)[number]>();
   for (const score of importedRuas) if (score.studentId !== null && score.matchStatus === "cocok") ruasByStudent.set(score.studentId, score);

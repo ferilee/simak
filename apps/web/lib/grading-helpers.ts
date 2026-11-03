@@ -178,6 +178,41 @@ export function quickScoreDrafts(points: number): { zero: string; half: string; 
   };
 }
 
+// --- Penilaian cicilan (Penilaian Rapi, v1.0.34) ---
+// Skor tiap butir kini tersimpan seketika di server; selama belum semua
+// butir berskor, total attempt tetap kosong dan panel menampilkan penanda
+// kemajuan "Dinilai X dari Y butir" — di kartu daftar maupun di kepala
+// rincian penilaian.
+
+/**
+ * Label kemajuan penilaian cicilan; null bila belum ada butir yang dinilai
+ * atau jumlah butir tidak diketahui (kartu lalu menampilkan "Belum dinilai"
+ * seperti sebelumnya).
+ */
+export function gradingProgressLabel(gradedCount: number, totalItems: number): string | null {
+  if (!Number.isFinite(gradedCount) || !Number.isFinite(totalItems)) return null;
+  if (totalItems <= 0 || gradedCount <= 0) return null;
+  return `Dinilai ${gradedCount} dari ${totalItems} butir`;
+}
+
+// --- Warna chip nilai cepat (Penilaian Rapi, v1.0.34) ---
+// Chip yang AKTIF pada satu butir dibedakan warnanya menurut nilai yang
+// dipilih: 0 = putih, ½ = gradasi putih–biru, Penuh = hijau. Skor manual
+// yang tidak sama persis dengan salah satu nilai chip tidak menandai chip
+// mana pun (perilaku lama).
+
+export type QuickScoreChipKind = "zero" | "half" | "full";
+
+/** Chip nilai cepat yang aktif untuk skor saat ini; null bila tidak ada. */
+export function activeQuickScoreChip(score: number | null, points: number): QuickScoreChipKind | null {
+  if (score === null || !Number.isFinite(score) || !Number.isFinite(points) || points <= 0) return null;
+  const rounded = roundScore(score);
+  if (rounded === 0) return "zero";
+  if (rounded === roundScore(points)) return "full";
+  if (rounded === roundScore(points / 2)) return "half";
+  return null;
+}
+
 // --- Tampilkan bertahap (progressive reveal) daftar pengumpulan ---
 // Sengaja bukan halaman bernomor: antrean penilaian (lompat otomatis ke
 // yang belum dinilai berikutnya) tidak boleh bertabrakan dengan batas

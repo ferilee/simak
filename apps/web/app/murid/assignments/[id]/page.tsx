@@ -117,7 +117,10 @@ export default function AssignmentPage() {
           <div style={styles.groupCard}>
             <strong>👥 {data.assignment.group.name} · {data.assignment.group.class_name}</strong>
             <span>Penugasan ini dikerjakan berkelompok — LKPD dikerjakan bersama dan dikumpulkan atas nama kelompok.</span>
-            <span>Anggota: {data.assignment.group.members.map((member) => member.name).join(", ")}</span>
+            <span>Anggota:</span>
+            <div style={styles.groupMembers}>
+              {data.assignment.group.members.map((member) => <span key={member.id} className="member-chip">{member.name}</span>)}
+            </div>
           </div>
         ) : (
           <div style={styles.groupCard}>
@@ -215,6 +218,7 @@ const styles = {
   error: { color: "#b42318", background: "#fef3f2", padding: 12, borderRadius: 8 },
   panel: { border: "1px solid #eaecf0", borderRadius: 12, padding: 18, marginTop: 20, display: "grid", gap: 12 },
   groupCard: { display: "grid", gap: 6, background: "#ecfdf3", border: "1px solid #a6f4c5", borderRadius: 10, padding: 14, marginTop: 16, color: "#05603a", lineHeight: 1.55, fontSize: 14 },
+  groupMembers: { display: "flex", gap: 6, flexWrap: "wrap" as const },
   heading: { fontSize: 20, margin: 0 },
   actionLink: { color: "#175cd3", fontWeight: 700, textDecoration: "none" },
   score: { margin: 0, fontWeight: 700 },

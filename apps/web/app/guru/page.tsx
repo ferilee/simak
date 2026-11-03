@@ -8,11 +8,13 @@ import { prepareImageForUpload } from "../../lib/prepare-image";
 import { buildWhatsAppShareMessage } from "../../lib/wa-share";
 import { groupsCopyText } from "../../lib/kelompok-copy";
 import {
+  activeQuickScoreChip,
   countGradingAttempts,
   distinctGradingClasses,
   filterGradingAttemptsByClass,
   formatScoreValue,
   gradingClassFilterValue,
+  gradingProgressLabel,
   GRADING_PAGE_SIZE,
   isUngradedAttempt,
   matchesGradingClassFilter,
@@ -128,6 +130,8 @@ type WorksheetAttemptSummary = {
   status: "draf" | "terkumpul" | "dinilai";
   submitted_at: string | null;
   total_score: number | null;
+  graded_count?: number;
+  total_items?: number;
   updated_at: string;
   class_id: number | null;
   class_name: string | null;
@@ -236,6 +240,8 @@ type WorksheetAttemptDetail = {
     submitted_at: string | null;
     total_score: number | null;
     teacher_comment: string | null;
+    graded_count?: number;
+    total_items?: number;
     is_group?: boolean;
     group_name?: string | null;
     members?: AttemptMemberDetail[];
@@ -243,6 +249,19 @@ type WorksheetAttemptDetail = {
   items: WorksheetAttemptItem[];
 };
 type WorksheetAttemptDetailResponse = { ok: true; data: WorksheetAttemptDetail };
+type GradeItemResponse = {
+  ok: true;
+  data: {
+    item_id: number;
+    score: number | null;
+    graded_count: number;
+    total_items: number;
+    complete: boolean;
+    status: "draf" | "terkumpul" | "dinilai";
+    total_score: number | null;
+  };
+};
+type GradeItemSaveState = "saving" | "saved" | "error";
 type MeResponse = { ok: true; user: { role: "guru" | "murid" } };
 
 export default function GuruPage() {
@@ -404,6 +423,11 @@ export default function GuruPage() {
   const [hasilTab, setHasilTab] = useState<HasilTab>("nilai");
   const [scoreDrafts, setScoreDrafts] = useState<Record<number, string>>({});
   const [noteDrafts, setNoteDrafts] = useState<Record<number, string>>({});
+  // Penilaian Rapi: keadaan simpan per butir (autosave cicilan) + potret
+  // nilai terakhir yang tersimpan di server per butir, agar komitmen yang
+  // tidak berubah tidak dikirim ulang dan penanda "Tersimpan ✓" akurat.
+  const [itemSaveStates, setItemSaveStates] = useState<Record<number, GradeItemSaveState>>({});
+  const savedGradeRef = useRef<Record<number, { score: number | null; note: string }>>({});
   const [teacherComment, setTeacherComment] = useState("");
   const [attemptLoading, setAttemptLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -633,6 +657,11 @@ export default function GuruPage() {
   const visibleGradingAttempts = sortGradingAttempts(classFilteredAttempts)
     .filter((attempt) => matchesGradingStatusFilter(attempt, gradingStatusFilter));
   const runningTotalDraft = attemptDetail ? runningTotal(attemptDetail.items, scoreDrafts) : null;
+  // Penanda kemajuan penilaian cicilan pada kepala rincian: hanya selama
+  // total belum terisi (sesudah lengkap, totalnya sendiri yang tampil).
+  const gradingProgressText = attemptDetail && attemptDetail.attempt.total_score === null
+    ? gradingProgressLabel(attemptDetail.attempt.graded_count ?? 0, attemptDetail.attempt.total_items ?? 0)
+    : null;
   // Lencana tab "Nilai": antrean belum dinilai dari data gabungan yang
   // sudah termuat (nol/ kosong berarti lencana tidak ditampilkan).
   const ungradedBadgeCount = allAttempts.filter(isUngradedAttempt).length;
@@ -755,6 +784,8 @@ export default function GuruPage() {
       setScoreDrafts(Object.fromEntries(response.data.items.map((item) => [item.id, item.score === null ? "" : String(item.score)])));
       setNoteDrafts(Object.fromEntries(response.data.items.map((item) => [item.id, item.teacher_note ?? ""])));
       setTeacherComment(response.data.attempt.teacher_comment ?? "");
+      savedGradeRef.current = Object.fromEntries(response.data.items.map((item) => [item.id, { score: item.score, note: item.teacher_note ?? "" }]));
+      setItemSaveStates({});
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Detail pengumpulan belum dapat dimuat.");
     } finally {
@@ -1875,37 +1906,121 @@ export default function GuruPage() {
         method: "PATCH",
         body: JSON.stringify({ answers, teacherComment: teacherComment.trim() || undefined }),
       });
-      // Muat ulang daftar dari server lalu lanjutkan antrean: buka
-      // pengumpulan berikutnya yang belum dinilai menurut urutan tampilan
-      // saat ini (yang baru disimpan dilewati). Perpindahan LKPD pada mode
-      // gabungan meniru persis mekanisme klik manual pada daftar.
-      const freshAttempts = await loadAttempts(savedWorksheetId);
-      const freshAllAttempts = gradingCombined ? await loadAllAttempts() : null;
-      const sourceAttempts: (WorksheetAttemptSummary & { worksheet_id?: number; worksheet_title?: string })[] = gradingCombined ? (freshAllAttempts ?? allAttempts) : (freshAttempts ?? attempts);
-      const displayAttempts = sortGradingAttempts(sourceAttempts)
-        .filter((attempt) => matchesGradingClassFilter(attempt, gradingClassFilterActive))
-        .filter((attempt) => matchesGradingStatusFilter(attempt, gradingStatusFilter));
-      const nextAttempt = pickNextUngradedAttempt(displayAttempts, savedAttemptId);
-      if (nextAttempt) {
-        setMessage("Penilaian disimpan.");
-        // Tampilkan bertahap: bila target lompatan berada di luar lipatan,
-        // perluas tampilan sampai targetnya ikut terlihat.
-        const nextIndex = displayAttempts.findIndex((attempt) => attempt.id === nextAttempt.id);
-        if (nextIndex >= gradingRevealedCount) {
-          setGradingRevealedCount(revealedCountForIndex(nextIndex));
-        }
-        if (gradingCombined && nextAttempt.worksheet_id && nextAttempt.worksheet_id !== savedWorksheetId) {
-          gradingPickRef.current = true;
-          setSelectedWorksheetId(nextAttempt.worksheet_id);
-        }
-        setSelectedAttemptId(nextAttempt.id);
-      } else {
-        setMessage("Penilaian disimpan. Semua pengumpulan pada daftar ini sudah dinilai.");
-        await loadAttemptDetail(savedWorksheetId, savedAttemptId);
-      }
+      await advanceAfterGrading(savedWorksheetId, savedAttemptId);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Penilaian belum dapat disimpan.");
     }
+  }
+
+  // Sesudah satu attempt selesai dinilai (simpan menyeluruh maupun butir
+  // terakhir pada autosave cicilan): muat ulang daftar dari server lalu
+  // lanjutkan antrean — buka pengumpulan berikutnya yang belum dinilai
+  // menurut urutan tampilan saat ini (yang baru disimpan dilewati).
+  // Perpindahan LKPD pada mode gabungan meniru persis mekanisme klik
+  // manual pada daftar.
+  async function advanceAfterGrading(savedWorksheetId: number, savedAttemptId: number) {
+    const freshAttempts = await loadAttempts(savedWorksheetId);
+    const freshAllAttempts = gradingCombined ? await loadAllAttempts() : null;
+    const sourceAttempts: (WorksheetAttemptSummary & { worksheet_id?: number; worksheet_title?: string })[] = gradingCombined ? (freshAllAttempts ?? allAttempts) : (freshAttempts ?? attempts);
+    const displayAttempts = sortGradingAttempts(sourceAttempts)
+      .filter((attempt) => matchesGradingClassFilter(attempt, gradingClassFilterActive))
+      .filter((attempt) => matchesGradingStatusFilter(attempt, gradingStatusFilter));
+    const nextAttempt = pickNextUngradedAttempt(displayAttempts, savedAttemptId);
+    if (nextAttempt) {
+      setMessage("Penilaian disimpan.");
+      // Tampilkan bertahap: bila target lompatan berada di luar lipatan,
+      // perluas tampilan sampai targetnya ikut terlihat.
+      const nextIndex = displayAttempts.findIndex((attempt) => attempt.id === nextAttempt.id);
+      if (nextIndex >= gradingRevealedCount) {
+        setGradingRevealedCount(revealedCountForIndex(nextIndex));
+      }
+      if (gradingCombined && nextAttempt.worksheet_id && nextAttempt.worksheet_id !== savedWorksheetId) {
+        gradingPickRef.current = true;
+        setSelectedWorksheetId(nextAttempt.worksheet_id);
+      }
+      setSelectedAttemptId(nextAttempt.id);
+    } else {
+      setMessage("Penilaian disimpan. Semua pengumpulan pada daftar ini sudah dinilai.");
+      await loadAttemptDetail(savedWorksheetId, savedAttemptId);
+    }
+  }
+
+  // Penilaian Rapi — autosave SATU butir: skor + catatan butir tersimpan
+  // seketika (klik chip cepat, atau komitmen kolom nilai/catatan), sehingga
+  // penilaian dapat dicicil dan dilanjutkan lain waktu. Nilai yang sama
+  // dengan potret tersimpan tidak dikirim ulang. Bila butir ini adalah yang
+  // terakhir, server menuntaskan attempt ini dan antrean lanjut seperti
+  // sesudah simpan menyeluruh.
+  async function commitGradeItem(item: WorksheetAttemptItem, scoreText: string, noteText: string) {
+    if (!selectedWorksheetId || !selectedAttemptId || !attemptDetail) return;
+    const worksheetId = selectedWorksheetId;
+    const attemptId = selectedAttemptId;
+    const trimmedScore = scoreText.trim();
+    let score: number | null = null;
+    if (trimmedScore !== "") {
+      score = Number(trimmedScore);
+      if (!Number.isFinite(score) || score < 0) {
+        setMessage("Nilai harus berupa angka nol atau lebih.");
+        return;
+      }
+      if (score > item.points) {
+        setMessage("Nilai tidak boleh melebihi poin soal.");
+        return;
+      }
+    }
+    const note = noteText.trim();
+    const saved = savedGradeRef.current[item.id];
+    if (saved && saved.score === score && saved.note === note) {
+      setItemSaveStates((current) => ({ ...current, [item.id]: "saved" }));
+      return;
+    }
+    setItemSaveStates((current) => ({ ...current, [item.id]: "saving" }));
+    try {
+      const response = await apiRequest<GradeItemResponse>(`/worksheets/${worksheetId}/attempts/${attemptId}/items`, {
+        method: "PATCH",
+        body: JSON.stringify({ itemId: item.id, score, teacherNote: note }),
+      });
+      savedGradeRef.current = { ...savedGradeRef.current, [item.id]: { score: response.data.score, note } };
+      setItemSaveStates((current) => ({ ...current, [item.id]: "saved" }));
+      // Segarkan penanda kemajuan pada rincian dan pada kartu daftar tanpa
+      // memuat ulang seluruh halaman.
+      setAttemptDetail((current) => current && current.attempt.id === attemptId ? {
+        ...current,
+        attempt: {
+          ...current.attempt,
+          status: response.data.status,
+          total_score: response.data.total_score,
+          graded_count: response.data.graded_count,
+          total_items: response.data.total_items,
+        },
+        items: current.items.map((entry) => entry.id === item.id ? { ...entry, score: response.data.score, teacher_note: note || null } : entry),
+      } : current);
+      const applyProgress = <T extends WorksheetAttemptSummary>(rows: T[]): T[] => rows.map((row) => row.id === attemptId ? {
+        ...row,
+        status: response.data.status,
+        total_score: response.data.total_score,
+        graded_count: response.data.graded_count,
+        total_items: response.data.total_items,
+      } : row);
+      setAttempts((current) => applyProgress(current));
+      setAllAttempts((current) => applyProgress(current));
+      if (response.data.complete) {
+        await advanceAfterGrading(worksheetId, attemptId);
+      }
+    } catch (error) {
+      setItemSaveStates((current) => ({ ...current, [item.id]: "error" }));
+      setMessage(error instanceof Error ? error.message : "Nilai butir belum dapat disimpan.");
+    }
+  }
+
+  // Mengubah draf skor/catatan mengaburkan penanda tersimpan butir itu.
+  function markItemGradeDirty(itemId: number) {
+    setItemSaveStates((current) => {
+      if (!(itemId in current)) return current;
+      const next = { ...current };
+      delete next[itemId];
+      return next;
+    });
   }
 
   // Beralih jenis sasaran mengosongkan daftar milik jenis sebelumnya, agar
@@ -2911,8 +3026,8 @@ export default function GuruPage() {
                         {kelas.groups.length > 0 ? (
                           <button
                             type="button"
+                            className="copy-list-button"
                             onClick={() => void copyClassGroupsList(assignments.find((assignment) => assignment.id === selectedGroupAssignmentId)?.title ?? "", kelas)}
-                            style={styles.secondaryButton}
                           >
                             {copiedGroupClassId === kelas.class_id ? "Tersalin ✓" : "Salin daftar"}
                           </button>
@@ -2954,13 +3069,13 @@ export default function GuruPage() {
                         {kelas.groups.map((group) => {
                           const progress = groupProgressChip(group.attempt_status);
                           return (
-                          <article key={group.id} className="resource-row">
-                            <div className="module-row-main">
-                              <strong>👥 {group.name}</strong>
-                              <span>{group.members.length} anggota</span>
-                              <span className={progress.className} style={{ justifySelf: "start" }}>{progress.label}</span>
+                          <article key={group.id} className="group-card">
+                            <div className="group-card-header">
+                              <strong className="group-card-title">👥 {group.name}</strong>
+                              <span className="group-card-count">{group.members.length} anggota</span>
+                              <span className={progress.className}>{progress.label}</span>
                             </div>
-                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            <div className="group-card-members">
                               {group.members.map((member) => {
                                 const removalLocked = group.attempt_status === "terkumpul" || group.attempt_status === "dinilai";
                                 return (
@@ -3354,7 +3469,7 @@ export default function GuruPage() {
                     ) : (
                       <span style={styles.muted}>{attempt.username} · {attempt.status} · {attempt.class_name ?? "Tanpa kelas"}</span>
                     )}
-                    <span style={styles.muted}>{attempt.total_score === null ? "Belum dinilai" : `Nilai ${attempt.total_score}`}</span>
+                    <span style={styles.muted}>{attempt.total_score === null ? (gradingProgressLabel(attempt.graded_count ?? 0, attempt.total_items ?? 0) ?? "Belum dinilai") : `Nilai ${attempt.total_score}`}</span>
                   </button>
                 ))}
                 {visibleGradingAttempts.length === 0 ? <p style={styles.muted}>Tidak ada pengumpulan yang cocok dengan saringan yang dipilih.</p> : null}
@@ -3375,6 +3490,9 @@ export default function GuruPage() {
                   ) : (
                     <p style={styles.muted}>{attemptDetail.attempt.username} · status {attemptDetail.attempt.status}</p>
                   )}
+                  {gradingProgressText ? (
+                    <p style={styles.muted}>{gradingProgressText} · nilai tampil ke murid sesudah semua butir selesai dinilai</p>
+                  ) : null}
                   {runningTotalDraft ? (
                     <p style={styles.muted}>Total sementara: {formatScoreValue(runningTotalDraft.current)} dari {formatScoreValue(runningTotalDraft.max)}</p>
                   ) : null}
@@ -3402,17 +3520,22 @@ export default function GuruPage() {
                           max={item.points}
                           step="0.01"
                           value={scoreDrafts[item.id] ?? ""}
-                          onChange={(event) => setScoreDrafts((current) => ({ ...current, [item.id]: event.target.value }))}
+                          onChange={(event) => { setScoreDrafts((current) => ({ ...current, [item.id]: event.target.value })); markItemGradeDirty(item.id); }}
+                          onBlur={() => void commitGradeItem(item, scoreDrafts[item.id] ?? "", noteDrafts[item.id] ?? "")}
                           placeholder="Nilai soal"
                           style={{ ...styles.input, ...styles.scoreInput }}
                         />
-                        <button type="button" style={styles.scoreChip} onClick={() => setScoreDrafts((current) => ({ ...current, [item.id]: quickScoreDrafts(item.points).zero }))}>0</button>
-                        <button type="button" style={styles.scoreChip} onClick={() => setScoreDrafts((current) => ({ ...current, [item.id]: quickScoreDrafts(item.points).half }))}>½</button>
-                        <button type="button" style={styles.scoreChip} onClick={() => setScoreDrafts((current) => ({ ...current, [item.id]: quickScoreDrafts(item.points).full }))}>Penuh</button>
+                        <button type="button" style={activeQuickScoreChip(scoreDrafts[item.id]?.trim() ? Number(scoreDrafts[item.id]) : null, item.points) === "zero" ? styles.scoreChipZeroActive : styles.scoreChip} onClick={() => { const value = quickScoreDrafts(item.points).zero; setScoreDrafts((current) => ({ ...current, [item.id]: value })); void commitGradeItem(item, value, noteDrafts[item.id] ?? ""); }}>0</button>
+                        <button type="button" style={activeQuickScoreChip(scoreDrafts[item.id]?.trim() ? Number(scoreDrafts[item.id]) : null, item.points) === "half" ? styles.scoreChipHalfActive : styles.scoreChip} onClick={() => { const value = quickScoreDrafts(item.points).half; setScoreDrafts((current) => ({ ...current, [item.id]: value })); void commitGradeItem(item, value, noteDrafts[item.id] ?? ""); }}>½</button>
+                        <button type="button" style={activeQuickScoreChip(scoreDrafts[item.id]?.trim() ? Number(scoreDrafts[item.id]) : null, item.points) === "full" ? styles.scoreChipFullActive : styles.scoreChip} onClick={() => { const value = quickScoreDrafts(item.points).full; setScoreDrafts((current) => ({ ...current, [item.id]: value })); void commitGradeItem(item, value, noteDrafts[item.id] ?? ""); }}>Penuh</button>
                       </div>
+                      {itemSaveStates[item.id] === "saving" ? <small style={styles.muted}>Menyimpan nilai…</small> : null}
+                      {itemSaveStates[item.id] === "saved" ? <small style={styles.savedMark}>Tersimpan ✓</small> : null}
+                      {itemSaveStates[item.id] === "error" ? <small style={styles.errorMark}>Nilai butir ini belum tersimpan — periksa koneksi lalu ubah kembali nilainya, atau pakai tombol Simpan penilaian.</small> : null}
                       <textarea
                         value={noteDrafts[item.id] ?? ""}
-                        onChange={(event) => setNoteDrafts((current) => ({ ...current, [item.id]: event.target.value }))}
+                        onChange={(event) => { setNoteDrafts((current) => ({ ...current, [item.id]: event.target.value })); markItemGradeDirty(item.id); }}
+                        onBlur={() => void commitGradeItem(item, scoreDrafts[item.id] ?? "", noteDrafts[item.id] ?? "")}
                         placeholder="Catatan untuk murid (opsional)"
                         rows={2}
                         style={styles.textarea}
@@ -3940,6 +4063,13 @@ const styles = {
   scoreRow: { display: "flex", gap: 8, alignItems: "center" },
   scoreInput: { flex: 1, minWidth: 0 },
   scoreChip: { border: "1px solid #d0d5dd", borderRadius: 8, background: "white", padding: "9px 10px", cursor: "pointer", font: "inherit", whiteSpace: "nowrap" as const, flexShrink: 0 },
+  // Chip nilai cepat yang aktif (Penilaian Rapi): 0 = putih bertepi tegas,
+  // ½ = gradasi putih ke biru, Penuh = hijau penuh.
+  scoreChipZeroActive: { border: "2px solid #344054", borderRadius: 8, background: "#ffffff", padding: "9px 10px", cursor: "pointer", font: "inherit", whiteSpace: "nowrap" as const, flexShrink: 0, fontWeight: 700 },
+  scoreChipHalfActive: { border: "1px solid #175cd3", borderRadius: 8, background: "linear-gradient(90deg, #ffffff 0%, #84adff 100%)", padding: "9px 10px", cursor: "pointer", font: "inherit", whiteSpace: "nowrap" as const, flexShrink: 0, fontWeight: 700 },
+  scoreChipFullActive: { border: "1px solid #067647", borderRadius: 8, background: "#067647", color: "#ffffff", padding: "9px 10px", cursor: "pointer", font: "inherit", whiteSpace: "nowrap" as const, flexShrink: 0, fontWeight: 700 },
+  savedMark: { color: "#027a48", fontSize: 12.5, fontWeight: 600 },
+  errorMark: { color: "#b42318", fontSize: 12.5 },
   answerText: { margin: 0, whiteSpace: "pre-wrap" as const, background: "#f8f9fc", borderRadius: 8, padding: 10 },
   label: { display: "grid", gap: 6, color: "#344054", fontSize: 14, minWidth: 0 },
   checkboxList: { display: "grid", gap: 8, border: "1px solid #eaecf0", borderRadius: 8, padding: 12, minWidth: 0 },

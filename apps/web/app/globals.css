@@ -1364,6 +1364,65 @@ a {
   cursor: not-allowed;
 }
 
+/* Kartu kelompok pada panel "Kelompok penugasan" (Penilaian Rapi,
+   v1.0.34): struktur satu kolom — baris kepala (ikon + nama kelompok +
+   jumlah anggota + lencana progres) lalu baris chip anggota yang membungkus
+   di bawahnya. Menggantikan susunan .resource-row dua kolom yang membuat
+   nama kelompok dan chip anggota menumpuk/terpotong di lebar desktop. */
+.group-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  background: var(--color-surface);
+}
+
+.group-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.group-card-title {
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.group-card-count {
+  color: var(--color-muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.group-card-members {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Tombol "Salin daftar" panel Kelompok: sebelumnya memakai gaya sekunder
+   pucat hingga tampak nonaktif. Kini mengikuti token tombol utama
+   (#175cd3) dengan keadaan hover, tanpa mengubah perilakunya. */
+.copy-list-button {
+  border: 1px solid #175cd3;
+  border-radius: 8px;
+  background: #175cd3;
+  color: #ffffff;
+  padding: 9px 12px;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.copy-list-button:hover {
+  background: #1849a9;
+  border-color: #1849a9;
+}
+
 /* Lencana progres pengerjaan per kelompok pada panel Kelompok (Tahap 3
    mini) — palet mengikuti .module-status/.integrity-risk yang sudah ada:
    kelabu = belum mulai, biru = sedang dikerjakan, amber = terkumpul

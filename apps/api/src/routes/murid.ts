@@ -5,6 +5,7 @@ import { db, schema } from "@simak/db";
 import { contributionRatingsSchema, exitTicketSchema, worksheetAnswersSchema } from "@simak/shared";
 import { requireRole } from "../middleware/auth";
 import { fetchRuasQuizCompleted, parseRuasQuizUrl } from "../lib/ruas-status";
+import { studentIsAssignmentTarget } from "../lib/assignment-target";
 import { contributionWindowOpen, loadMemberScoreOverride, loadStudentGroup, pickEffectiveAttempt, type AttemptSnapshot } from "../lib/groups";
 
 // Beranda murid + detail penugasan — halaman paling ringan adalah prioritas.
@@ -12,10 +13,16 @@ export const muridRoutes = new Hono();
 
 muridRoutes.use("*", requireRole("murid"));
 
-const { activityLogs, assignmentClasses, assignments, classes, classMembers, exitTickets, groupContributionRatings, moduleBlocks, modules, users, worksheetAnswers, worksheetAttempts, worksheetItems, worksheets } = schema;
+const { activityLogs, assignmentClasses, assignmentStudents, assignments, classes, classMembers, exitTickets, groupContributionRatings, moduleBlocks, modules, users, worksheetAnswers, worksheetAttempts, worksheetItems, worksheets } = schema;
 
 type StudentGroupView = NonNullable<Awaited<ReturnType<typeof loadStudentGroup>>>;
 
+// Penugasan terbit yang boleh diakses murid ini: murid adalah sasaran
+// penugasan — anggota salah satu kelas tujuannya ATAU tercatat sebagai
+// murid sasaran langsung (penugasan "siswa tertentu"). Pemeriksaan sasaran
+// terpusat di lib/assignment-target.ts; semua permukaan murid berbasis
+// penugasan (detail, exit ticket, resolusi attempt, konteks kuis RUAS)
+// melewati fungsi ini.
 async function accessibleAssignment(studentId: number, assignmentId: number) {
   const [assignment] = await db
     .select({
@@ -32,16 +39,10 @@ async function accessibleAssignment(studentId: number, assignmentId: number) {
       status: assignments.status,
     })
     .from(assignments)
-    .innerJoin(assignmentClasses, eq(assignmentClasses.assignmentId, assignments.id))
-    .innerJoin(classMembers, eq(classMembers.classId, assignmentClasses.classId))
-    .innerJoin(classes, eq(classes.id, classMembers.classId))
-    .where(and(
-      eq(assignments.id, assignmentId),
-      eq(assignments.status, "terbit"),
-      eq(classMembers.studentId, studentId),
-      eq(classes.isArchived, false),
-    ))
+    .where(and(eq(assignments.id, assignmentId), eq(assignments.status, "terbit")))
     .limit(1);
+  if (!assignment) return undefined;
+  if (!(await studentIsAssignmentTarget(assignmentId, studentId))) return undefined;
   return assignment;
 }
 
@@ -288,7 +289,16 @@ muridRoutes.get("/today", async (c) => {
         .where(and(eq(assignments.status, "terbit"), inArray(assignmentClasses.classId, classIds)))
         .orderBy(asc(assignments.opensAt))
     : [];
-  const uniqueAssignments = [...new Map(assignmentRows.map((row) => [row.assignments.id, row.assignments])).values()];
+  // Penugasan "siswa tertentu" tidak mempunyai kelas tujuan: murid menemukannya
+  // lewat catatan sasaran langsungnya, bukan keanggotaan kelas.
+  const directRows = await db
+    .select()
+    .from(assignments)
+    .innerJoin(assignmentStudents, eq(assignmentStudents.assignmentId, assignments.id))
+    .where(and(eq(assignments.status, "terbit"), eq(assignmentStudents.studentId, user.userId)))
+    .orderBy(asc(assignments.opensAt));
+  const uniqueAssignments = [...new Map([...assignmentRows, ...directRows].map((row) => [row.assignments.id, row.assignments])).values()]
+    .sort((a, b) => a.opensAt.getTime() - b.opensAt.getTime());
   const worksheetIds = uniqueAssignments.flatMap((assignment) => assignment.worksheetId === null ? [] : [assignment.worksheetId]);
   const attempts = worksheetIds.length
     ? await db.select({ worksheetId: worksheetAttempts.worksheetId, status: worksheetAttempts.status, submittedAt: worksheetAttempts.submittedAt }).from(worksheetAttempts).where(and(eq(worksheetAttempts.studentId, user.userId), inArray(worksheetAttempts.worksheetId, worksheetIds)))

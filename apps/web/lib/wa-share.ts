@@ -9,6 +9,7 @@ export type WhatsAppShareAssignment = {
   due_at: string;
   ruas_quiz_url: string | null;
   work_mode?: "individu" | "kelompok";
+  target_type?: "kelas" | "siswa";
   classes: WhatsAppShareClass[];
 };
 
@@ -33,10 +34,16 @@ export function buildWhatsAppShareMessage(assignment: WhatsAppShareAssignment, o
   }).format(due);
 
   const lines = [`📚 *${assignment.title}*`];
-  if (assignment.classes.length > 0) {
+  // Penugasan "siswa tertentu" tidak punya kelas tujuan maupun kode gabung:
+  // baris Kelas/Kode kelas diganti satu baris sasaran. Penugasan "kelas"
+  // (atau tanpa target_type) mempertahankan format lama persis.
+  const siswaTarget = assignment.target_type === "siswa";
+  if (siswaTarget) {
+    lines.push("Sasaran: Siswa tertentu");
+  } else if (assignment.classes.length > 0) {
     lines.push(`Kelas: ${assignment.classes.map((kelas) => kelas.name).join(", ")}`);
   }
-  const codedClasses = assignment.classes.filter((kelas) => kelas.join_code);
+  const codedClasses = siswaTarget ? [] : assignment.classes.filter((kelas) => kelas.join_code);
   if (codedClasses.length > 0) {
     // Satu kelas: cukup kodenya. Banyak kelas: pasangan "Nama — KODE" agar
     // tidak ambigu; kelas tanpa kode dilewati.

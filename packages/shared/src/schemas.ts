@@ -239,15 +239,32 @@ export const createAssignmentSchema = z.object({
   // target anggota per kelompok 2–10 (bawaan 4 ditegakkan di route/UI).
   workMode: z.enum(["individu", "kelompok"]).default("individu"),
   groupSize: z.number().int().min(2).max(10).optional(),
+  // Sasaran penugasan: "kelas" memakai classIds; "siswa" memakai
+  // studentIds (murid tertentu, mis. remedial/pengayaan) dan hanya boleh
+  // untuk mode individu — aturan kombinasinya ditegakkan di superRefine
+  // di bawah dan sekali lagi di route dengan pesan yang sama.
+  targetType: z.enum(["kelas", "siswa"]).default("kelas"),
   opensAt: z.coerce.date(),
   dueAt: z.coerce.date(),
-  classIds: z.array(z.number().int().positive()).min(1).max(50).refine((ids) => new Set(ids).size === ids.length, "Kelas tujuan tidak boleh duplikat."),
+  classIds: z.array(z.number().int().positive()).max(50).refine((ids) => new Set(ids).size === ids.length, "Kelas tujuan tidak boleh duplikat.").optional(),
+  studentIds: z.array(z.number().int().positive()).max(500).refine((ids) => new Set(ids).size === ids.length, "Murid sasaran tidak boleh duplikat.").optional(),
 }).refine((value) => value.moduleId !== undefined || value.worksheetId !== undefined, {
   message: "Penugasan harus terhubung ke modul atau LKPD.",
   path: ["moduleId"],
 }).refine((value) => value.dueAt >= value.opensAt, {
   message: "Batas pengumpulan harus setelah waktu buka.",
   path: ["dueAt"],
+}).superRefine((value, context) => {
+  if (value.targetType === "siswa") {
+    if (value.workMode !== "individu") {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "Penugasan untuk siswa tertentu hanya tersedia untuk mode individu.", path: ["workMode"] });
+    }
+    if (!value.studentIds || value.studentIds.length === 0) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "Pilih minimal satu murid sasaran.", path: ["studentIds"] });
+    }
+  } else if (!value.classIds || value.classIds.length === 0) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Pilih minimal satu kelas tujuan.", path: ["classIds"] });
+  }
 });
 
 export const updateAssignmentSchema = z.object({
@@ -258,13 +275,24 @@ export const updateAssignmentSchema = z.object({
   ruasQuizUrl: z.string().url().max(1024).optional(),
   workMode: z.enum(["individu", "kelompok"]).optional(),
   groupSize: z.number().int().min(2).max(10).nullable().optional(),
+  targetType: z.enum(["kelas", "siswa"]).optional(),
   opensAt: z.coerce.date().optional(),
   dueAt: z.coerce.date().optional(),
   status: z.enum(["draf", "terbit", "ditutup"]).optional(),
   classIds: z.array(z.number().int().positive()).min(1).max(50).refine((ids) => new Set(ids).size === ids.length, "Kelas tujuan tidak boleh duplikat.").optional(),
+  studentIds: z.array(z.number().int().positive()).max(500).refine((ids) => new Set(ids).size === ids.length, "Murid sasaran tidak boleh duplikat.").optional(),
 }).superRefine((value, context) => {
   if (value.opensAt && value.dueAt && value.dueAt < value.opensAt) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "Batas pengumpulan harus setelah waktu buka.", path: ["dueAt"] });
+  }
+  // Kombinasi sasaran siswa + mode kelompok di dalam satu payload langsung
+  // ditolak di sini; kombinasi lewat keadaan tersimpan (mis. mengganti mode
+  // pada penugasan siswa yang sudah ada) ditegakkan di route.
+  if (value.targetType === "siswa" && value.workMode === "kelompok") {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Penugasan untuk siswa tertentu hanya tersedia untuk mode individu.", path: ["workMode"] });
+  }
+  if (value.targetType === "siswa" && value.studentIds !== undefined && value.studentIds.length === 0) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Pilih minimal satu murid sasaran.", path: ["studentIds"] });
   }
 });
 

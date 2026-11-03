@@ -4,9 +4,10 @@ import { zValidator } from "@hono/zod-validator";
 import { db, schema } from "@simak/db";
 import { integrityEventSchema } from "@simak/shared";
 import { requireRole } from "../middleware/auth";
+import { studentIsAssignmentTarget } from "../lib/assignment-target";
 
 const integrityRoutes = new Hono();
-const { assignmentClasses, assignments, classes, classMembers, integrityEvents, users } = schema;
+const { assignments, integrityEvents, users } = schema;
 
 integrityRoutes.post(
   "/",
@@ -15,19 +16,12 @@ integrityRoutes.post(
   async (c) => {
     const user = c.get("user")!;
     const input = c.req.valid("json");
-    const [access] = await db
+    const [assignment] = await db
       .select({ id: assignments.id })
       .from(assignments)
-      .innerJoin(assignmentClasses, eq(assignmentClasses.assignmentId, assignments.id))
-      .innerJoin(classMembers, eq(classMembers.classId, assignmentClasses.classId))
-      .innerJoin(classes, eq(classes.id, classMembers.classId))
-      .where(and(
-        eq(assignments.id, input.assignmentId),
-        eq(assignments.status, "terbit"),
-        eq(classMembers.studentId, user.userId),
-        eq(classes.isArchived, false),
-      ))
+      .where(and(eq(assignments.id, input.assignmentId), eq(assignments.status, "terbit")))
       .limit(1);
+    const access = assignment && (await studentIsAssignmentTarget(assignment.id, user.userId)) ? assignment : undefined;
     if (!access) return c.json({ ok: false, message: "Penugasan tidak tersedia untuk Anda." }, 404);
 
     // Satu sinyal yang sama dalam jendela pendek tidak perlu disimpan berulang.

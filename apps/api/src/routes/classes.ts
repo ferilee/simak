@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { randomBytes } from "node:crypto";
-import { eq, and } from "drizzle-orm";
+import { asc, eq, and, inArray } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
 import { db, schema } from "@simak/db";
 import { createClassSchema, joinClassSchema } from "@simak/shared";
@@ -9,7 +9,7 @@ import { requireRole } from "../middleware/auth";
 // CRUD kelas/rombel + anggota dari username/NIS yang dicocokkan ke akun RUAS.
 export const classRoutes = new Hono();
 
-const { classes, classMembers } = schema;
+const { classes, classMembers, users } = schema;
 
 classRoutes.post("/join", requireRole("murid"), zValidator("json", joinClassSchema), async (c) => {
   const user = c.get("user")!;
@@ -47,6 +47,23 @@ classRoutes.post("/join", requireRole("murid"), zValidator("json", joinClassSche
 classRoutes.get("/", requireRole("guru"), async (c) => {
   const user = c.get("user")!;
   const rows = await db.select().from(classes).where(eq(classes.teacherId, user.userId));
+  // Daftar anggota per kelas ikut dikirim: pemilih murid sasaran pada form
+  // penugasan "siswa tertentu" mengelompokkan murid berdasarkan kelasnya
+  // dari data ini (hanya kelas milik guru yang meminta).
+  const memberRows = rows.length
+    ? await db
+        .select({ classId: classMembers.classId, id: users.id, name: users.name, username: users.username })
+        .from(classMembers)
+        .innerJoin(users, eq(users.id, classMembers.studentId))
+        .where(inArray(classMembers.classId, rows.map((kelas) => kelas.id)))
+        .orderBy(asc(users.name))
+    : [];
+  const membersByClass = new Map<number, { id: number; name: string; username: string }[]>();
+  for (const row of memberRows) {
+    const current = membersByClass.get(row.classId) ?? [];
+    current.push({ id: row.id, name: row.name, username: row.username });
+    membersByClass.set(row.classId, current);
+  }
   return c.json({
     ok: true,
     data: rows.map((kelas) => ({
@@ -56,6 +73,7 @@ classRoutes.get("/", requireRole("guru"), async (c) => {
       academic_year: kelas.academicYear,
       join_code: kelas.joinCode,
       is_archived: kelas.isArchived,
+      members: membersByClass.get(kelas.id) ?? [],
     })),
   });
 });
@@ -86,6 +104,7 @@ classRoutes.post("/", requireRole("guru"), zValidator("json", createClassSchema)
       academic_year: kelas!.academicYear,
       join_code: kelas!.joinCode,
       is_archived: kelas!.isArchived,
+      members: [],
     },
   }, 201);
 });

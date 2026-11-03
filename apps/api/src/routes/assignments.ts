@@ -4,6 +4,8 @@ import { zValidator } from "@hono/zod-validator";
 import { db, schema } from "@simak/db";
 import { addAssignmentGroupMemberSchema, copyAssignmentGroupsSchema, createAssignmentSchema, shuffleAssignmentGroupsSchema, updateAssignmentSchema } from "@simak/shared";
 import { requireRole } from "../middleware/auth";
+import { assignmentTargetRuleError, loadAssignmentStudentsView } from "../lib/assignment-target";
+import { loadTeacherClassMemberships } from "../lib/student-class";
 import {
   assignmentHasGroupWork,
   classShuffleLocked,
@@ -18,11 +20,14 @@ import {
 // Penugasan ke kelas: jadwal buka/tutup dan tautan kuis RUAS.
 export const assignmentRoutes = new Hono();
 
-const { assignmentClasses, assignmentGroupMembers, assignmentGroups, assignments, classMembers, classes, exitTickets, modules, users, worksheetAttempts, worksheets } = schema;
+const { assignmentClasses, assignmentGroupMembers, assignmentGroups, assignmentStudents, assignments, classMembers, classes, exitTickets, modules, users, worksheetAttempts, worksheets } = schema;
+
+type AssignmentStudentView = { id: number; name: string; username: string; class_name: string };
 
 function serializeAssignment(
   assignment: typeof assignments.$inferSelect,
   linkedClasses: { id: number; name: string; joinCode: string }[] = [],
+  linkedStudents: AssignmentStudentView[] = [],
 ) {
   return {
     id: assignment.id,
@@ -33,10 +38,14 @@ function serializeAssignment(
     ruas_quiz_url: assignment.ruasQuizUrl,
     work_mode: assignment.workMode,
     group_size: assignment.groupSize,
+    target_type: assignment.targetType,
     opens_at: assignment.opensAt,
     due_at: assignment.dueAt,
     status: assignment.status,
     classes: linkedClasses.map((kelas) => ({ id: kelas.id, name: kelas.name, join_code: kelas.joinCode })),
+    // Murid sasaran langsung — hanya terisi untuk target_type "siswa";
+    // penugasan "kelas" selalu mengirim daftar kosong.
+    students: linkedStudents,
     created_at: assignment.createdAt,
     updated_at: assignment.updatedAt,
   };
@@ -57,6 +66,14 @@ async function getLinkedClasses(assignmentId: number) {
     .from(assignmentClasses)
     .innerJoin(classes, eq(classes.id, assignmentClasses.classId))
     .where(eq(assignmentClasses.assignmentId, assignmentId));
+}
+
+async function getLinkedStudentIds(assignmentId: number) {
+  const rows = await db
+    .select({ studentId: assignmentStudents.studentId })
+    .from(assignmentStudents)
+    .where(eq(assignmentStudents.assignmentId, assignmentId));
+  return rows.map((row) => row.studentId);
 }
 
 async function validateTeacherReferences(userId: number, moduleId?: number, worksheetId?: number) {
@@ -107,11 +124,26 @@ async function validateTeacherClasses(userId: number, classIds: number[]) {
   return rows.length === new Set(classIds).size;
 }
 
+// Murid sasaran langsung sah hanya bila ia anggota minimal satu kelas
+// (tidak diarsipkan) milik guru yang meminta — murid dari guru lain atau
+// murid tanpa kelas guru ini ditolak.
+async function validateTeacherStudents(userId: number, studentIds: number[]) {
+  if (studentIds.length === 0) return true;
+  const rows = await db
+    .select({ studentId: classMembers.studentId })
+    .from(classMembers)
+    .innerJoin(classes, eq(classes.id, classMembers.classId))
+    .where(and(eq(classes.teacherId, userId), eq(classes.isArchived, false), inArray(classMembers.studentId, studentIds)));
+  const memberIds = new Set(rows.map((row) => row.studentId));
+  return studentIds.every((studentId) => memberIds.has(studentId));
+}
+
 // Predikat "sudah ada aktivitas murid" untuk satu penugasan, memakai sumber
 // data yang sama dengan rekap sesi (routes/reports.ts): murid sasaran adalah
-// anggota kelas tujuan penugasan (kelas yang tidak diarsipkan), dan aktivitas
-// terhitung adalah exit ticket untuk penugasan ini ATAU attempt pada LKPD
-// tertaut — keduanya oleh salah satu murid sasaran.
+// anggota kelas tujuan penugasan (kelas yang tidak diarsipkan) ditambah
+// murid sasaran langsung (target_type "siswa"), dan aktivitas terhitung
+// adalah exit ticket untuk penugasan ini ATAU attempt pada LKPD tertaut —
+// keduanya oleh salah satu murid sasaran.
 async function assignmentHasStudentActivity(assignment: typeof assignments.$inferSelect) {
   const memberRows = await db
     .select({ studentId: classMembers.studentId })
@@ -119,7 +151,11 @@ async function assignmentHasStudentActivity(assignment: typeof assignments.$infe
     .innerJoin(classes, eq(classes.id, assignmentClasses.classId))
     .innerJoin(classMembers, eq(classMembers.classId, classes.id))
     .where(and(eq(assignmentClasses.assignmentId, assignment.id), eq(classes.isArchived, false)));
-  const studentIds = [...new Set(memberRows.map((row) => row.studentId))];
+  const directRows = await db
+    .select({ studentId: assignmentStudents.studentId })
+    .from(assignmentStudents)
+    .where(eq(assignmentStudents.assignmentId, assignment.id));
+  const studentIds = [...new Set([...memberRows.map((row) => row.studentId), ...directRows.map((row) => row.studentId)])];
   if (studentIds.length === 0) return false;
   const [ticket] = await db
     .select({ id: exitTickets.id })
@@ -154,7 +190,18 @@ assignmentRoutes.get("/", async (c) => {
     current.push({ id: link.id, name: link.name, joinCode: link.joinCode });
     classesByAssignment.set(link.assignmentId, current);
   }
-  return c.json({ ok: true, data: rows.map((row) => serializeAssignment(row, classesByAssignment.get(row.id) ?? [])) });
+  const studentsByAssignment = new Map<number, AssignmentStudentView[]>();
+  const siswaRows = rows.filter((row) => row.targetType === "siswa");
+  if (siswaRows.length > 0) {
+    const membershipsByStudent = await loadTeacherClassMemberships(user.userId);
+    for (const row of siswaRows) {
+      studentsByAssignment.set(row.id, await loadAssignmentStudentsView(row, membershipsByStudent));
+    }
+  }
+  return c.json({
+    ok: true,
+    data: rows.map((row) => serializeAssignment(row, classesByAssignment.get(row.id) ?? [], studentsByAssignment.get(row.id) ?? [])),
+  });
 });
 
 assignmentRoutes.post("/", zValidator("json", createAssignmentSchema), async (c) => {
@@ -162,7 +209,18 @@ assignmentRoutes.post("/", zValidator("json", createAssignmentSchema), async (c)
   const input = c.req.valid("json");
   const referenceError = await validateTeacherReferences(user.userId, input.moduleId, input.worksheetId);
   if (referenceError) return c.json({ ok: false, message: referenceError }, 404);
-  if (!(await validateTeacherClasses(user.userId, input.classIds))) {
+  const targetRuleError = assignmentTargetRuleError({
+    targetType: input.targetType,
+    workMode: input.workMode,
+    classIds: input.classIds,
+    studentIds: input.studentIds,
+  });
+  if (targetRuleError) return c.json({ ok: false, message: targetRuleError }, 400);
+  if (input.targetType === "siswa") {
+    if (!(await validateTeacherStudents(user.userId, input.studentIds ?? []))) {
+      return c.json({ ok: false, message: "Ada murid sasaran yang bukan anggota kelas yang Anda kelola." }, 400);
+    }
+  } else if (!(await validateTeacherClasses(user.userId, input.classIds ?? []))) {
     return c.json({ ok: false, message: "Ada kelas tujuan yang tidak Anda kelola atau sudah diarsipkan." }, 400);
   }
 
@@ -177,15 +235,28 @@ assignmentRoutes.post("/", zValidator("json", createAssignmentSchema), async (c)
       ruasQuizUrl: input.ruasQuizUrl,
       workMode: input.workMode,
       groupSize: input.workMode === "kelompok" ? (input.groupSize ?? 4) : (input.groupSize ?? null),
+      targetType: input.targetType,
       opensAt: input.opensAt,
       dueAt: input.dueAt,
     }).$returningId();
     assignmentId = created!.id;
-    await tx.insert(assignmentClasses).values(input.classIds.map((classId) => ({ assignmentId, classId })));
+    if (input.targetType === "siswa") {
+      await tx.insert(assignmentStudents).values((input.studentIds ?? []).map((studentId) => ({ assignmentId, studentId })));
+    } else {
+      await tx.insert(assignmentClasses).values((input.classIds ?? []).map((classId) => ({ assignmentId, classId })));
+    }
   });
 
   const assignment = await ownedAssignment(user.userId, assignmentId);
-  return c.json({ ok: true, data: serializeAssignment(assignment!, await getLinkedClasses(assignmentId)) }, 201);
+  const membershipsByStudent = assignment!.targetType === "siswa" ? await loadTeacherClassMemberships(user.userId) : new Map();
+  return c.json({
+    ok: true,
+    data: serializeAssignment(
+      assignment!,
+      await getLinkedClasses(assignmentId),
+      assignment!.targetType === "siswa" ? await loadAssignmentStudentsView(assignment!, membershipsByStudent) : [],
+    ),
+  }, 201);
 });
 
 assignmentRoutes.patch("/:id", zValidator("json", updateAssignmentSchema), async (c) => {
@@ -200,7 +271,7 @@ assignmentRoutes.patch("/:id", zValidator("json", updateAssignmentSchema), async
   // field status, karena UI membuka kembali penugasan ditutup lewat tombol
   // "Terbitkan" yang mengirim body { status } saja.
   if (current.status === "ditutup") {
-    const contentKeys = ["moduleId", "worksheetId", "title", "instructions", "ruasQuizUrl", "workMode", "groupSize", "opensAt", "dueAt", "classIds"] as const;
+    const contentKeys = ["moduleId", "worksheetId", "title", "instructions", "ruasQuizUrl", "workMode", "groupSize", "opensAt", "dueAt", "classIds", "targetType", "studentIds"] as const;
     if (contentKeys.some((key) => input[key] !== undefined)) {
       return c.json({ ok: false, message: "Penugasan yang sudah ditutup tidak dapat diubah." }, 409);
     }
@@ -222,15 +293,24 @@ assignmentRoutes.patch("/:id", zValidator("json", updateAssignmentSchema), async
   }
   // Pagar status — pada penugasan terbit yang sudah dikerjakan murid, modul,
   // LKPD, dan kelas tujuan terkunci: menggantinya akan memutuskan pasangan
-  // penugasan–LKPD yang menjadi dasar rekap dan pengumpulan. Field lain
-  // (judul, petunjuk, tautan RUAS, jadwal, status) tetap boleh berubah.
-  if (current.status === "terbit" && (input.moduleId !== undefined || input.worksheetId !== undefined || input.classIds !== undefined)) {
+  // penugasan–LKPD yang menjadi dasar rekap dan pengumpulan. Jenis sasaran
+  // dan daftar murid sasaran mengikuti kunci yang sama (predikat aktivitas
+  // yang sama). Field lain (judul, petunjuk, tautan RUAS, jadwal, status)
+  // tetap boleh berubah.
+  const targetTypeChanged = input.targetType !== undefined && input.targetType !== current.targetType;
+  if (current.status === "terbit" && (input.moduleId !== undefined || input.worksheetId !== undefined || input.classIds !== undefined || input.targetType !== undefined || input.studentIds !== undefined)) {
     const linkedClasses = await getLinkedClasses(assignmentId);
+    const linkedStudentIds = await getLinkedStudentIds(assignmentId);
     const moduleChanged = input.moduleId !== undefined && input.moduleId !== (current.moduleId ?? undefined);
     const worksheetChanged = input.worksheetId !== undefined && input.worksheetId !== (current.worksheetId ?? undefined);
     const classesChanged = input.classIds !== undefined
       && (input.classIds.length !== linkedClasses.length || input.classIds.some((id) => !linkedClasses.some((kelas) => kelas.id === id)));
-    if ((moduleChanged || worksheetChanged || classesChanged) && (await assignmentHasStudentActivity(current))) {
+    const studentsChanged = input.studentIds !== undefined
+      && (input.studentIds.length !== linkedStudentIds.length || input.studentIds.some((id) => !linkedStudentIds.includes(id)));
+    if ((moduleChanged || worksheetChanged || classesChanged || targetTypeChanged || studentsChanged) && (await assignmentHasStudentActivity(current))) {
+      if (targetTypeChanged || studentsChanged) {
+        return c.json({ ok: false, message: "Sasaran penugasan tidak dapat diubah karena sudah ada murid yang mengerjakan penugasan ini." }, 409);
+      }
       return c.json({ ok: false, message: "Modul, LKPD, dan kelas tujuan tidak dapat diubah karena sudah ada murid yang mengerjakan penugasan ini." }, 409);
     }
   }
@@ -239,6 +319,23 @@ assignmentRoutes.patch("/:id", zValidator("json", updateAssignmentSchema), async
   if (input.classIds && !(await validateTeacherClasses(user.userId, input.classIds))) {
     return c.json({ ok: false, message: "Ada kelas tujuan yang tidak Anda kelola atau sudah diarsipkan." }, 400);
   }
+  if (input.studentIds && !(await validateTeacherStudents(user.userId, input.studentIds))) {
+    return c.json({ ok: false, message: "Ada murid sasaran yang bukan anggota kelas yang Anda kelola." }, 400);
+  }
+  // Aturan kombinasi sasaran ditegakkan atas keadaan EFEKTIF sesudah PATCH
+  // (jenis sasaran/mode dari payload bila ada, selain itu dari simpanan;
+  // daftar sasaran dari payload bila ada, selain itu dari tautan tersimpan).
+  const effectiveTargetType = input.targetType ?? current.targetType;
+  const effectiveWorkMode = input.workMode ?? current.workMode;
+  const effectiveClassIds = input.classIds ?? (await getLinkedClasses(assignmentId)).map((kelas) => kelas.id);
+  const effectiveStudentIds = input.studentIds ?? (await getLinkedStudentIds(assignmentId));
+  const effectiveRuleError = assignmentTargetRuleError({
+    targetType: effectiveTargetType,
+    workMode: effectiveWorkMode,
+    classIds: effectiveClassIds,
+    studentIds: effectiveStudentIds,
+  });
+  if (effectiveRuleError) return c.json({ ok: false, message: effectiveRuleError }, 400);
   if (input.status === "terbit" || (input.status === undefined && current.status === "terbit")) {
     const publishError = await validatePublishableReferences(user.userId, input.moduleId ?? current.moduleId ?? undefined, input.worksheetId ?? current.worksheetId ?? undefined);
     if (publishError) return c.json({ ok: false, message: publishError }, 400);
@@ -247,14 +344,34 @@ assignmentRoutes.patch("/:id", zValidator("json", updateAssignmentSchema), async
   const dueAt = input.dueAt ?? current.dueAt;
   if (dueAt < opensAt) return c.json({ ok: false, message: "Batas pengumpulan harus setelah waktu buka." }, 400);
 
-  const { classIds, ...assignmentInput } = input;
+  const { classIds, studentIds, ...assignmentInput } = input;
   await db.transaction(async (tx) => {
     if (Object.keys(assignmentInput).length > 0) {
       await tx.update(assignments).set(assignmentInput).where(eq(assignments.id, assignmentId));
     }
-    if (classIds) {
-      await tx.delete(assignmentClasses).where(eq(assignmentClasses.assignmentId, assignmentId));
-      await tx.insert(assignmentClasses).values(classIds.map((classId) => ({ assignmentId, classId })));
+    // Sinkronisasi daftar sasaran mengikuti jenis sasaran efektif: daftar
+    // milik jenis yang aktif diganti bila payload membawanya (atau jenisnya
+    // baru berganti), dan daftar milik jenis yang ditinggalkan dikosongkan.
+    if (effectiveTargetType === "siswa") {
+      if (studentIds || targetTypeChanged) {
+        await tx.delete(assignmentStudents).where(eq(assignmentStudents.assignmentId, assignmentId));
+        if (effectiveStudentIds.length > 0) {
+          await tx.insert(assignmentStudents).values(effectiveStudentIds.map((studentId) => ({ assignmentId, studentId })));
+        }
+      }
+      if (targetTypeChanged) {
+        await tx.delete(assignmentClasses).where(eq(assignmentClasses.assignmentId, assignmentId));
+      }
+    } else {
+      if (classIds || targetTypeChanged) {
+        await tx.delete(assignmentClasses).where(eq(assignmentClasses.assignmentId, assignmentId));
+        if (effectiveClassIds.length > 0) {
+          await tx.insert(assignmentClasses).values(effectiveClassIds.map((classId) => ({ assignmentId, classId })));
+        }
+      }
+      if (targetTypeChanged) {
+        await tx.delete(assignmentStudents).where(eq(assignmentStudents.assignmentId, assignmentId));
+      }
     }
   });
 
@@ -281,7 +398,15 @@ assignmentRoutes.patch("/:id", zValidator("json", updateAssignmentSchema), async
       }
     }
   }
-  return c.json({ ok: true, data: serializeAssignment(updated!, await getLinkedClasses(assignmentId)) });
+  const membershipsByStudent = updated!.targetType === "siswa" ? await loadTeacherClassMemberships(user.userId) : new Map();
+  return c.json({
+    ok: true,
+    data: serializeAssignment(
+      updated!,
+      await getLinkedClasses(assignmentId),
+      updated!.targetType === "siswa" ? await loadAssignmentStudentsView(updated!, membershipsByStudent) : [],
+    ),
+  });
 });
 
 // ---------------------------------------------------------------------------

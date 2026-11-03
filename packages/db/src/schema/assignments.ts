@@ -19,6 +19,11 @@ export const assignments = mysqlTable(
     // Mode pengerjaan LKPD: individu (bawaan, perilaku lama) atau kelompok
     // (satu attempt bersama per kelompok — lihat schema/groups.ts).
     workMode: mysqlEnum("work_mode", ["individu", "kelompok"]).notNull().default("individu"),
+    // Sasaran penugasan: "kelas" (bawaan — semua anggota kelas tujuan di
+    // assignment_classes) atau "siswa" (murid tertentu di
+    // assignment_students, untuk remedial/pengayaan). Mode "siswa" hanya
+    // tersedia untuk pengerjaan individu — ditegakkan di route.
+    targetType: mysqlEnum("target_type", ["kelas", "siswa"]).notNull().default("kelas"),
     groupSize: int("group_size"),
     opensAt: datetime("opens_at", { mode: "date" }).notNull(),
     dueAt: datetime("due_at", { mode: "date" }).notNull(),
@@ -43,5 +48,27 @@ export const assignmentClasses = mysqlTable(
   (t) => [
     uniqueIndex("assignment_classes_pair_unique").on(t.assignmentId, t.classId),
     index("assignment_classes_class_idx").on(t.classId),
+  ],
+);
+
+// Murid sasaran langsung untuk penugasan bertarget_type "siswa": daftar
+// murid ini menggantikan keanggotaan kelas sebagai syarat akses murid ke
+// penugasan (lihat lib/assignment-target.ts di API). Satu murid paling
+// banyak tercatat sekali per penugasan.
+export const assignmentStudents = mysqlTable(
+  "assignment_students",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    assignmentId: bigint("assignment_id", { mode: "number" })
+      .notNull()
+      .references(() => assignments.id, { onDelete: "cascade" }),
+    studentId: bigint("student_id", { mode: "number" })
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("assignment_students_pair_unique").on(t.assignmentId, t.studentId),
+    index("assignment_students_student_idx").on(t.studentId),
   ],
 );

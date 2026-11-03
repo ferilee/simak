@@ -141,5 +141,46 @@ const individuExplicit = buildWhatsAppShareMessage(
 check("tanpa baris kelompok", !individuExplicit.includes("👥"));
 check("identik dengan golden individu", individuExplicit === expected);
 
+// Case 8: sasaran siswa tertentu (v1.0.32) — golden: baris "Kelas:" diganti
+// "Sasaran: Siswa tertentu" dan TIDAK ada baris kode kelas walau data kelas
+// (berkode) ikut terkirim. Sisa pesan identik dengan format kelas.
+console.log("Case 8: sasaran siswa tertentu (golden)");
+const siswaMessage = buildWhatsAppShareMessage(
+  {
+    title: "Remedial Matematika Keuangan",
+    due_at: DUE,
+    ruas_quiz_url: null,
+    work_mode: "individu",
+    target_type: "siswa",
+    classes: [{ name: "XI DPIB", join_code: "ECE4E736E7" }],
+  },
+  ORIGIN,
+);
+const expectedSiswa = [
+  "📚 *Remedial Matematika Keuangan*",
+  "Sasaran: Siswa tertentu",
+  "",
+  "Kegiatan belajar hari ini:",
+  "1. Baca dan pahami materi di SIMAK https://simak.smkpasirian-lmj.sch.id",
+  "2. Kerjakan LKPD-nya di SIMAK",
+  "3. Kerjakan kuis di RUAS https://ruas.smkpasirian-lmj.sch.id",
+  "4. Isi exit ticket 3-2-1 di SIMAK",
+  "",
+  "⏰ Batas pengumpulan: Senin, 2 November 2026 pukul 15.00 WIB — pengumpulan tercatat sebagai kehadiran.",
+  "🔑 Gunakan akun RUAS untuk masuk ke SIMAK",
+].join("\n");
+check("persis sama dengan teks target siswa", siswaMessage === expectedSiswa, siswaMessage === expectedSiswa ? "" : `\n--- didapat ---\n${siswaMessage}\n--- diharapkan ---\n${expectedSiswa}`);
+check("tanpa baris Kelas", !siswaMessage.includes("Kelas:"));
+check("tanpa baris Kode kelas", !siswaMessage.includes("Kode kelas:"));
+check("kode gabung tidak bocor", !siswaMessage.includes("ECE4E736E7"));
+
+// Case 9: target_type "kelas" eksplisit identik dengan golden lama.
+console.log("Case 9: target_type kelas eksplisit");
+const kelasExplicit = buildWhatsAppShareMessage(
+  { title: "Matematika Keuangan · XI DPIB", due_at: DUE, ruas_quiz_url: null, target_type: "kelas", classes: [{ name: "XI DPIB", join_code: "ECE4E736E7" }] },
+  ORIGIN,
+);
+check("identik dengan golden kelas", kelasExplicit === expected);
+
 console.log(`\nHasil: ${passed} lulus, ${failed} gagal, ${passed + failed} total`);
 if (failed > 0) process.exit(1);

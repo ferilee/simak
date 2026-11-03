@@ -5,6 +5,7 @@ import { db, schema } from "@simak/db";
 import { memberScoreSchema } from "@simak/shared";
 import { requireRole } from "../middleware/auth";
 import { loadTeacherClassMemberships, resolveStudentClass } from "../lib/student-class";
+import { loadAssignmentSubject } from "../lib/assignment-target";
 import { loadAttemptMemberScores, mapGroupAttemptsToStudents, pickEffectiveAttempt, resolveEffectiveMemberScore } from "../lib/groups";
 
 // Ringkasan pengumpulan penugasan untuk panel guru.
@@ -12,7 +13,7 @@ export const gradingRoutes = new Hono();
 
 gradingRoutes.use("*", requireRole("guru"));
 
-const { assignmentClasses, assignmentGroupMembers, assignmentGroups, assignments, classMembers, classes, exitTickets, modules, users, worksheetAttemptMemberScores, worksheetAttempts, worksheetItems, worksheets } = schema;
+const { assignmentClasses, assignmentGroupMembers, assignmentGroups, assignmentStudents, assignments, classMembers, classes, exitTickets, modules, users, worksheetAttemptMemberScores, worksheetAttempts, worksheetItems, worksheets } = schema;
 
 function serializeScore(score: string | null) {
   return score === null ? null : Number(score);
@@ -135,14 +136,33 @@ gradingRoutes.get("/assignments/:id", async (c) => {
 
   const links = await db.select({ classId: assignmentClasses.classId }).from(assignmentClasses).where(eq(assignmentClasses.assignmentId, assignmentId));
   const classIds = links.map((link) => link.classId);
-  const students = classIds.length
-    ? await db
-        .select({ id: users.id, name: users.name, username: users.username, classId: classMembers.classId })
-        .from(classMembers)
-        .innerJoin(users, eq(users.id, classMembers.studentId))
-        .innerJoin(classes, eq(classes.id, classMembers.classId))
-        .where(and(inArray(classMembers.classId, classIds), eq(classes.isArchived, false)))
-    : [];
+  // Penugasan "siswa tertentu" tidak mempunyai kelas tujuan: daftar muridnya
+  // berasal dari sasaran langsung, kelas tiap murid diatasi dengan aturan
+  // lib/student-class.ts seperti pada rekap sesi.
+  const students = assignment.targetType === "siswa"
+    ? await (async () => {
+        const rows = await db
+          .select({ id: users.id, name: users.name, username: users.username })
+          .from(assignmentStudents)
+          .innerJoin(users, eq(users.id, assignmentStudents.studentId))
+          .where(eq(assignmentStudents.assignmentId, assignmentId));
+        const [membershipsByStudent, subject] = await Promise.all([
+          loadTeacherClassMemberships(user.userId),
+          loadAssignmentSubject(assignment),
+        ]);
+        return rows.map((row) => ({
+          ...row,
+          classId: resolveStudentClass(membershipsByStudent.get(row.id) ?? [], subject)?.id ?? 0,
+        }));
+      })()
+    : classIds.length
+      ? await db
+          .select({ id: users.id, name: users.name, username: users.username, classId: classMembers.classId })
+          .from(classMembers)
+          .innerJoin(users, eq(users.id, classMembers.studentId))
+          .innerJoin(classes, eq(classes.id, classMembers.classId))
+          .where(and(inArray(classMembers.classId, classIds), eq(classes.isArchived, false)))
+      : [];
   const uniqueStudents = [...new Map(students.map((student) => [student.id, student])).values()];
   const attempts = assignment.worksheetId === null || uniqueStudents.length === 0
     ? []

@@ -3,13 +3,15 @@ import { and, eq, gte, inArray, lt } from "drizzle-orm";
 import { db, schema } from "@simak/db";
 import { requireRole } from "../middleware/auth";
 import { mapGroupAttemptsToStudents, pickEffectiveAttempt, resolveEffectiveMemberScore } from "../lib/groups";
+import { loadAssignmentSubject } from "../lib/assignment-target";
+import { loadTeacherClassMemberships, resolveStudentClass } from "../lib/student-class";
 
 // Rekap bukti = agregasi activity_logs + worksheet_attempts + exit_tickets.
 // Format laporan: JSON (default), CSV yang dapat dibuka di Excel, atau PDF.
 export const reportRoutes = new Hono();
 reportRoutes.use("*", requireRole("guru"));
 
-const { activityLogs, assignmentClasses, assignmentGroupMembers, assignmentGroups, assignments, classes, classMembers, exitTickets, ruasScores, users, worksheetAttemptMemberScores, worksheetAttempts } = schema;
+const { activityLogs, assignmentClasses, assignmentGroupMembers, assignmentGroups, assignmentStudents, assignments, classes, classMembers, exitTickets, ruasScores, users, worksheetAttemptMemberScores, worksheetAttempts } = schema;
 type TargetStudent = { id: number; name: string; username: string; nis: string | null; classId: number; className: string };
 type ReportRow = {
   student_id: number; name: string; username: string; class_name: string; hadir: boolean; opened_at: Date | null;
@@ -29,21 +31,40 @@ async function ownedAssignment(userId: number, assignmentId: number) {
   return assignment;
 }
 
-async function getTargetStudents(assignmentId: number) {
+async function getTargetStudents(assignment: typeof assignments.$inferSelect) {
+  // Penugasan "siswa tertentu": sasaran adalah murid yang tercatat langsung;
+  // kolom kelas laporan diisi kelas hasil aturan lib/student-class.ts
+  // (berpreferensi mapel penugasan) agar baris rekap tetap punya label
+  // kelas — tak teratasi berarti classId 0 / className "".
+  if (assignment.targetType === "siswa") {
+    const rows = await db
+      .select({ id: users.id, name: users.name, username: users.username, nis: users.nis })
+      .from(assignmentStudents)
+      .innerJoin(users, eq(users.id, assignmentStudents.studentId))
+      .where(eq(assignmentStudents.assignmentId, assignment.id));
+    const [membershipsByStudent, subject] = await Promise.all([
+      loadTeacherClassMemberships(assignment.teacherId),
+      loadAssignmentSubject(assignment),
+    ]);
+    return rows.map((row) => {
+      const resolved = resolveStudentClass(membershipsByStudent.get(row.id) ?? [], subject);
+      return { ...row, classId: resolved?.id ?? 0, className: resolved?.name ?? "" };
+    });
+  }
   const targetStudents = await db
     .select({ id: users.id, name: users.name, username: users.username, nis: users.nis, classId: classes.id, className: classes.name })
     .from(assignmentClasses)
     .innerJoin(classes, eq(classes.id, assignmentClasses.classId))
     .innerJoin(classMembers, eq(classMembers.classId, classes.id))
     .innerJoin(users, eq(users.id, classMembers.studentId))
-    .where(and(eq(assignmentClasses.assignmentId, assignmentId), eq(classes.isArchived, false)));
+    .where(and(eq(assignmentClasses.assignmentId, assignment.id), eq(classes.isArchived, false)));
   return [...new Map(targetStudents.map((student) => [student.id, student])).values()];
 }
 
 async function loadSessionReportData(userId: number, assignmentId: number): Promise<SessionReportData | null> {
   const assignment = await ownedAssignment(userId, assignmentId);
   if (!assignment) return null;
-  const students = await getTargetStudents(assignmentId);
+  const students = await getTargetStudents(assignment);
   const studentIds = students.map((student) => student.id);
   const [activities, attempts, tickets, importedRuas] = await Promise.all([
     studentIds.length ? db.select({ studentId: activityLogs.studentId, event: activityLogs.event, createdAt: activityLogs.createdAt }).from(activityLogs).where(and(eq(activityLogs.assignmentId, assignmentId), inArray(activityLogs.studentId, studentIds))) : Promise.resolve([]),
@@ -172,8 +193,9 @@ reportRoutes.post("/ruas-import", async (c) => {
   const assignmentId = Number(input.assignmentId);
   if (!Number.isInteger(assignmentId) || assignmentId <= 0 || !Array.isArray(input.rows) || input.rows.length === 0) return c.json({ ok: false, message: "assignmentId dan minimal satu baris nilai wajib diisi." }, 400);
   if (input.rows.length > 1000) return c.json({ ok: false, message: "Impor dibatasi maksimal 1.000 baris." }, 400);
-  if (!(await ownedAssignment(user.userId, assignmentId))) return c.json({ ok: false, message: "Penugasan tidak ditemukan." }, 404);
-  const students = await getTargetStudents(assignmentId);
+  const importAssignment = await ownedAssignment(user.userId, assignmentId);
+  if (!importAssignment) return c.json({ ok: false, message: "Penugasan tidak ditemukan." }, 404);
+  const students = await getTargetStudents(importAssignment);
   const byIdentifier = new Map<string, TargetStudent>();
   for (const student of students) { if (student.nis) byIdentifier.set(student.nis.trim().toLowerCase(), student); byIdentifier.set(student.username.trim().toLowerCase(), student); }
   const seen = new Set<string>();

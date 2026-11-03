@@ -84,7 +84,8 @@ type WorksheetPreviewItem = {
   points: number;
 };
 type WorksheetItemsResponse = { ok: true; data: WorksheetPreviewItem[] };
-type ClassSummary = { id: number; name: string; subject: string; academic_year: string; join_code: string; is_archived: boolean };
+type ClassMemberSummary = { id: number; name: string; username: string };
+type ClassSummary = { id: number; name: string; subject: string; academic_year: string; join_code: string; is_archived: boolean; members: ClassMemberSummary[] };
 type ClassesResponse = { ok: true; data: ClassSummary[] };
 type AssignmentSummary = {
   id: number;
@@ -95,10 +96,12 @@ type AssignmentSummary = {
   ruas_quiz_url: string | null;
   work_mode: "individu" | "kelompok";
   group_size: number | null;
+  target_type: "kelas" | "siswa";
   opens_at: string;
   due_at: string;
   status: "draf" | "terbit" | "ditutup";
   classes: { id: number; name: string; join_code: string }[];
+  students: { id: number; name: string; username: string; class_name: string }[];
 };
 type AssignmentGroupMemberView = { id: number; name: string; username: string };
 type AssignmentClassGroups = {
@@ -329,6 +332,9 @@ export default function GuruPage() {
   const [assignmentOpensAt, setAssignmentOpensAt] = useState(() => toDateTimeLocal(new Date()));
   const [assignmentDueAt, setAssignmentDueAt] = useState(() => toDateTimeLocal(new Date(Date.now() + 24 * 60 * 60 * 1000)));
   const [assignmentClassIds, setAssignmentClassIds] = useState<number[]>([]);
+  const [assignmentTargetType, setAssignmentTargetType] = useState<"kelas" | "siswa">("kelas");
+  const [assignmentStudentIds, setAssignmentStudentIds] = useState<number[]>([]);
+  const [assignmentStudentQuery, setAssignmentStudentQuery] = useState("");
   const [assignmentRuasUrl, setAssignmentRuasUrl] = useState("");
   const [assignmentWorkMode, setAssignmentWorkMode] = useState<"individu" | "kelompok">("individu");
   const [assignmentGroupSize, setAssignmentGroupSize] = useState("4");
@@ -354,6 +360,8 @@ export default function GuruPage() {
     workMode: "individu" | "kelompok";
     groupSize: string;
     classIds: number[];
+    targetType: "kelas" | "siswa";
+    studentIds: number[];
   } | null>(null);
   const assignmentFormRef = useRef<HTMLDetailsElement | null>(null);
   const sessionReportPanelRef = useRef<HTMLElement | null>(null);
@@ -429,6 +437,26 @@ export default function GuruPage() {
     assignments.length > 0,
     false,
   ];
+
+  // Peta murid → nama + kelas asal untuk chip murid terpilih pada pemilih
+  // sasaran siswa tertentu (sumbernya daftar anggota per kelas dari API).
+  const assignmentStudentInfoById = new Map<number, { name: string; className: string }>();
+  for (const kelas of classes) {
+    for (const member of kelas.members ?? []) {
+      if (!assignmentStudentInfoById.has(member.id)) {
+        assignmentStudentInfoById.set(member.id, { name: member.name, className: kelas.name });
+      }
+    }
+  }
+  // Murid sasaran penugasan yang sedang diedit tetap tampil di chip walau
+  // ia sudah tidak tercatat sebagai anggota kelas mana pun.
+  if (editingAssignment) {
+    for (const student of editingAssignment.students) {
+      if (!assignmentStudentInfoById.has(student.id)) {
+        assignmentStudentInfoById.set(student.id, { name: student.name, className: student.class_name });
+      }
+    }
+  }
 
   const moduleSubjects = [...new Set(modules.map((module) => module.subject))].sort((a, b) => a.localeCompare(b, "id"));
   const normalizedModuleQuery = moduleQuery.trim().toLowerCase();
@@ -1880,10 +1908,25 @@ export default function GuruPage() {
     }
   }
 
+  // Beralih jenis sasaran mengosongkan daftar milik jenis sebelumnya, agar
+  // formulir tidak pernah mengirim dua daftar sasaran sekaligus. Sasaran
+  // siswa tertentu hanya tersedia untuk mode individu, jadi beralih ke
+  // "siswa" memaksa mode individu.
+  function changeAssignmentTargetType(next: "kelas" | "siswa") {
+    setAssignmentTargetType(next);
+    if (next === "siswa") {
+      setAssignmentClassIds([]);
+      setAssignmentWorkMode("individu");
+    } else {
+      setAssignmentStudentIds([]);
+      setAssignmentStudentQuery("");
+    }
+  }
+
   async function createAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedId || !selectedWorksheetId || assignmentClassIds.length === 0) {
-      setMessage("Pilih modul, LKPD, dan minimal satu kelas tujuan.");
+    if (!selectedId || !selectedWorksheetId || (assignmentTargetType === "kelas" ? assignmentClassIds.length === 0 : assignmentStudentIds.length === 0)) {
+      setMessage(assignmentTargetType === "kelas" ? "Pilih modul, LKPD, dan minimal satu kelas tujuan." : "Pilih modul, LKPD, dan minimal satu murid sasaran.");
       return;
     }
     try {
@@ -1899,7 +1942,9 @@ export default function GuruPage() {
           ruasQuizUrl: assignmentRuasUrl || undefined,
           workMode: assignmentWorkMode,
           groupSize: assignmentWorkMode === "kelompok" ? Number(assignmentGroupSize) || 4 : undefined,
-          classIds: assignmentClassIds,
+          targetType: assignmentTargetType,
+          classIds: assignmentTargetType === "kelas" ? assignmentClassIds : undefined,
+          studentIds: assignmentTargetType === "siswa" ? assignmentStudentIds : undefined,
         }),
       });
       setAssignmentTitle("");
@@ -1907,6 +1952,9 @@ export default function GuruPage() {
       setAssignmentRuasUrl("");
       setAssignmentWorkMode("individu");
       setAssignmentGroupSize("4");
+      setAssignmentTargetType("kelas");
+      setAssignmentStudentIds([]);
+      setAssignmentStudentQuery("");
       setMessage("Penugasan dibuat sebagai draf.");
       await loadModules();
     } catch (error) {
@@ -1926,6 +1974,8 @@ export default function GuruPage() {
       workMode: assignmentWorkMode,
       groupSize: assignmentGroupSize,
       classIds: assignmentClassIds,
+      targetType: assignmentTargetType,
+      studentIds: assignmentStudentIds,
     };
     setEditingAssignment(assignment);
     setAssignmentTitle(assignment.title);
@@ -1934,7 +1984,10 @@ export default function GuruPage() {
     setSelectedWorksheetId(assignment.worksheet_id);
     setAssignmentWorkMode(assignment.work_mode);
     setAssignmentGroupSize(String(assignment.group_size ?? 4));
+    setAssignmentTargetType(assignment.target_type);
     setAssignmentClassIds(assignment.classes.map((kelas) => kelas.id));
+    setAssignmentStudentIds(assignment.students.map((student) => student.id));
+    setAssignmentStudentQuery("");
     setAssignmentOpensAt(toDateTimeLocal(new Date(assignment.opens_at)));
     setAssignmentDueAt(toDateTimeLocal(new Date(assignment.due_at)));
     setAssignmentRuasUrl(assignment.ruas_quiz_url ?? "");
@@ -1957,6 +2010,9 @@ export default function GuruPage() {
       setAssignmentWorkMode(snapshot.workMode);
       setAssignmentGroupSize(snapshot.groupSize);
       setAssignmentClassIds(snapshot.classIds);
+      setAssignmentTargetType(snapshot.targetType);
+      setAssignmentStudentIds(snapshot.studentIds);
+      setAssignmentStudentQuery("");
     }
     assignmentEditSnapshot.current = null;
     setEditingAssignment(null);
@@ -1965,8 +2021,8 @@ export default function GuruPage() {
   async function saveAssignmentEdit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!editingAssignment) return;
-    if (!selectedId || !selectedWorksheetId || assignmentClassIds.length === 0) {
-      setMessage("Pilih modul, LKPD, dan minimal satu kelas tujuan.");
+    if (!selectedId || !selectedWorksheetId || (assignmentTargetType === "kelas" ? assignmentClassIds.length === 0 : assignmentStudentIds.length === 0)) {
+      setMessage(assignmentTargetType === "kelas" ? "Pilih modul, LKPD, dan minimal satu kelas tujuan." : "Pilih modul, LKPD, dan minimal satu murid sasaran.");
       return;
     }
     try {
@@ -1982,7 +2038,9 @@ export default function GuruPage() {
           ruasQuizUrl: assignmentRuasUrl || undefined,
           workMode: assignmentWorkMode,
           groupSize: assignmentWorkMode === "kelompok" ? Number(assignmentGroupSize) || 4 : undefined,
-          classIds: assignmentClassIds,
+          targetType: assignmentTargetType,
+          classIds: assignmentTargetType === "kelas" ? assignmentClassIds : undefined,
+          studentIds: assignmentTargetType === "siswa" ? assignmentStudentIds : undefined,
         }),
       });
       setMessage("Perubahan penugasan disimpan.");
@@ -2745,7 +2803,7 @@ export default function GuruPage() {
             <label style={styles.label}>Mode pengerjaan LKPD
               <select value={assignmentWorkMode} onChange={(event) => setAssignmentWorkMode(event.target.value as "individu" | "kelompok")} style={styles.input}>
                 <option value="individu">Individu — setiap murid mengerjakan sendiri</option>
-                <option value="kelompok">Kelompok — satu LKPD dikerjakan bersama</option>
+                <option value="kelompok" disabled={assignmentTargetType === "siswa"}>Kelompok — satu LKPD dikerjakan bersama</option>
               </select>
             </label>
             {assignmentWorkMode === "kelompok" ? (
@@ -2754,10 +2812,64 @@ export default function GuruPage() {
                 <span style={styles.muted}>Kelompok dibentuk otomatis secara acak oleh sistem saat penugasan diterbitkan.</span>
               </label>
             ) : null}
-            <div style={styles.checkboxList}>
-              <span style={styles.label}>Kelas tujuan</span>
-              {classes.map((kelas) => <label key={kelas.id} style={styles.checkbox}><input type="checkbox" checked={assignmentClassIds.includes(kelas.id)} onChange={(event) => setAssignmentClassIds((current) => event.target.checked ? [...current, kelas.id] : current.filter((id) => id !== kelas.id))} />{kelas.name} · {kelas.subject}</label>)}
-            </div>
+            <label style={styles.label}>Sasaran penugasan
+              <select value={assignmentTargetType} onChange={(event) => changeAssignmentTargetType(event.target.value as "kelas" | "siswa")} style={styles.input}>
+                <option value="kelas">Kelas — semua anggota kelas tujuan</option>
+                <option value="siswa">Siswa tertentu — pilih murid satu per satu (remedial/pengayaan)</option>
+              </select>
+              {assignmentTargetType === "siswa" ? <span style={styles.muted}>Sasaran siswa tertentu hanya tersedia untuk mode individu.</span> : null}
+            </label>
+            {assignmentTargetType === "kelas" ? (
+              <div style={styles.checkboxList}>
+                <span style={styles.label}>Kelas tujuan</span>
+                {classes.map((kelas) => <label key={kelas.id} style={styles.checkbox}><input type="checkbox" checked={assignmentClassIds.includes(kelas.id)} onChange={(event) => setAssignmentClassIds((current) => event.target.checked ? [...current, kelas.id] : current.filter((id) => id !== kelas.id))} />{kelas.name} · {kelas.subject}</label>)}
+              </div>
+            ) : (
+              <div style={styles.checkboxList}>
+                <span style={styles.label}>Murid sasaran</span>
+                <input value={assignmentStudentQuery} onChange={(event) => setAssignmentStudentQuery(event.target.value)} placeholder="Cari nama atau username murid" style={styles.input} />
+                <span style={styles.muted}>{assignmentStudentIds.length} murid dipilih</span>
+                {assignmentStudentIds.length > 0 ? (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {assignmentStudentIds.map((studentId) => {
+                      const info = assignmentStudentInfoById.get(studentId);
+                      return (
+                        <span key={studentId} style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid #d0d5dd", borderRadius: 999, padding: "2px 6px 2px 10px", fontSize: 13 }}>
+                          {info ? `${info.name}${info.className ? ` · ${info.className}` : ""}` : `Murid #${studentId}`}
+                          <button type="button" aria-label={`Hapus ${info?.name ?? studentId} dari sasaran`} onClick={() => setAssignmentStudentIds((current) => current.filter((id) => id !== studentId))} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2 }}>×</button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : null}
+                {classes.filter((kelas) => !kelas.is_archived).map((kelas) => {
+                  const query = assignmentStudentQuery.trim().toLowerCase();
+                  const members = kelas.members ?? [];
+                  const visibleMembers = members.filter((member) => query === "" || member.name.toLowerCase().includes(query) || member.username.toLowerCase().includes(query));
+                  if (visibleMembers.length === 0) return null;
+                  const allSelected = members.length > 0 && members.every((member) => assignmentStudentIds.includes(member.id));
+                  return (
+                    <div key={kelas.id} style={{ display: "grid", gap: 4 }}>
+                      <label style={styles.checkbox}>
+                        <input
+                          type="checkbox"
+                          checked={allSelected}
+                          onChange={(event) => setAssignmentStudentIds((current) => event.target.checked ? [...new Set([...current, ...members.map((member) => member.id)])] : current.filter((id) => !members.some((member) => member.id === id)))}
+                        />
+                        <strong>{kelas.name} · {kelas.subject}</strong> — pilih semua
+                      </label>
+                      {visibleMembers.map((member) => (
+                        <label key={member.id} style={{ ...styles.checkbox, marginLeft: 22 }}>
+                          <input type="checkbox" checked={assignmentStudentIds.includes(member.id)} onChange={(event) => setAssignmentStudentIds((current) => event.target.checked ? [...current, member.id] : current.filter((id) => id !== member.id))} />
+                          {member.name} · @{member.username}
+                        </label>
+                      ))}
+                    </div>
+                  );
+                })}
+                {classes.every((kelas) => (kelas.members ?? []).length === 0) ? <p style={styles.empty}>Belum ada murid di kelas mana pun. Murid masuk kelas lewat kode gabung di Langkah 3.</p> : null}
+              </div>
+            )}
             <label style={styles.label}>Dibuka pada<input type="datetime-local" value={assignmentOpensAt} onChange={(event) => setAssignmentOpensAt(event.target.value)} style={styles.input} /></label>
             <label style={styles.label}>Batas pengumpulan<input type="datetime-local" value={assignmentDueAt} onChange={(event) => setAssignmentDueAt(event.target.value)} style={styles.input} /></label>
             <input type="url" value={assignmentRuasUrl} onChange={(event) => setAssignmentRuasUrl(event.target.value)} placeholder="Tautan kuis RUAS (opsional)" style={styles.input} />
@@ -2777,7 +2889,7 @@ export default function GuruPage() {
         ) : null}
         {assignments.length === 0 ? <p style={styles.empty}>Belum ada penugasan.</p> : visibleAssignments.length === 0 ? (
           <p style={styles.empty}>Tidak ada penugasan berstatus {activeAssignmentFilterLabel}.</p>
-        ) : <div className="module-list">{visibleAssignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}{assignment.work_mode === "kelompok" ? <> · <span className="group-mode-badge">👥 Kelompok · {assignment.group_size ?? 4} orang</span></> : null}</span></div><div className="resource-row-actions">{assignment.work_mode === "kelompok" ? <button type="button" onClick={() => toggleGroupsPanel(assignment)} className={`row-action-button is-outline${selectedGroupAssignmentId === assignment.id ? " is-active" : ""}`} aria-pressed={selectedGroupAssignmentId === assignment.id}>Kelompok</button> : null}{assignment.status !== "ditutup" ? <button type="button" onClick={() => startEditAssignment(assignment)} className="row-action-button is-outline"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>Edit</button> : null}<button type="button" onClick={() => void changeAssignmentStatus(assignment)} className={assignment.status === "terbit" ? "row-action-button is-outline" : "row-action-button is-primary"}>{assignment.status === "terbit" ? <><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>Tutup</> : "Terbitkan"}</button>{assignment.status === "terbit" ? <a href={`https://wa.me/?text=${encodeURIComponent(buildWhatsAppShareMessage(assignment, typeof window !== "undefined" ? window.location.origin : ""))}`} target="_blank" rel="noreferrer" className="row-action-button is-whatsapp"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.6L3 21l1.9-5.6A8.5 8.5 0 1 1 21 11.5Z" /></svg>Bagikan WA</a> : null}</div></article>)}</div>}
+        ) : <div className="module-list">{visibleAssignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.target_type === "siswa" ? `${assignment.students.length} siswa tertentu` : assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}{assignment.work_mode === "kelompok" ? <> · <span className="group-mode-badge">👥 Kelompok · {assignment.group_size ?? 4} orang</span></> : null}{assignment.target_type === "siswa" ? <> · <span className="group-mode-badge">Siswa tertentu</span></> : null}</span></div><div className="resource-row-actions">{assignment.work_mode === "kelompok" ? <button type="button" onClick={() => toggleGroupsPanel(assignment)} className={`row-action-button is-outline${selectedGroupAssignmentId === assignment.id ? " is-active" : ""}`} aria-pressed={selectedGroupAssignmentId === assignment.id}>Kelompok</button> : null}{assignment.status !== "ditutup" ? <button type="button" onClick={() => startEditAssignment(assignment)} className="row-action-button is-outline"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>Edit</button> : null}<button type="button" onClick={() => void changeAssignmentStatus(assignment)} className={assignment.status === "terbit" ? "row-action-button is-outline" : "row-action-button is-primary"}>{assignment.status === "terbit" ? <><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>Tutup</> : "Terbitkan"}</button>{assignment.status === "terbit" ? <a href={`https://wa.me/?text=${encodeURIComponent(buildWhatsAppShareMessage(assignment, typeof window !== "undefined" ? window.location.origin : ""))}`} target="_blank" rel="noreferrer" className="row-action-button is-whatsapp"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.6L3 21l1.9-5.6A8.5 8.5 0 1 1 21 11.5Z" /></svg>Bagikan WA</a> : null}</div></article>)}</div>}
       </section>
 
       {selectedGroupAssignmentId ? (
@@ -3098,7 +3210,7 @@ export default function GuruPage() {
             />
           </div>
         ) : null}
-        {assignments.length === 0 ? <p style={styles.empty}>Belum ada penugasan.</p> : visibleRekapAssignments.length === 0 ? <p style={styles.empty}>Tidak ada penugasan yang cocok dengan pencarian.</p> : <div className="module-list">{visibleRekapAssignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}</span></div><div className="resource-row-actions"><button type="button" onClick={() => void loadSessionReport(assignment.id)} className={`row-action-button is-outline${selectedReportAssignmentId === assignment.id ? " is-active" : ""}`} aria-pressed={selectedReportAssignmentId === assignment.id} disabled={sessionReportLoading && selectedReportAssignmentId === assignment.id}><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18" /><path d="M10 10v10" /></svg>{sessionReportLoading && selectedReportAssignmentId === assignment.id ? "Memuat…" : selectedReportAssignmentId === assignment.id ? "Segarkan rekap" : "Lihat rekap"}</button><button type="button" onClick={() => void loadAssignmentSummary(assignment.id)} className={`row-action-button is-outline${selectedAssignmentId === assignment.id ? " is-active" : ""}`} aria-pressed={selectedAssignmentId === assignment.id} disabled={assignmentSummaryLoading && selectedAssignmentId === assignment.id}><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 8h6" /><path d="M9 12h6" /></svg>{assignmentSummaryLoading && selectedAssignmentId === assignment.id ? "Memuat…" : selectedAssignmentId === assignment.id ? "Segarkan exit ticket" : "Lihat exit ticket"}</button></div></article>)}</div>}
+        {assignments.length === 0 ? <p style={styles.empty}>Belum ada penugasan.</p> : visibleRekapAssignments.length === 0 ? <p style={styles.empty}>Tidak ada penugasan yang cocok dengan pencarian.</p> : <div className="module-list">{visibleRekapAssignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.target_type === "siswa" ? `${assignment.students.length} siswa tertentu` : assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}{assignment.target_type === "siswa" ? <> · <span className="group-mode-badge">Siswa tertentu</span></> : null}</span></div><div className="resource-row-actions"><button type="button" onClick={() => void loadSessionReport(assignment.id)} className={`row-action-button is-outline${selectedReportAssignmentId === assignment.id ? " is-active" : ""}`} aria-pressed={selectedReportAssignmentId === assignment.id} disabled={sessionReportLoading && selectedReportAssignmentId === assignment.id}><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18" /><path d="M10 10v10" /></svg>{sessionReportLoading && selectedReportAssignmentId === assignment.id ? "Memuat…" : selectedReportAssignmentId === assignment.id ? "Segarkan rekap" : "Lihat rekap"}</button><button type="button" onClick={() => void loadAssignmentSummary(assignment.id)} className={`row-action-button is-outline${selectedAssignmentId === assignment.id ? " is-active" : ""}`} aria-pressed={selectedAssignmentId === assignment.id} disabled={assignmentSummaryLoading && selectedAssignmentId === assignment.id}><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 8h6" /><path d="M9 12h6" /></svg>{assignmentSummaryLoading && selectedAssignmentId === assignment.id ? "Memuat…" : selectedAssignmentId === assignment.id ? "Segarkan exit ticket" : "Lihat exit ticket"}</button></div></article>)}</div>}
       </section>
 
       {selectedReportAssignmentId ? (

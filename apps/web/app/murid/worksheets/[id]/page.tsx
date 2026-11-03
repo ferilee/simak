@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { apiRequest } from "../../../../lib/api";
+import { mergeLiveAnswers, type LiveAnswer } from "../../../../lib/live-kelompok";
 import { prepareImageForUpload } from "../../../../lib/prepare-image";
 import { Toast } from "../../../../components/Toast";
 import { useConfirm } from "../../../../components/ConfirmDialog";
@@ -46,6 +47,18 @@ type AttemptResponse = {
     total_score?: number | null;
     teacher_comment?: string | null;
     member_score?: number | null;
+  };
+};
+
+type LivePresenceEntry = { student_id: number; name: string; current_item_id: number | null };
+type LiveStateResponse = {
+  ok: true;
+  data: {
+    live: boolean;
+    attempt_status: "draf" | "terkumpul" | "dinilai" | null;
+    answers: LiveAnswer[];
+    presence: LivePresenceEntry[];
+    ungrouped?: boolean;
   };
 };
 
@@ -116,6 +129,23 @@ export default function WorksheetPage() {
   const cardTopRef = useRef<HTMLDivElement>(null);
   const firstPageRenderRef = useRef(true);
   const lastIntegrityEventRef = useRef<Record<string, number>>({});
+  // Live kelompok (versi ringan — polling): presensi teman yang aktif,
+  // sorotan jawaban yang baru diperbarui teman, dan catatan konflik untuk
+  // butir yang sedang diketik murid ini. Semuanya hanya hidup pada attempt
+  // kelompok yang masih draf.
+  const [livePresence, setLivePresence] = useState<LivePresenceEntry[]>([]);
+  const [liveFlash, setLiveFlash] = useState<{ itemId: number; editorName: string | null } | null>(null);
+  const [liveConflict, setLiveConflict] = useState<{ itemId: number; editorName: string | null; key: string } | null>(null);
+  const liveConflictDismissedKeyRef = useRef("");
+  const displayedItemIdRef = useRef<number | null>(null);
+  const pollLiveRef = useRef<() => Promise<void>>(async () => {});
+  const sendHeartbeatRef = useRef<() => void>(() => {});
+  // Butir yang sedang tampil menurut keadaan mentah (untuk keperluan live):
+  // sama dengan butir pemutar soal; null di layar tinjauan / mode baca-saja.
+  const displayedItemIdForLive = data && status === "draf" && pageIndex < data.items.length
+    ? (data.items[pageIndex]?.id ?? null)
+    : null;
+  const liveActive = Boolean(groupInfo) && Boolean(assignmentId) && status === "draf" && Boolean(data);
 
   useEffect(() => {
     const attemptQuery = assignmentId ? `?assignmentId=${assignmentId}` : "";
@@ -131,55 +161,7 @@ export default function WorksheetPage() {
           setUngrouped(true);
           return;
         }
-        // Snapshot awal acuan kotor autosave: payload yang persis dibangun
-        // dari jawaban terload (termasuk fallback urutan tampil untuk butir
-        // langkah yang belum disentuh, sama seperti buildAnswersPayload),
-        // supaya sekadar membuka halaman tidak dianggap mengubah jawaban.
-        savedSnapshotRef.current = JSON.stringify(worksheet.data.items.map((item) => {
-          const savedAnswer = attempt.data.answers.find((answer) => answer.item_id === item.id);
-          const steps = item.item_type === "langkah_berurutan" && Array.isArray(item.options?.steps)
-            ? item.options.steps.filter((step): step is string => typeof step === "string")
-            : [];
-          const answerText = (savedAnswer?.answer_text ?? "") || (steps.length ? steps.join("\n") : "");
-          return {
-            itemId: item.id,
-            answerText,
-            ...(savedAnswer?.attachment_key ? { attachmentKey: savedAnswer.attachment_key } : {}),
-          };
-        }));
-        setData(worksheet.data);
-        setStatus(attempt.data.status ?? "draf");
-        setGroupInfo(attempt.data.group ?? null);
-        if (attempt.data.last_edited_by) {
-          setLastEditedBy({ name: attempt.data.last_edited_by.name, at: attempt.data.last_edited_at ?? null });
-        }
-        if (attempt.data.total_score !== undefined) setGroupScore(attempt.data.total_score);
-        if (attempt.data.teacher_comment !== undefined) setGroupTeacherComment(attempt.data.teacher_comment);
-        if (attempt.data.member_score !== undefined) setMemberScore(attempt.data.member_score);
-        if (attempt.data.group && (attempt.data.status ?? "draf") === "terkumpul") {
-          void loadContributionRatings();
-        }
-        setAnswers(Object.fromEntries(attempt.data.answers.map((answer) => [answer.item_id, answer.answer_text ?? ""])));
-        // Butir langkah berurutan yang urutan tersimpannya berbeda dari urutan
-        // tampil bawaan berarti sudah pernah disusun murid pada draf sebelumnya.
-        setTouchedSequences(new Set(
-          worksheet.data.items
-            .filter((item) => {
-              if (item.item_type !== "langkah_berurutan") return false;
-              const saved = attempt.data.answers.find((answer) => answer.item_id === item.id)?.answer_text ?? "";
-              const steps = Array.isArray(item.options?.steps)
-                ? item.options.steps.filter((step): step is string => typeof step === "string")
-                : [];
-              return saved !== "" && steps.length > 0 && saved !== steps.join("\n");
-            })
-            .map((item) => item.id),
-        ));
-        setAttachmentKeys(Object.fromEntries(
-          attempt.data.answers.filter((answer) => answer.attachment_key).map((answer) => [answer.item_id, answer.attachment_key!]),
-        ));
-        setExplanations(Object.fromEntries(
-          Object.entries(attempt.data.explanations ?? {}).map(([itemId, text]) => [Number(itemId), text]),
-        ));
+        applyLoadedAttempt(worksheet.data, attempt.data);
       })
       .catch((error: unknown) => {
         if (error instanceof Error && error.message === "Belum masuk.") {
@@ -189,6 +171,62 @@ export default function WorksheetPage() {
         setMessage(error instanceof Error ? error.message : "LKPD belum dapat dimuat.");
       });
   }, [params.id, router]);
+
+  // Terapkan data attempt (beserta jawaban-jawabannya) ke keadaan halaman.
+  // Dipakai muatan awal DAN penyelesaian live: saat polling melihat attempt
+  // sudah dikumpulkan teman, keadaan akhir diambil sekali lagi lewat jalur
+  // yang persis sama ini agar tampilan baca-sajanya identik.
+  function applyLoadedAttempt(worksheetData: WorksheetResponse["data"], attemptData: AttemptResponse["data"]) {
+    // Snapshot awal acuan kotor autosave: payload yang persis dibangun
+    // dari jawaban terload (termasuk fallback urutan tampil untuk butir
+    // langkah yang belum disentuh, sama seperti buildAnswersPayload),
+    // supaya sekadar membuka halaman tidak dianggap mengubah jawaban.
+    savedSnapshotRef.current = JSON.stringify(worksheetData.items.map((item) => {
+      const savedAnswer = attemptData.answers.find((answer) => answer.item_id === item.id);
+      const steps = item.item_type === "langkah_berurutan" && Array.isArray(item.options?.steps)
+        ? item.options.steps.filter((step): step is string => typeof step === "string")
+        : [];
+      const answerText = (savedAnswer?.answer_text ?? "") || (steps.length ? steps.join("\n") : "");
+      return {
+        itemId: item.id,
+        answerText,
+        ...(savedAnswer?.attachment_key ? { attachmentKey: savedAnswer.attachment_key } : {}),
+      };
+    }));
+    setData(worksheetData);
+    setStatus(attemptData.status ?? "draf");
+    setGroupInfo(attemptData.group ?? null);
+    if (attemptData.last_edited_by) {
+      setLastEditedBy({ name: attemptData.last_edited_by.name, at: attemptData.last_edited_at ?? null });
+    }
+    if (attemptData.total_score !== undefined) setGroupScore(attemptData.total_score);
+    if (attemptData.teacher_comment !== undefined) setGroupTeacherComment(attemptData.teacher_comment);
+    if (attemptData.member_score !== undefined) setMemberScore(attemptData.member_score);
+    if (attemptData.group && (attemptData.status ?? "draf") === "terkumpul") {
+      void loadContributionRatings();
+    }
+    setAnswers(Object.fromEntries(attemptData.answers.map((answer) => [answer.item_id, answer.answer_text ?? ""])));
+    // Butir langkah berurutan yang urutan tersimpannya berbeda dari urutan
+    // tampil bawaan berarti sudah pernah disusun murid pada draf sebelumnya.
+    setTouchedSequences(new Set(
+      worksheetData.items
+        .filter((item) => {
+          if (item.item_type !== "langkah_berurutan") return false;
+          const saved = attemptData.answers.find((answer) => answer.item_id === item.id)?.answer_text ?? "";
+          const steps = Array.isArray(item.options?.steps)
+            ? item.options.steps.filter((step): step is string => typeof step === "string")
+            : [];
+          return saved !== "" && steps.length > 0 && saved !== steps.join("\n");
+        })
+        .map((item) => item.id),
+    ));
+    setAttachmentKeys(Object.fromEntries(
+      attemptData.answers.filter((answer) => answer.attachment_key).map((answer) => [answer.item_id, answer.attachment_key!]),
+    ));
+    setExplanations(Object.fromEntries(
+      Object.entries(attemptData.explanations ?? {}).map(([itemId, text]) => [Number(itemId), text]),
+    ));
+  }
 
   // Setiap berganti halaman soal, gulir kembali ke awal kartu agar murid
   // selalu mulai membaca dari soal, bukan sisa posisi gulir halaman
@@ -244,8 +282,149 @@ export default function WorksheetPage() {
     };
   }, [assignmentId, status]);
 
+  // --- Live kelompok (versi ringan — polling) ------------------------------
+  // Heartbeat memberi tahu server butir yang sedang dibuka murid ini;
+  // polling mengambil presensi teman + jawaban tersimpan terbaru. Keduanya
+  // hanya berjalan pada attempt kelompok yang masih draf (liveActive) dan
+  // hanya saat tab terlihat. Fungsi terbaru selalu disalin ke ref agar
+  // interval tidak pernah memakai closure basi.
+  useEffect(() => {
+    pollLiveRef.current = pollLive;
+    sendHeartbeatRef.current = sendHeartbeat;
+  });
+
+  useEffect(() => {
+    displayedItemIdRef.current = displayedItemIdForLive;
+  }, [displayedItemIdForLive]);
+
+  useEffect(() => {
+    if (!liveActive) return;
+    sendHeartbeatRef.current();
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") sendHeartbeatRef.current();
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [liveActive, data?.worksheet.id, assignmentId]);
+
+  // Butir berganti (navigasi pemutar) → detak segera, tanpa menunggu interval.
+  useEffect(() => {
+    if (!liveActive) return;
+    sendHeartbeatRef.current();
+  }, [liveActive, displayedItemIdForLive]);
+
+  useEffect(() => {
+    if (!liveActive) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void pollLiveRef.current();
+    }, 4000);
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") void pollLiveRef.current();
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [liveActive, data?.worksheet.id, assignmentId]);
+
+  // Sorotan "baru diperbarui teman" hanya singgah beberapa detik.
+  useEffect(() => {
+    if (!liveFlash) return;
+    const timer = window.setTimeout(() => setLiveFlash(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [liveFlash]);
+
+  function sendHeartbeat() {
+    if (!data || !assignmentId) return;
+    void apiRequest(`/murid/worksheets/${data.worksheet.id}/presence`, {
+      method: "POST",
+      body: JSON.stringify({ assignmentId: Number(assignmentId), currentItemId: displayedItemIdRef.current }),
+    }).catch(() => undefined);
+  }
+
+  async function pollLive() {
+    if (!data || !assignmentId || !groupInfo) return;
+    try {
+      const response = await apiRequest<LiveStateResponse>(
+        `/murid/worksheets/${data.worksheet.id}/live?assignmentId=${assignmentId}`,
+      );
+      const live = response.data;
+      setLivePresence(live.presence);
+      if (live.attempt_status !== null && live.attempt_status !== "draf") {
+        // Teman mengumpulkan atas nama kelompok: ambil keadaan akhir
+        // sekali lagi (jawaban + pembahasan) lalu selesai — status yang
+        // berubah mematikan liveActive, jadi polling berhenti sendiri.
+        const attempt = await apiRequest<AttemptResponse>(
+          `/murid/worksheets/${data.worksheet.id}/attempt?assignmentId=${assignmentId}`,
+        );
+        setLivePresence([]);
+        if (!attempt.data.ungrouped) applyLoadedAttempt(data, attempt.data);
+        setMessage("LKPD ini sudah dikumpulkan atas nama kelompok.");
+        return;
+      }
+      const saved = JSON.parse(savedSnapshotRef.current || "[]") as { itemId: number; answerText: string; attachmentKey?: string }[];
+      const result = mergeLiveAnswers({
+        remote: live.answers,
+        local: buildAnswersPayload(),
+        saved,
+        displayedItemId: displayedItemIdForLive,
+        photoItemIds: new Set(data.items.filter((item) => item.item_type === "unggah_foto").map((item) => item.id)),
+      });
+      savedSnapshotRef.current = JSON.stringify(result.nextSaved);
+      if (result.patches.length > 0) {
+        setAnswers((current) => {
+          const next = { ...current };
+          for (const patch of result.patches) next[patch.itemId] = patch.answerText;
+          return next;
+        });
+        setAttachmentKeys((current) => {
+          const next = { ...current };
+          for (const patch of result.patches) {
+            if (patch.attachmentKey) next[patch.itemId] = patch.attachmentKey;
+            else delete next[patch.itemId];
+          }
+          return next;
+        });
+        // Urutan langkah dari teman yang berbeda dari urutan tampil bawaan
+        // berarti butir itu kini tersusun — hitungan terjawab mengikutinya.
+        const remoteTouched = result.patches
+          .filter((patch) => {
+            const item = data.items.find((candidate) => candidate.id === patch.itemId);
+            if (!item || item.item_type !== "langkah_berurutan") return false;
+            const steps = Array.isArray(item.options?.steps)
+              ? item.options.steps.filter((step): step is string => typeof step === "string")
+              : [];
+            return patch.answerText !== "" && steps.length > 0 && patch.answerText !== steps.join("\n");
+          })
+          .map((patch) => patch.itemId);
+        if (remoteTouched.length > 0) {
+          setTouchedSequences((current) => new Set([...current, ...remoteTouched]));
+        }
+      }
+      if (result.updatedDisplayed) {
+        setLiveFlash({ itemId: result.updatedDisplayed.itemId, editorName: result.updatedDisplayed.editorName });
+      }
+      if (result.conflict) {
+        const key = `${result.conflict.itemId}:${result.conflict.remoteUpdatedAt ?? ""}`;
+        if (liveConflictDismissedKeyRef.current !== key) {
+          setLiveConflict({ itemId: result.conflict.itemId, editorName: result.conflict.editorName, key });
+        }
+      }
+    } catch {
+      // Polling yang gagal (jaringan berkedip, dsb.) diam saja — pengerjaan
+      // murid tidak boleh terganggu; siklus berikutnya mencoba lagi.
+    }
+  }
+
+  function dismissLiveConflict() {
+    if (liveConflict) liveConflictDismissedKeyRef.current = liveConflict.key;
+    setLiveConflict(null);
+  }
+
   function setAnswer(itemId: number, value: string) {
     setAnswers((current) => ({ ...current, [itemId]: value }));
+    // Ketikan murid sendiri mengakhiri sorotan "diperbarui teman" pada butir itu.
+    setLiveFlash((current) => (current?.itemId === itemId ? null : current));
   }
 
   // Butir tautan_ruas tidak dihitung: tidak ada jawaban murid di SIMAK untuk
@@ -324,6 +503,9 @@ export default function WorksheetPage() {
       });
       savedSnapshotRef.current = JSON.stringify(payload);
       setLastSavedAt(new Date());
+      // Simpanan sendiri menimpa versi server — konflik live pada butir yang
+      // sedang dibuka selesai dengan sendirinya.
+      setLiveConflict(null);
       return true;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Draf belum dapat disimpan.");
@@ -428,6 +610,7 @@ export default function WorksheetPage() {
         });
       }
       setStatus("terkumpul");
+      setLivePresence([]);
       setMessage("LKPD berhasil dikumpulkan.");
       if (groupInfo) void loadContributionRatings();
     } catch (error) {
@@ -511,6 +694,8 @@ export default function WorksheetPage() {
   const onReview = pagedMode && pageIndex >= data.items.length;
   const currentItem = pagedMode && !onReview ? data.items[pageIndex] : null;
   const currentOrdinal = currentItem ? ordinalOf(pageIndex) : null;
+  // Teman satu kelompok yang presensinya menunjuk butir yang sedang tampil.
+  const teammatesHere = currentItem ? livePresence.filter((entry) => entry.current_item_id === currentItem.id) : [];
   const saveIndicator = autoSaving
     ? "Menyimpan…"
     : isDirty()
@@ -538,7 +723,10 @@ export default function WorksheetPage() {
           <div style={styles.groupMembers}>
             {groupInfo.members.map((member) => <span key={member.id} className="member-chip">{member.name}</span>)}
           </div>
-          <span>Jawaban di halaman ini dikerjakan bersama — perubahan anggota lain akan terlihat saat halaman dimuat ulang.</span>
+          {livePresence.length > 0 ? (
+            <span>Aktif sekarang: {livePresence.map((entry) => entry.name).join(", ")}</span>
+          ) : null}
+          <span>Jawaban di halaman ini dikerjakan bersama — perubahan temanmu tampil otomatis dalam beberapa detik.</span>
           {lastEditedBy ? (
             <span>Terakhir diubah oleh {lastEditedBy.name}{lastEditedBy.at ? `, ${new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "Asia/Jakarta" }).format(new Date(lastEditedBy.at))}` : ""}</span>
           ) : null}
@@ -677,7 +865,10 @@ export default function WorksheetPage() {
           </section>
         ) : pagedMode && currentItem ? (
           <section style={styles.list}>
-            <article style={styles.question}>
+            <article
+              style={{ ...styles.question, ...(liveFlash?.itemId === currentItem.id ? styles.questionLiveFlash : {}) }}
+              onFocus={() => { if (liveActive) sendHeartbeatRef.current(); }}
+            >
               <div style={styles.cardHead}>
                 <span style={styles.cardTitle}>{currentOrdinal !== null ? `Soal ${currentOrdinal} dari ${totalCount}` : "Kuis RUAS"}</span>
                 <span style={styles.metaChips}>
@@ -685,6 +876,9 @@ export default function WorksheetPage() {
                   {currentItem.points > 0 ? <span style={styles.pointsChip}>{currentItem.points} poin</span> : null}
                 </span>
               </div>
+              {teammatesHere.length > 0 ? (
+                <span style={styles.presenceChip}>👤 {teammatesHere.map((entry) => entry.name).join(", ")} sedang mengerjakan soal ini</span>
+              ) : null}
               <div className="lkpd-prompt"><MathText text={currentItem.prompt} /></div>
               <AnswerField
                 item={currentItem}
@@ -697,6 +891,15 @@ export default function WorksheetPage() {
                 onPhotoUpload={(file) => void handlePhotoUpload(currentItem.id, file)}
                 onSequenceMove={() => setTouchedSequences((current) => new Set(current).add(currentItem.id))}
               />
+              {liveFlash?.itemId === currentItem.id ? (
+                <p style={styles.liveUpdateNote}>Diperbarui oleh {liveFlash.editorName ?? "temanmu"}</p>
+              ) : null}
+              {liveConflict?.itemId === currentItem.id ? (
+                <div style={styles.liveConflictNote}>
+                  <span>Jawaban soal ini baru diperbarui oleh {liveConflict.editorName ?? "temanmu"} — salin dulu jawabanmu bila perlu, lalu muat ulang halaman untuk melihat versi terbaru.</span>
+                  <button type="button" onClick={dismissLiveConflict} style={styles.liveConflictDismiss}>Tutup</button>
+                </div>
+              ) : null}
             </article>
           </section>
         ) : (
@@ -922,6 +1125,11 @@ const styles = {
   error: { color: "#b42318", background: "#fef3f2", padding: 12, borderRadius: 8 },
   list: { display: "grid", gap: 16, marginTop: 28 },
   question: { display: "grid", gap: 12, border: "1px solid #eaecf0", borderRadius: 10, padding: 16 },
+  questionLiveFlash: { borderColor: "#32d583", background: "#f6fef9" },
+  presenceChip: { justifySelf: "start" as const, background: "#ecfdf3", border: "1px solid #a6f4c5", borderRadius: 999, padding: "4px 10px", color: "#05603a", fontSize: 13, fontWeight: 700 },
+  liveUpdateNote: { margin: 0, color: "#027a48", background: "#ecfdf3", border: "1px solid #a6f4c5", borderRadius: 8, padding: "8px 10px", fontSize: 13, fontWeight: 600 },
+  liveConflictNote: { display: "flex", gap: 10, alignItems: "flex-start", justifyContent: "space-between", color: "#93370d", background: "#fffaeb", border: "1px solid #fedf89", borderRadius: 8, padding: "10px 12px", fontSize: 13, lineHeight: 1.55 },
+  liveConflictDismiss: { border: "1px solid #fedf89", borderRadius: 8, background: "white", color: "#93370d", padding: "4px 10px", fontWeight: 700, cursor: "pointer", flexShrink: 0 },
   points: { color: "#667085", fontSize: 13 },
   options: { display: "grid", gap: 10 },
   option: { display: "flex", gap: 8, alignItems: "flex-start" },

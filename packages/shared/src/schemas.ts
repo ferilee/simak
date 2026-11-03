@@ -311,6 +311,16 @@ export const copyAssignmentGroupsSchema = z.object({
   classId: z.number().int().positive(),
 });
 
+// Live kelompok (versi ringan — polling): detak presensi murid pada attempt
+// kelompoknya. assignmentId mengikuti konteks penugasan halaman LKPD (tanpa
+// konteks, attempt-nya individu dan detaknya dijawab live:false).
+// currentItemId adalah butir yang sedang dibuka murid; null saat ia berada
+// di layar tinjauan.
+export const presenceHeartbeatSchema = z.object({
+  assignmentId: z.number().int().positive().optional(),
+  currentItemId: z.number().int().positive().nullable().optional(),
+});
+
 // Tahap 2 — penilaian kontribusi antarteman oleh murid pada attempt
 // kelompoknya: satu kiriman boleh memuat beberapa nilai sekaligus
 // (upsert per pasangan penilai–dinilai). Skala 1–5.

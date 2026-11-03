@@ -2,9 +2,10 @@ import { Hono } from "hono";
 import { and, asc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
 import { db, schema } from "@simak/db";
-import { contributionRatingsSchema, exitTicketSchema, worksheetAnswersSchema } from "@simak/shared";
+import { contributionRatingsSchema, exitTicketSchema, presenceHeartbeatSchema, worksheetAnswersSchema } from "@simak/shared";
 import { requireRole } from "../middleware/auth";
 import { fetchRuasQuizCompleted, parseRuasQuizUrl } from "../lib/ruas-status";
+import { presenceSnapshot, presenceStore, recordHeartbeat } from "../lib/presence";
 import { studentIsAssignmentTarget } from "../lib/assignment-target";
 import { contributionWindowOpen, loadMemberScoreOverride, loadStudentGroup, pickEffectiveAttempt, type AttemptSnapshot } from "../lib/groups";
 
@@ -651,6 +652,80 @@ muridRoutes.get("/worksheets/:id/attempt", async (c) => {
       })),
       ...(explanations ? { explanations } : {}),
       ...groupExtras,
+    },
+  });
+});
+
+// Live kelompok (versi ringan — polling, bukan WebSocket): detak presensi
+// murid + keadaan terkini attempt kelompoknya. Resolusi attempt dan
+// otorisasinya PERSIS jalur halaman LKPD (accessibleWorksheet +
+// resolveAttemptContext): murid hanya bisa mengakses data live attempt
+// kelompoknya sendiri; non-anggota penugasan mendapat 404 yang sama seperti
+// halaman, dan murid yang belum berkelompok tidak mendapat data apa pun.
+// Presensi hidup di memori proses API (lib/presence.ts) — tanpa tulisan DB.
+muridRoutes.post("/worksheets/:id/presence", zValidator("json", presenceHeartbeatSchema), async (c) => {
+  const user = c.get("user")!;
+  const worksheetId = Number(c.req.param("id"));
+  if (!Number.isInteger(worksheetId) || worksheetId <= 0) return c.json({ ok: false, message: "ID LKPD tidak valid." }, 400);
+  if (!(await accessibleWorksheet(user.userId, worksheetId))) return c.json({ ok: false, message: "LKPD belum tersedia untuk kelas Anda." }, 404);
+  const input = c.req.valid("json");
+  const context = await resolveAttemptContext(user.userId, worksheetId, input.assignmentId ? String(input.assignmentId) : null);
+  if (context.kind === "error") return c.json({ ok: false, message: context.message }, context.status);
+  // Attempt individu atau murid belum berkelompok: tidak ada presensi yang
+  // dicatat — bukan kesalahan, klien cukup menerima live:false.
+  if (context.kind === "ungrouped" || !context.group) return c.json({ ok: true, data: { live: false } });
+  recordHeartbeat(presenceStore, context.attempt.id, { id: user.userId, name: user.name }, input.currentItemId ?? null, Date.now());
+  return c.json({ ok: true, data: { live: true } });
+});
+
+muridRoutes.get("/worksheets/:id/live", async (c) => {
+  const user = c.get("user")!;
+  const worksheetId = Number(c.req.param("id"));
+  if (!Number.isInteger(worksheetId) || worksheetId <= 0) return c.json({ ok: false, message: "ID LKPD tidak valid." }, 400);
+  if (!(await accessibleWorksheet(user.userId, worksheetId))) return c.json({ ok: false, message: "LKPD belum tersedia untuk kelas Anda." }, 404);
+  const context = await resolveAttemptContext(user.userId, worksheetId, c.req.query("assignmentId") ?? null);
+  if (context.kind === "error") return c.json({ ok: false, message: context.message }, context.status);
+  if (context.kind === "ungrouped") {
+    return c.json({ ok: true, data: { live: false, ungrouped: true, attempt_status: null, answers: [], presence: [] } });
+  }
+  const attempt = context.attempt;
+  // Satu kueri jawaban untuk attempt ini + satu kueri nama pengedit; presensi
+  // dibaca dari peta memori. submitted_by tidak dicatat attempt di mana pun,
+  // jadi nama pengumpul tidak dikirim (klien memakai pesan umum).
+  const answerRows = await db
+    .select({
+      itemId: worksheetAnswers.worksheetItemId,
+      answerText: worksheetAnswers.answerText,
+      attachmentKey: worksheetAnswers.attachmentKey,
+      lastEditedBy: worksheetAnswers.lastEditedBy,
+      updatedAt: worksheetAnswers.updatedAt,
+    })
+    .from(worksheetAnswers)
+    .where(eq(worksheetAnswers.attemptId, attempt.id));
+  const editorIds = [...new Set(answerRows.flatMap((row) => (row.lastEditedBy === null ? [] : [row.lastEditedBy])))];
+  const editors = editorIds.length
+    ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, editorIds))
+    : [];
+  const editorNameById = new Map(editors.map((editor) => [editor.id, editor.name]));
+  const presence = context.group
+    ? presenceSnapshot(presenceStore, attempt.id, Date.now())
+        .filter((entry) => entry.studentId !== user.userId)
+        .map((entry) => ({ student_id: entry.studentId, name: entry.name, current_item_id: entry.currentItemId }))
+    : [];
+  return c.json({
+    ok: true,
+    data: {
+      live: Boolean(context.group),
+      attempt_status: attempt.status,
+      answers: answerRows.map((row) => ({
+        item_id: row.itemId,
+        answer_text: row.answerText,
+        attachment_key: row.attachmentKey,
+        last_edited_by: row.lastEditedBy,
+        last_edited_by_name: row.lastEditedBy === null ? null : (editorNameById.get(row.lastEditedBy) ?? null),
+        updated_at: row.updatedAt,
+      })),
+      presence,
     },
   });
 });

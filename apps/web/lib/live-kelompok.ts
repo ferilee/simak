@@ -124,3 +124,44 @@ export function mergeLiveAnswers(input: LiveMergeInput): LiveMergeResult {
   const nextSaved = input.local.map((entry) => nextSavedById.get(entry.itemId) ?? entry);
   return { patches, nextSaved, updatedDisplayed, conflict };
 }
+
+// ---------------------------------------------------------------------------
+// Jaga jawaban kelompok: payload simpan hanya memuat butir yang BERUBAH.
+//
+// Sebelumnya halaman mengirim SELURUH payload jawaban dari keadaan lokal
+// setiap kali menyimpan (manual, autosave, maupun sebelum mengumpulkan).
+// Pada attempt kelompok itu berbahaya: anggota yang halamannya memuat
+// potret lama menimpa jawaban tersimpan temannya — termasuk mengosongkan
+// jawaban yang tidak pernah ia sentuh — hanya dengan menyimpan drafnya.
+// Dengan diff ini, butir yang tidak disentuh murid ini tidak pernah ikut
+// terkirim, jadi tidak bisa menimpa siapa pun. Pengosongan yang disengaja
+// (teks berubah menjadi kosong, kunci lampiran hilang) adalah perubahan
+// sungguhan dan tetap terkirim.
+// ---------------------------------------------------------------------------
+
+function entriesDiffer(a: LivePayloadEntry, b: LivePayloadEntry | undefined): boolean {
+  if (!b) return true;
+  return a.answerText !== b.answerText || (a.attachmentKey ?? null) !== (b.attachmentKey ?? null);
+}
+
+/** Butir dari `current` yang nilainya berbeda dari snapshot tersimpan `saved`. */
+export function diffAnswersPayload(current: LivePayloadEntry[], saved: LivePayloadEntry[]): LivePayloadEntry[] {
+  const savedById = new Map(saved.map((entry) => [entry.itemId, entry]));
+  return current.filter((entry) => entriesDiffer(entry, savedById.get(entry.itemId)));
+}
+
+/**
+ * Snapshot acuan sesudah PUT diff berhasil: hanya butir yang terkirim yang
+ * maju mengikuti nilai `current`; butir lain tetap pada entri snapshot lama
+ * (yang menurut definisi diff memang sama dengan `current`, jadi hasilnya
+ * setara dengan snapshot penuh — tetapi buku catatan "tersimpan" bergerak
+ * persis sebesar yang benar-benar ditulis server).
+ */
+export function advanceSavedSnapshot(
+  saved: LivePayloadEntry[],
+  current: LivePayloadEntry[],
+  sentItemIds: ReadonlySet<number>,
+): LivePayloadEntry[] {
+  const savedById = new Map(saved.map((entry) => [entry.itemId, entry]));
+  return current.map((entry) => (sentItemIds.has(entry.itemId) ? entry : (savedById.get(entry.itemId) ?? entry)));
+}

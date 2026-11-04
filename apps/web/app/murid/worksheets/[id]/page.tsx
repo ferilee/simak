@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { apiRequest } from "../../../../lib/api";
-import { mergeLiveAnswers, type LiveAnswer } from "../../../../lib/live-kelompok";
+import { advanceSavedSnapshot, diffAnswersPayload, mergeLiveAnswers, type LiveAnswer, type LivePayloadEntry } from "../../../../lib/live-kelompok";
 import { prepareImageForUpload } from "../../../../lib/prepare-image";
 import { Toast } from "../../../../components/Toast";
 import { useConfirm } from "../../../../components/ConfirmDialog";
@@ -134,6 +134,10 @@ export default function WorksheetPage() {
   // butir yang sedang diketik murid ini. Semuanya hanya hidup pada attempt
   // kelompok yang masih draf.
   const [livePresence, setLivePresence] = useState<LivePresenceEntry[]>([]);
+  // Gerbang kelengkapan kelompok: daftar soal (ordinal + indeks halaman)
+  // yang masih kosong saat murid menekan kumpulkan — selama tidak null,
+  // modal pemblokir tampil dan pengumpulan tidak mungkin terjadi.
+  const [incompleteGate, setIncompleteGate] = useState<{ ordinal: number; index: number }[] | null>(null);
   const [liveFlash, setLiveFlash] = useState<{ itemId: number; editorName: string | null } | null>(null);
   const [liveConflict, setLiveConflict] = useState<{ itemId: number; editorName: string | null; key: string } | null>(null);
   const liveConflictDismissedKeyRef = useRef("");
@@ -362,7 +366,7 @@ export default function WorksheetPage() {
         setMessage("LKPD ini sudah dikumpulkan atas nama kelompok.");
         return;
       }
-      const saved = JSON.parse(savedSnapshotRef.current || "[]") as { itemId: number; answerText: string; attachmentKey?: string }[];
+      const saved = readSavedSnapshot();
       const result = mergeLiveAnswers({
         remote: live.answers,
         local: buildAnswersPayload(),
@@ -489,19 +493,41 @@ export default function WorksheetPage() {
     return ordinal;
   }
 
-  // Jalur simpan tunggal untuk simpan manual maupun autosave: PUT payload
-  // yang sama seperti saveDraft selama ini. Mengembalikan true bila
-  // tersimpan; snapshot + waktu simpan diperbarui hanya saat berhasil.
+  // Baca snapshot tersimpan terakhir (bentuk entri payload, urutan butir).
+  function readSavedSnapshot(): LivePayloadEntry[] {
+    try {
+      const parsed = JSON.parse(savedSnapshotRef.current || "[]") as LivePayloadEntry[];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  // Jalur simpan tunggal untuk simpan manual maupun autosave. Jaga jawaban
+  // kelompok: yang dikirim HANYA butir yang berubah dari snapshot tersimpan
+  // (diffAnswersPayload) — butir yang tidak disentuh murid ini tidak pernah
+  // ikut terkirim, jadi simpanan dari potret halaman yang lama tidak bisa
+  // menimpa jawaban tersimpan teman satu kelompok. Snapshot acuan hanya
+  // maju pada butir yang terkirim. Mengembalikan true bila tersimpan (atau
+  // memang tidak ada yang perlu disimpan); snapshot + waktu simpan
+  // diperbarui hanya saat berhasil.
   async function persistDraft(): Promise<boolean> {
     if (!data || status !== "draf") return false;
+    const current = buildAnswersPayload();
+    const saved = readSavedSnapshot();
+    const changed = diffAnswersPayload(current, saved);
+    if (changed.length === 0) {
+      // Tidak ada perubahan: tanpa permintaan pun keadaan sudah tersimpan.
+      setLastSavedAt(new Date());
+      return true;
+    }
     setAutoSaving(true);
     try {
-      const payload = buildAnswersPayload();
       await apiRequest(`/murid/worksheets/${data.worksheet.id}/answers${assignmentId ? `?assignmentId=${assignmentId}` : ""}`, {
         method: "PUT",
-        body: JSON.stringify({ answers: payload }),
+        body: JSON.stringify({ answers: changed }),
       });
-      savedSnapshotRef.current = JSON.stringify(payload);
+      savedSnapshotRef.current = JSON.stringify(advanceSavedSnapshot(saved, current, new Set(changed.map((entry) => entry.itemId))));
       setLastSavedAt(new Date());
       // Simpanan sendiri menimpa versi server — konflik live pada butir yang
       // sedang dibuka selesai dengan sendirinya.
@@ -585,8 +611,33 @@ export default function WorksheetPage() {
     setSaving(false);
   }
 
+  // Soal terhitung yang belum terjawab, sebagai pasangan ordinal (untuk
+  // disebut ke murid) + indeks halaman (untuk lompat ke soalnya). Memakai
+  // definisi "terjawab" yang sama dengan answerProgress di halaman ini.
+  function unansweredQuestions(): { ordinal: number; index: number }[] {
+    if (!data) return [];
+    const missing: { ordinal: number; index: number }[] = [];
+    data.items.forEach((item, index) => {
+      const ordinal = ordinalOf(index);
+      if (ordinal !== null && !isItemAnswered(item)) missing.push({ ordinal, index });
+    });
+    return missing;
+  }
+
   async function submitWorksheet() {
     if (!data || status !== "draf") return;
+    // Gerbang kelengkapan khusus attempt KELOMPOK: bila masih ada soal yang
+    // belum dijawab siapa pun, tampilkan modal pemblokir — pengumpulan
+    // tidak mungkin dari sana. Server memberlakukan pemeriksaan yang sama
+    // atas jawaban tersimpan. Attempt individu tetap memakai dialog
+    // peringatan lama (boleh mengumpulkan dengan soal kosong).
+    if (groupInfo) {
+      const missing = unansweredQuestions();
+      if (missing.length > 0) {
+        setIncompleteGate(missing);
+        return;
+      }
+    }
     const { answered, total } = answerProgress();
     const confirmText = total === 0
       ? "Kumpulkan sekarang? Setelah terkumpul, jawaban tidak dapat diubah."
@@ -596,12 +647,15 @@ export default function WorksheetPage() {
     if (!(await confirmDialog(confirmText, { confirmLabel: "Kumpulkan sekarang" }))) return;
     setSaving(true);
     setMessage("");
+    // Simpan dulu perubahan yang belum tersimpan lewat jalur diff yang sama
+    // (persistDraft), baru kumpulkan — server memeriksa keadaan tersimpan.
+    const persisted = await persistDraft();
+    if (!persisted) {
+      setSaving(false);
+      return;
+    }
     try {
       const attemptQuery = assignmentId ? `?assignmentId=${assignmentId}` : "";
-      await apiRequest(`/murid/worksheets/${data.worksheet.id}/answers${attemptQuery}`, {
-        method: "PUT",
-        body: JSON.stringify({ answers: buildAnswersPayload() }),
-      });
       await apiRequest(`/murid/worksheets/${data.worksheet.id}/submit${attemptQuery}`, { method: "POST" });
       if (assignmentId) {
         await apiRequest("/activity", {
@@ -955,6 +1009,45 @@ export default function WorksheetPage() {
           <button type="button" disabled={saving || status !== "draf"} onClick={() => void submitWorksheet()} style={styles.primaryButton}>{groupInfo ? "Kumpulkan atas nama kelompok" : "Kumpulkan LKPD"}</button>
         </div>
       )}
+
+      {incompleteGate ? (
+        <div
+          className="confirm-overlay"
+          role="presentation"
+          onClick={() => setIncompleteGate(null)}
+        >
+          <div
+            className="confirm-panel"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="incomplete-gate-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="incomplete-gate-title" style={styles.gateTitle}>Masih ada soal yang belum terjawab</h2>
+            <p className="confirm-message">
+              LKPD kelompok hanya bisa dikumpulkan bila semua soal sudah dijawab bersama. Soal berikut masih kosong — ketuk nomornya untuk langsung ke soal itu:
+            </p>
+            <div style={styles.gateNumbers}>
+              {incompleteGate.map((missing) => (
+                <button
+                  key={missing.ordinal}
+                  type="button"
+                  style={styles.gateNumberButton}
+                  onClick={() => {
+                    setIncompleteGate(null);
+                    void goToPage(missing.index);
+                  }}
+                >
+                  Soal {missing.ordinal}
+                </button>
+              ))}
+            </div>
+            <div className="confirm-actions">
+              <button type="button" className="button" onClick={() => setIncompleteGate(null)}>Kembali mengerjakan</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
@@ -1130,6 +1223,9 @@ const styles = {
   liveUpdateNote: { margin: 0, color: "#027a48", background: "#ecfdf3", border: "1px solid #a6f4c5", borderRadius: 8, padding: "8px 10px", fontSize: 13, fontWeight: 600 },
   liveConflictNote: { display: "flex", gap: 10, alignItems: "flex-start", justifyContent: "space-between", color: "#93370d", background: "#fffaeb", border: "1px solid #fedf89", borderRadius: 8, padding: "10px 12px", fontSize: 13, lineHeight: 1.55 },
   liveConflictDismiss: { border: "1px solid #fedf89", borderRadius: 8, background: "white", color: "#93370d", padding: "4px 10px", fontWeight: 700, cursor: "pointer", flexShrink: 0 },
+  gateTitle: { margin: "0 0 10px", fontSize: 18, lineHeight: 1.35 },
+  gateNumbers: { display: "flex", flexWrap: "wrap" as const, gap: 8, marginTop: 14 },
+  gateNumberButton: { border: "1px solid #f79009", borderRadius: 999, background: "#fffaeb", color: "#93370d", padding: "6px 14px", fontWeight: 700, fontSize: 14, cursor: "pointer" },
   points: { color: "#667085", fontSize: 13 },
   options: { display: "grid", gap: 10 },
   option: { display: "flex", gap: 8, alignItems: "flex-start" },

@@ -325,6 +325,10 @@ export default function GuruPage() {
   const [classAcademicYear, setClassAcademicYear] = useState("2026/2027");
   const [assignments, setAssignments] = useState<AssignmentSummary[]>([]);
   const [assignmentStatusFilter, setAssignmentStatusFilter] = useState<"semua" | "draf" | "terbit" | "ditutup">("semua");
+  // Saringan kelas daftar penugasan (Langkah 4): "semua", "siswa" (sasaran
+  // siswa tertentu), atau id kelas sebagai string. Murni sisi klien —
+  // serializer penugasan sudah membawa classes + target_type.
+  const [assignmentClassFilter, setAssignmentClassFilter] = useState<string>("semua");
   const [selectedWorksheetId, setSelectedWorksheetId] = useState<number | null>(null);
   const [worksheetTitle, setWorksheetTitle] = useState("");
   const [worksheetInstructions, setWorksheetInstructions] = useState("");
@@ -587,9 +591,16 @@ export default function GuruPage() {
     draf: assignments.filter((assignment) => assignment.status === "draf").length,
     ditutup: assignments.filter((assignment) => assignment.status === "ditutup").length,
   };
-  const visibleAssignments = assignmentStatusFilter === "semua"
+  // Daftar tampil = saringan status DAN saringan kelas (keduanya berlaku).
+  const classFilteredAssignments = assignmentClassFilter === "semua"
     ? assignments
-    : assignments.filter((assignment) => assignment.status === assignmentStatusFilter);
+    : assignments.filter((assignment) => assignmentClassFilter === "siswa"
+      ? assignment.target_type === "siswa"
+      : assignment.classes.some((kelas) => kelas.id === Number(assignmentClassFilter)));
+  const visibleAssignments = assignmentStatusFilter === "semua"
+    ? classFilteredAssignments
+    : classFilteredAssignments.filter((assignment) => assignment.status === assignmentStatusFilter);
+  const assignmentFiltersActive = assignmentStatusFilter !== "semua" || assignmentClassFilter !== "semua";
   const activeAssignmentFilterLabel = ASSIGNMENT_STATUS_FILTER_OPTIONS.find((option) => option.value === assignmentStatusFilter)?.label ?? "";
 
   // Partisi daftar LKPD: sama seperti modul — aktif dan arsip, hanya
@@ -2895,7 +2906,7 @@ export default function GuruPage() {
         <div className="module-section-heading">
           <div>
             <h2 style={styles.sectionTitle}>Penugasan ke kelas</h2>
-            <p className="module-section-summary">{assignmentStatusFilter === "semua" ? `${assignments.length} penugasan · pilih aksi dari daftar` : `Menampilkan ${visibleAssignments.length} dari ${assignments.length} penugasan`}</p>
+            <p className="module-section-summary">{assignmentFiltersActive ? `Menampilkan ${visibleAssignments.length} dari ${assignments.length} penugasan` : `${assignments.length} penugasan · pilih aksi dari daftar`}</p>
           </div>
         </div>
         <details className="guru-collapsible" ref={assignmentFormRef}>
@@ -2994,16 +3005,24 @@ export default function GuruPage() {
           </form>
         </details>
         {assignments.length > 0 ? (
-          <div className="assignment-status-filter" role="group" aria-label="Saring status penugasan">
+          <div className="assignment-status-filter" role="group" aria-label="Saring penugasan">
             {ASSIGNMENT_STATUS_FILTER_OPTIONS.map((option) => (
               <button key={option.value} type="button" className={`filter-chip${assignmentStatusFilter === option.value ? " is-active" : ""}`} aria-pressed={assignmentStatusFilter === option.value} onClick={() => setAssignmentStatusFilter(option.value)}>
                 {option.label} ({assignmentStatusCounts[option.value]})
               </button>
             ))}
+            <label className="assignment-class-filter">
+              Kelas
+              <select aria-label="Saring kelas penugasan" value={assignmentClassFilter} onChange={(event) => setAssignmentClassFilter(event.target.value)}>
+                <option value="semua">Semua kelas</option>
+                {classes.map((kelas) => <option key={kelas.id} value={String(kelas.id)}>{kelas.name}</option>)}
+                <option value="siswa">Siswa tertentu</option>
+              </select>
+            </label>
           </div>
         ) : null}
         {assignments.length === 0 ? <p style={styles.empty}>Belum ada penugasan.</p> : visibleAssignments.length === 0 ? (
-          <p style={styles.empty}>Tidak ada penugasan berstatus {activeAssignmentFilterLabel}.</p>
+          <p style={styles.empty}>{assignmentClassFilter !== "semua" ? "Tidak ada penugasan yang cocok dengan saringan kelas dan status saat ini." : `Tidak ada penugasan berstatus ${activeAssignmentFilterLabel}.`}</p>
         ) : <div className="module-list">{visibleAssignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.target_type === "siswa" ? `${assignment.students.length} siswa tertentu` : assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}{assignment.work_mode === "kelompok" ? <> · <span className="group-mode-badge">👥 Kelompok · {assignment.group_size ?? 4} orang</span></> : null}{assignment.target_type === "siswa" ? <> · <span className="group-mode-badge">Siswa tertentu</span></> : null}</span></div><div className="resource-row-actions">{assignment.work_mode === "kelompok" ? <button type="button" onClick={() => toggleGroupsPanel(assignment)} className={`row-action-button is-outline${selectedGroupAssignmentId === assignment.id ? " is-active" : ""}`} aria-pressed={selectedGroupAssignmentId === assignment.id}>Kelompok</button> : null}{assignment.status !== "ditutup" ? <button type="button" onClick={() => startEditAssignment(assignment)} className="row-action-button is-outline"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>Edit</button> : null}<button type="button" onClick={() => void changeAssignmentStatus(assignment)} className={assignment.status === "terbit" ? "row-action-button is-outline" : "row-action-button is-primary"}>{assignment.status === "terbit" ? <><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>Tutup</> : "Terbitkan"}</button>{assignment.status === "terbit" ? <a href={`https://wa.me/?text=${encodeURIComponent(buildWhatsAppShareMessage(assignment, typeof window !== "undefined" ? window.location.origin : ""))}`} target="_blank" rel="noreferrer" className="row-action-button is-whatsapp"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.6L3 21l1.9-5.6A8.5 8.5 0 1 1 21 11.5Z" /></svg>Bagikan WA</a> : null}</div></article>)}</div>}
       </section>
 

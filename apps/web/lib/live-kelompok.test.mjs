@@ -208,7 +208,7 @@ console.log("Case 8: layar tinjauan (displayedItemId null) — semua diterapkan 
 console.log("Case 9: wiring halaman LKPD murid (statis)");
 {
   const page = readFileSync(new URL("../app/murid/worksheets/[id]/page.tsx", import.meta.url), "utf8");
-  check("halaman mengimpor mergeLiveAnswers", page.includes('import { mergeLiveAnswers, type LiveAnswer } from "../../../../lib/live-kelompok";'));
+  check("halaman mengimpor mergeLiveAnswers", page.includes('import { advanceSavedSnapshot, diffAnswersPayload, mergeLiveAnswers, type LiveAnswer, type LivePayloadEntry } from "../../../../lib/live-kelompok";'));
   check("heartbeat POST ke endpoint presence", page.includes("/presence`, {") && page.includes("currentItemId: displayedItemIdRef.current"));
   check("heartbeat berkala 3 detik", page.includes("}, 3000);"));
   check("polling GET live dengan assignmentId", page.includes("/live?assignmentId=${assignmentId}`"));

@@ -384,8 +384,10 @@ assignmentRoutes.patch("/:id", zValidator("json", updateAssignmentSchema), async
     await ensureGroupsForAssignment(updated!);
   } else if (groupSizeChanged && updated!.workMode === "kelompok") {
     // Ukuran berubah saat masih draf dan kelompok sudah dibentuk lebih dulu
-    // lewat panel Kelompok: bentuk ulang kelas yang belum terkunci agar
-    // ukurannya mengikuti pengaturan baru.
+    // lewat panel Kelompok: bentuk ulang sebagian kelas yang sudah
+    // berkelompok agar ukurannya mengikuti pengaturan baru — kelompok
+    // terkunci (penuh menurut ukuran baru, atau sudah mulai mengerjakan)
+    // dipertahankan, sisanya dibentuk ulang.
     const linkedClasses = await getLinkedClasses(assignmentId);
     for (const kelas of linkedClasses) {
       const [existing] = await db
@@ -393,7 +395,7 @@ assignmentRoutes.patch("/:id", zValidator("json", updateAssignmentSchema), async
         .from(assignmentGroups)
         .where(and(eq(assignmentGroups.assignmentId, assignmentId), eq(assignmentGroups.classId, kelas.id)))
         .limit(1);
-      if (existing && !(await classShuffleLocked(updated!, kelas.id))) {
+      if (existing) {
         await regenerateGroupsForClass(updated!, kelas.id);
       }
     }
@@ -465,16 +467,22 @@ assignmentRoutes.post("/:id/groups/shuffle", zValidator("json", shuffleAssignmen
   if (!linkedClasses.some((kelas) => kelas.id === classId)) {
     return c.json({ ok: false, message: "Kelas ini bukan kelas tujuan penugasan." }, 400);
   }
-  if (await classShuffleLocked(assignment, classId)) {
-    return c.json({ ok: false, message: "Kelompok kelas ini tidak dapat diacak ulang karena sudah ada kelompok yang mulai mengerjakan." }, 409);
+  // Pembentukan ulang sebagian (Aturan B): kelompok yang sudah penuh
+  // atau sudah mulai mengerjakan dipertahankan; hanya sisanya yang
+  // diacak ulang. 409 hanya bila tidak ada yang bisa berubah sama
+  // sekali — semua kelompok terkunci dan tidak ada murid yang belum
+  // berkelompok.
+  const summary = await regenerateGroupsForClass(assignment, classId);
+  if (summary.noop) {
+    return c.json({ ok: false, message: "Semua kelompok kelas ini sudah terkunci dan tidak ada murid yang belum berkelompok." }, 409);
   }
-  await regenerateGroupsForClass(assignment, classId);
   return c.json({
     ok: true,
     data: {
       assignment_id: assignment.id,
       work_mode: assignment.workMode,
       group_size: assignment.groupSize,
+      shuffle_result: { preserved: summary.preserved, formed: summary.formed, pooled_students: summary.pooled_students },
       classes: await loadAssignmentGroupsView(assignment),
     },
   });

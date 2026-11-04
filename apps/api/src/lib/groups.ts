@@ -15,15 +15,19 @@ export const DEFAULT_GROUP_SIZE = 4;
 
 /**
  * Rencana ukuran kelompok untuk n murid dengan target `size` anggota per
- * kelompok: jumlah kelompok = clamp(round(n / size), 1, n); ukuran antar
+ * kelompok (Aturan B): jumlah kelompok = clamp(ceil(n / size), 1, n) —
+ * dibulatkan ke atas supaya tidak ada kelompok yang melebihi target —
+ * lalu n dibagi semerata mungkin ke sejumlah kelompok itu (ukuran antar
  * kelompok berselisih paling banyak 1 dan kelompok yang lebih besar
- * didahulukan. n = 0 menghasilkan daftar kosong.
- * Contoh: n=33, size=4 → 8 kelompok [5,4,4,4,4,4,4,4].
+ * didahulukan). Akibatnya ukuran tidak pernah melewati `size`, dan
+ * kelompok ekornya sebesar size − 1 (untuk size 4 berisi 3). n = 0
+ * menghasilkan daftar kosong.
+ * Contoh: n=33, size=4 → 9 kelompok [4,4,4,4,4,4,3,3,3].
  */
 export function planGroupSizes(n: number, size: number): number[] {
   if (!Number.isInteger(n) || n <= 0) return [];
   const target = Number.isInteger(size) && size >= 1 ? size : DEFAULT_GROUP_SIZE;
-  const groupCount = Math.min(n, Math.max(1, Math.round(n / target)));
+  const groupCount = Math.min(n, Math.max(1, Math.ceil(n / target)));
   const base = Math.floor(n / groupCount);
   const remainder = n % groupCount;
   return Array.from({ length: groupCount }, (_, index) => base + (index < remainder ? 1 : 0));
@@ -51,6 +55,98 @@ export function splitIntoGroups(studentIds: readonly number[], size: number, rng
     offset += groupSize;
   }
   return groups;
+}
+
+// ---------------------------------------------------------------------------
+// Pembentukan ulang sebagian (Aturan B): kelompok yang sudah penuh atau
+// sudah mulai mengerjakan TERKUNCI dan dipertahankan apa adanya; hanya
+// murid di luar kelompok terkunci yang dibentuk ulang.
+// ---------------------------------------------------------------------------
+
+export type GroupAttemptStatus = "draf" | "terkumpul" | "dinilai";
+
+/**
+ * Sebuah kelompok terkunci dari pembentukan ulang bila (a) jumlah
+ * anggotanya sudah mencapai target ukuran penugasan, ATAU (b) kelompok
+ * sudah mulai mengerjakan: attempt-nya pada LKPD penugasan berstatus
+ * bukan draf, atau attempt drafnya sudah mempunyai jawaban apa pun —
+ * bukti yang sama dengan classShuffleLocked, tetapi dinilai PER KELOMPOK.
+ */
+export function groupReformationLocked(
+  memberCount: number,
+  targetSize: number,
+  attemptStatus: GroupAttemptStatus | null,
+  hasAnswers: boolean,
+): boolean {
+  const target = Number.isInteger(targetSize) && targetSize >= 1 ? targetSize : DEFAULT_GROUP_SIZE;
+  return memberCount >= target || (attemptStatus !== null && attemptStatus !== "draf") || hasAnswers;
+}
+
+/** Akhiran angka nama kelompok berpola "Kelompok N" (null bila polanya berbeda). */
+export function groupNameSuffix(name: string): number | null {
+  const match = /^Kelompok (\d+)$/.exec(name);
+  return match ? Number(match[1]) : null;
+}
+
+export type ReformationGroupFacts = {
+  id: number;
+  name: string;
+  memberIds: readonly number[];
+  attemptStatus: GroupAttemptStatus | null;
+  hasAnswers: boolean;
+};
+
+export type ReformationPlan = {
+  /** Kelompok terkunci yang dipertahankan apa adanya. */
+  preservedIds: number[];
+  /** Kelompok tidak terkunci yang dibubarkan. */
+  dissolvedIds: number[];
+  /**
+   * Murid yang dibentuk ulang: daftar anggota kelas dikurangi anggota
+   * kelompok terkunci — jadi mencakup anggota kelompok yang dibubarkan,
+   * murid yang belum berkelompok, dan murid yang baru masuk kelas.
+   * Urutan mengikuti daftar kelas.
+   */
+  poolStudentIds: number[];
+  /**
+   * Nomor nama untuk kelompok baru pertama: satu di atas akhiran angka
+   * terbesar di antara nama kelompok TERKUNCI; 1 bila tidak ada kelompok
+   * terkunci (pembentukan ulang penuh, seperti perilaku lama).
+   */
+  firstNewGroupNumber: number;
+  /** true bila pembentukan ulang tidak mengubah apa pun. */
+  noop: boolean;
+};
+
+/** Rencana pembentukan ulang sebagian untuk satu (penugasan, kelas). */
+export function planReformation(
+  groups: readonly ReformationGroupFacts[],
+  rosterIds: readonly number[],
+  targetSize: number,
+): ReformationPlan {
+  const preserved: ReformationGroupFacts[] = [];
+  const dissolved: ReformationGroupFacts[] = [];
+  for (const group of groups) {
+    if (groupReformationLocked(group.memberIds.length, targetSize, group.attemptStatus, group.hasAnswers)) {
+      preserved.push(group);
+    } else {
+      dissolved.push(group);
+    }
+  }
+  const lockedMembers = new Set(preserved.flatMap((group) => group.memberIds));
+  const poolStudentIds = rosterIds.filter((studentId) => !lockedMembers.has(studentId));
+  let maxSuffix = 0;
+  for (const group of preserved) {
+    const suffix = groupNameSuffix(group.name);
+    if (suffix !== null && suffix > maxSuffix) maxSuffix = suffix;
+  }
+  return {
+    preservedIds: preserved.map((group) => group.id),
+    dissolvedIds: dissolved.map((group) => group.id),
+    poolStudentIds,
+    firstNewGroupNumber: maxSuffix + 1,
+    noop: dissolved.length === 0 && poolStudentIds.length === 0,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -197,6 +293,9 @@ export function groupMemberRemovalAllowed(attemptStatus: "draf" | "terkumpul" | 
 // ---------------------------------------------------------------------------
 
 type AssignmentRow = typeof schema.assignments.$inferSelect;
+type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+/** Klien baca: basis data langsung atau transaksi yang sedang berjalan. */
+type DbReader = typeof db | DbTransaction;
 
 /** Kelas tujuan penugasan yang tidak diarsipkan, urut id. */
 async function targetClasses(assignmentId: number) {
@@ -208,9 +307,29 @@ async function targetClasses(assignmentId: number) {
     .orderBy(classes.id);
 }
 
+/** Tulis potongan-potongan murid sebagai kelompok baru bernomor mulai `firstNumber` (di dalam transaksi yang diberikan). */
+async function insertGroupsForClass(
+  tx: DbTransaction,
+  assignment: AssignmentRow,
+  classId: number,
+  chunks: readonly (readonly number[])[],
+  firstNumber: number,
+) {
+  for (const [index, chunk] of chunks.entries()) {
+    const [group] = await tx
+      .insert(assignmentGroups)
+      .values({ assignmentId: assignment.id, classId, name: `Kelompok ${firstNumber + index}` })
+      .$returningId();
+    await tx.insert(assignmentGroupMembers).values(
+      chunk.map((studentId) => ({ groupId: group!.id, assignmentId: assignment.id, studentId })),
+    );
+  }
+  return chunks.length;
+}
+
 /** Bentuk kelompok untuk satu kelas (di dalam transaksi yang diberikan). */
 async function generateGroupsForClass(
-  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  tx: DbTransaction,
   assignment: AssignmentRow,
   classId: number,
 ) {
@@ -220,16 +339,48 @@ async function generateGroupsForClass(
     .where(eq(classMembers.classId, classId))
     .orderBy(classMembers.studentId);
   const chunks = splitIntoGroups(memberRows.map((row) => row.studentId), assignment.groupSize ?? DEFAULT_GROUP_SIZE, Math.random);
-  for (const [index, chunk] of chunks.entries()) {
-    const [group] = await tx
-      .insert(assignmentGroups)
-      .values({ assignmentId: assignment.id, classId, name: `Kelompok ${index + 1}` })
-      .$returningId();
-    await tx.insert(assignmentGroupMembers).values(
-      chunk.map((studentId) => ({ groupId: group!.id, assignmentId: assignment.id, studentId })),
-    );
+  return insertGroupsForClass(tx, assignment, classId, chunks, 1);
+}
+
+/**
+ * Fakta attempt per kelompok pada LKPD penugasan: status attempt dan
+ * apakah attempt yang masih draf sudah mempunyai jawaban. Dua kueri
+ * konstan untuk seluruh daftar kelompok (bukan satu per kelompok):
+ * attempt kelompok-kelompok itu, lalu jawaban atas attempt drafnya —
+ * pola bukti yang sama dengan classShuffleLocked.
+ */
+async function loadGroupAttemptFacts(
+  executor: DbReader,
+  assignment: AssignmentRow,
+  groupIds: readonly number[],
+): Promise<Map<number, { status: GroupAttemptStatus | null; hasAnswers: boolean }>> {
+  const facts = new Map<number, { status: GroupAttemptStatus | null; hasAnswers: boolean }>();
+  if (assignment.worksheetId === null || groupIds.length === 0) return facts;
+  const attemptRows = await executor
+    .select({ id: worksheetAttempts.id, groupId: worksheetAttempts.groupId, status: worksheetAttempts.status })
+    .from(worksheetAttempts)
+    .where(and(
+      eq(worksheetAttempts.worksheetId, assignment.worksheetId),
+      inArray(worksheetAttempts.groupId, [...groupIds]),
+    ));
+  const draftAttemptGroupById = new Map<number, number>();
+  for (const row of attemptRows) {
+    if (row.groupId === null) continue;
+    facts.set(row.groupId, { status: row.status, hasAnswers: false });
+    if (row.status === "draf") draftAttemptGroupById.set(row.id, row.groupId);
   }
-  return chunks.length;
+  if (draftAttemptGroupById.size > 0) {
+    const answeredRows = await executor
+      .select({ attemptId: worksheetAnswers.attemptId })
+      .from(worksheetAnswers)
+      .where(inArray(worksheetAnswers.attemptId, [...draftAttemptGroupById.keys()]));
+    for (const row of answeredRows) {
+      const groupId = draftAttemptGroupById.get(row.attemptId);
+      const fact = groupId !== undefined ? facts.get(groupId) : undefined;
+      if (fact) fact.hasAnswers = true;
+    }
+  }
+  return facts;
 }
 
 /**
@@ -298,16 +449,76 @@ export async function assignmentHasGroupWork(assignment: AssignmentRow): Promise
   return false;
 }
 
+export type RegenerateGroupsSummary = {
+  /** Jumlah kelompok terkunci yang dipertahankan apa adanya. */
+  preserved: number;
+  /** Jumlah kelompok baru yang dibentuk dari kolam murid. */
+  formed: number;
+  /** Jumlah murid yang ikut dibentuk ulang (kolam). */
+  pooled_students: number;
+  /** true bila tidak ada kelompok yang bisa dibubarkan dan kolam kosong — tidak ada yang berubah. */
+  noop: boolean;
+};
+
 /**
- * Hapus kelompok satu kelas lalu bentuk ulang secara acak dalam satu
- * transaksi. Pemanggil wajib memeriksa classShuffleLocked lebih dulu.
+ * Bentuk ulang kelompok satu kelas SECARA SEBAGIAN dalam satu transaksi
+ * (Aturan B): kelompok terkunci — sudah penuh atau sudah mulai
+ * mengerjakan, lihat groupReformationLocked — dipertahankan persis apa
+ * adanya (baris, nama, dan keanggotaannya tidak disentuh). Kelompok lain
+ * dibubarkan dengan mekanisme hapus yang sama seperti pembentukan ulang
+ * lama: baris assignment_groups dihapus dan anggota serta attempt
+ * kelompoknya (yang menurut definisi kunci hanya mungkin attempt draf
+ * tanpa jawaban) ikut terhapus oleh cascade FK. Murid di luar kelompok
+ * terkunci kemudian dibagi ulang dengan Aturan B dan kelompok barunya
+ * dinomori melanjutkan akhiran terbesar nama kelompok terkunci.
  */
-export async function regenerateGroupsForClass(assignment: AssignmentRow, classId: number): Promise<void> {
-  await db.transaction(async (tx) => {
-    await tx.delete(assignmentGroups).where(
-      and(eq(assignmentGroups.assignmentId, assignment.id), eq(assignmentGroups.classId, classId)),
+export async function regenerateGroupsForClass(assignment: AssignmentRow, classId: number): Promise<RegenerateGroupsSummary> {
+  const targetSize = assignment.groupSize ?? DEFAULT_GROUP_SIZE;
+  return db.transaction(async (tx) => {
+    const groupRows = await tx
+      .select({ id: assignmentGroups.id, name: assignmentGroups.name })
+      .from(assignmentGroups)
+      .where(and(eq(assignmentGroups.assignmentId, assignment.id), eq(assignmentGroups.classId, classId)))
+      .orderBy(assignmentGroups.id);
+    const memberRows = groupRows.length
+      ? await tx
+          .select({ groupId: assignmentGroupMembers.groupId, studentId: assignmentGroupMembers.studentId })
+          .from(assignmentGroupMembers)
+          .where(inArray(assignmentGroupMembers.groupId, groupRows.map((row) => row.id)))
+          .orderBy(assignmentGroupMembers.studentId)
+      : [];
+    const membersByGroup = new Map<number, number[]>();
+    for (const row of memberRows) {
+      const list = membersByGroup.get(row.groupId) ?? [];
+      list.push(row.studentId);
+      membersByGroup.set(row.groupId, list);
+    }
+    const facts = await loadGroupAttemptFacts(tx, assignment, groupRows.map((row) => row.id));
+    const rosterRows = await tx
+      .select({ studentId: classMembers.studentId })
+      .from(classMembers)
+      .where(eq(classMembers.classId, classId))
+      .orderBy(classMembers.studentId);
+    const plan = planReformation(
+      groupRows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        memberIds: membersByGroup.get(row.id) ?? [],
+        attemptStatus: facts.get(row.id)?.status ?? null,
+        hasAnswers: facts.get(row.id)?.hasAnswers ?? false,
+      })),
+      rosterRows.map((row) => row.studentId),
+      targetSize,
     );
-    await generateGroupsForClass(tx, assignment, classId);
+    if (plan.noop) {
+      return { preserved: plan.preservedIds.length, formed: 0, pooled_students: 0, noop: true };
+    }
+    if (plan.dissolvedIds.length > 0) {
+      await tx.delete(assignmentGroups).where(inArray(assignmentGroups.id, plan.dissolvedIds));
+    }
+    const chunks = splitIntoGroups(plan.poolStudentIds, targetSize, Math.random);
+    const formed = await insertGroupsForClass(tx, assignment, classId, chunks, plan.firstNewGroupNumber);
+    return { preserved: plan.preservedIds.length, formed, pooled_students: plan.poolStudentIds.length, noop: false };
   });
 }
 
@@ -319,6 +530,10 @@ export type AssignmentGroupView = {
   // Status attempt kelompok ini pada LKPD penugasan (null = belum ada
   // attempt) — UI memakainya untuk menonaktifkan pengeluaran anggota.
   attempt_status: "draf" | "terkumpul" | "dinilai" | null;
+  // Terkunci dari pembentukan ulang sebagian (Aturan B): kelompok sudah
+  // penuh atau sudah mulai mengerjakan (groupReformationLocked) — UI
+  // menampilkannya sebagai lencana "Terkunci".
+  locked: boolean;
 };
 export type AssignmentGroupCopySource = { assignment_id: number; title: string };
 export type AssignmentClassGroupsView = {
@@ -398,32 +613,35 @@ export async function loadAssignmentGroupsView(assignment: AssignmentRow): Promi
       membersByGroup.set(row.groupId, list);
       groupedStudentIds.add(row.id);
     }
-    // Status attempt per kelompok pada LKPD penugasan (untuk kunci
-    // pengeluaran anggota di UI) — satu kueri per kelas.
-    const attemptStatusByGroup = new Map<number, "draf" | "terkumpul" | "dinilai">();
-    if (assignment.worksheetId !== null && groupRows.length > 0) {
-      const attemptRows = await db
-        .select({ groupId: worksheetAttempts.groupId, status: worksheetAttempts.status })
-        .from(worksheetAttempts)
-        .where(and(
-          eq(worksheetAttempts.worksheetId, assignment.worksheetId),
-          inArray(worksheetAttempts.groupId, groupRows.map((row) => row.id)),
-        ));
-      for (const row of attemptRows) {
-        if (row.groupId !== null) attemptStatusByGroup.set(row.groupId, row.status);
-      }
-    }
+    // Fakta attempt per kelompok pada LKPD penugasan (status untuk kunci
+    // pengeluaran anggota di UI + bukti mulai mengerjakan untuk kunci
+    // pembentukan ulang) — kueri konstan per kelas, bukan per kelompok.
+    const attemptFacts = await loadGroupAttemptFacts(db, assignment, groupRows.map((row) => row.id));
+    const targetSize = assignment.groupSize ?? DEFAULT_GROUP_SIZE;
+    const groupViews = groupRows.map((row) => {
+      const members = membersByGroup.get(row.id) ?? [];
+      const fact = attemptFacts.get(row.id);
+      return {
+        id: row.id,
+        name: row.name,
+        members,
+        attempt_status: fact?.status ?? null,
+        locked: groupReformationLocked(members.length, targetSize, fact?.status ?? null, fact?.hasAnswers ?? false),
+      };
+    });
+    const ungrouped = classMemberRows.filter((row) => !groupedStudentIds.has(row.id));
     views.push({
       class_id: kelas.id,
       class_name: kelas.name,
-      shuffle_locked: await classShuffleLocked(assignment, kelas.id),
-      groups: groupRows.map((row) => ({
-        id: row.id,
-        name: row.name,
-        members: membersByGroup.get(row.id) ?? [],
-        attempt_status: attemptStatusByGroup.get(row.id) ?? null,
-      })),
-      ungrouped: classMemberRows.filter((row) => !groupedStudentIds.has(row.id)),
+      // Definisi baru (Aturan B): shuffle_locked kini berarti "pembentukan
+      // ulang tidak akan mengubah apa pun" — semua kelompok yang ada
+      // terkunci DAN tidak ada murid yang belum berkelompok. (Dulu
+      // bidang ini memakai classShuffleLocked: terkunci begitu ada satu
+      // kelompok yang mulai mengerjakan; predikat itu tetap dipakai
+      // endpoint salin kelompok dan assignmentHasGroupWork.)
+      shuffle_locked: groupViews.every((group) => group.locked) && ungrouped.length === 0,
+      groups: groupViews,
+      ungrouped,
       copy_sources: copySources.get(kelas.id) ?? [],
     });
   }

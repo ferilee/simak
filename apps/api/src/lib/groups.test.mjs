@@ -34,11 +34,19 @@ function lcg(seed) {
   };
 }
 
-console.log("Case 1: planGroupSizes");
+console.log("Case 1: planGroupSizes (Aturan B — jumlah kelompok dibulatkan ke atas)");
 check("n=0 menghasilkan daftar kosong", JSON.stringify(planGroupSizes(0, 4)) === "[]");
-check("n=33, size=4 → 8 kelompok [5,4,4,4,4,4,4,4]", JSON.stringify(planGroupSizes(33, 4)) === JSON.stringify([5, 4, 4, 4, 4, 4, 4, 4]), JSON.stringify(planGroupSizes(33, 4)));
+check("n=33, size=4 → 9 kelompok [4,4,4,4,4,4,3,3,3] (tidak ada lagi kelompok 5)", JSON.stringify(planGroupSizes(33, 4)) === JSON.stringify([4, 4, 4, 4, 4, 4, 3, 3, 3]), JSON.stringify(planGroupSizes(33, 4)));
 check("n=32, size=4 → 8 kelompok berisi 4", JSON.stringify(planGroupSizes(32, 4)) === JSON.stringify([4, 4, 4, 4, 4, 4, 4, 4]));
+check("n=25, size=4 → [4,4,4,4,3,3,3]", JSON.stringify(planGroupSizes(25, 4)) === JSON.stringify([4, 4, 4, 4, 3, 3, 3]), JSON.stringify(planGroupSizes(25, 4)));
+check("n=26, size=4 → [4,4,4,4,4,3,3]", JSON.stringify(planGroupSizes(26, 4)) === JSON.stringify([4, 4, 4, 4, 4, 3, 3]), JSON.stringify(planGroupSizes(26, 4)));
+check("n=27, size=4 → [4,4,4,4,4,4,3]", JSON.stringify(planGroupSizes(27, 4)) === JSON.stringify([4, 4, 4, 4, 4, 4, 3]), JSON.stringify(planGroupSizes(27, 4)));
+check("n=30, size=4 → [4,4,4,4,4,4,3,3]", JSON.stringify(planGroupSizes(30, 4)) === JSON.stringify([4, 4, 4, 4, 4, 4, 3, 3]), JSON.stringify(planGroupSizes(30, 4)));
+check("n=34, size=4 → [4,4,4,4,4,4,4,3,3]", JSON.stringify(planGroupSizes(34, 4)) === JSON.stringify([4, 4, 4, 4, 4, 4, 4, 3, 3]), JSON.stringify(planGroupSizes(34, 4)));
 check("n=10, size=4 → 3 kelompok [4,3,3]", JSON.stringify(planGroupSizes(10, 4)) === JSON.stringify([4, 3, 3]), JSON.stringify(planGroupSizes(10, 4)));
+check("n=7, size=4 → [4,3]", JSON.stringify(planGroupSizes(7, 4)) === JSON.stringify([4, 3]), JSON.stringify(planGroupSizes(7, 4)));
+check("n=6, size=4 → [3,3]", JSON.stringify(planGroupSizes(6, 4)) === JSON.stringify([3, 3]), JSON.stringify(planGroupSizes(6, 4)));
+check("n=5, size=4 → [3,2]", JSON.stringify(planGroupSizes(5, 4)) === JSON.stringify([3, 2]), JSON.stringify(planGroupSizes(5, 4)));
 check("n<size: n=3, size=4 → satu kelompok [3]", JSON.stringify(planGroupSizes(3, 4)) === JSON.stringify([3]));
 check("n=1, size=4 → [1]", JSON.stringify(planGroupSizes(1, 4)) === JSON.stringify([1]));
 check("size=2: n=7 → [2,2,2,1]", JSON.stringify(planGroupSizes(7, 2)) === JSON.stringify([2, 2, 2, 1]), JSON.stringify(planGroupSizes(7, 2)));
@@ -47,7 +55,29 @@ for (const [n, size] of [[33, 4], [31, 3], [17, 5], [100, 6], [9, 2], [12, 10]])
   const plan = planGroupSizes(n, size);
   check(`n=${n}, size=${size}: total terjaga`, plan.reduce((a, b) => a + b, 0) === n);
   check(`n=${n}, size=${size}: selisih maks-min <= 1`, Math.max(...plan) - Math.min(...plan) <= 1);
+  check(`n=${n}, size=${size}: tidak pernah melewati ukuran target`, Math.max(...plan) <= size);
   check(`n=${n}, size=${size}: kelompok besar lebih dulu`, plan.every((value, index) => index === 0 || plan[index - 1] >= value));
+}
+// Sapuan properti Aturan B: untuk semua n 1..60 dan size 2..10, rencana
+// harus menjumlah ke n, tidak pernah melewati size, berselisih <= 1,
+// dan terurut menurun.
+{
+  let sweepOk = true;
+  let sweepDetail = "";
+  for (let n = 1; n <= 60 && sweepOk; n++) {
+    for (let size = 2; size <= 10; size++) {
+      const plan = planGroupSizes(n, size);
+      const ok = plan.reduce((a, b) => a + b, 0) === n
+        && Math.max(...plan) <= size
+        && Math.max(...plan) - Math.min(...plan) <= 1
+        && plan.every((value, index) => index === 0 || plan[index - 1] >= value);
+      if (!ok) {
+        sweepOk = false;
+        sweepDetail = `n=${n}, size=${size} → ${JSON.stringify(plan)}`;
+      }
+    }
+  }
+  check("sapuan n=1..60 × size=2..10: jumlah=n, maks<=size, selisih<=1, menurun", sweepOk, sweepDetail);
 }
 
 console.log("Case 2: shuffleIds (Fisher–Yates)");
@@ -65,8 +95,8 @@ console.log("Case 3: splitIntoGroups");
 {
   const ids = Array.from({ length: 33 }, (_, i) => i + 1);
   const groups = splitIntoGroups(ids, 4, lcg(123));
-  check("33 murid ukuran 4 menghasilkan 8 kelompok", groups.length === 8);
-  check("ukuran mengikuti rencana [5,4,4,4,4,4,4,4]", JSON.stringify(groups.map((g) => g.length)) === JSON.stringify([5, 4, 4, 4, 4, 4, 4, 4]));
+  check("33 murid ukuran 4 menghasilkan 9 kelompok", groups.length === 9);
+  check("ukuran mengikuti rencana Aturan B [4,4,4,4,4,4,3,3,3]", JSON.stringify(groups.map((g) => g.length)) === JSON.stringify([4, 4, 4, 4, 4, 4, 3, 3, 3]));
   const flat = groups.flat();
   check("setiap murid tepat satu kali", flat.length === 33 && new Set(flat).size === 33 && flat.every((id) => ids.includes(id)));
   check("daftar kosong menghasilkan daftar kosong", JSON.stringify(splitIntoGroups([], 4, lcg(1))) === "[]");

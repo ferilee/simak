@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { apiRequest } from "../../../../lib/api";
+import { ITEM_TYPE_LABELS, itemTypeLabel, submitButtonLabel } from "../../../../lib/label-kumpulkan";
 import { advanceSavedSnapshot, diffAnswersPayload, mergeLiveAnswers, type LiveAnswer, type LivePayloadEntry } from "../../../../lib/live-kelompok";
 import { prepareImageForUpload } from "../../../../lib/prepare-image";
 import { Toast } from "../../../../components/Toast";
@@ -82,18 +83,6 @@ const CONTRIBUTION_LABELS: Record<number, string> = {
 };
 type IntegrityEvent = "visibility_hidden" | "window_blur" | "copy_attempt" | "paste_attempt" | "context_menu";
 
-// Label jenis butir untuk chip kepala kartu — sama seperti peta label pada
-// pratinjau guru; tautan_ruas tampil sebagai "Kuis RUAS" di sisi murid.
-const ITEM_TYPE_LABELS: Record<string, string> = {
-  pilihan_ganda: "Pilihan ganda",
-  isian_singkat: "Isian singkat",
-  uraian: "Uraian",
-  unggah_foto: "Unggah foto",
-  langkah_berurutan: "Langkah berurutan",
-  refleksi: "Refleksi",
-  tautan_ruas: "Kuis RUAS",
-};
-
 export default function WorksheetPage() {
   const confirmDialog = useConfirm();
   const params = useParams<{ id: string }>();
@@ -134,10 +123,12 @@ export default function WorksheetPage() {
   // butir yang sedang diketik murid ini. Semuanya hanya hidup pada attempt
   // kelompok yang masih draf.
   const [livePresence, setLivePresence] = useState<LivePresenceEntry[]>([]);
-  // Gerbang kelengkapan kelompok: daftar soal (ordinal + indeks halaman)
-  // yang masih kosong saat murid menekan kumpulkan — selama tidak null,
-  // modal pemblokir tampil dan pengumpulan tidak mungkin terjadi.
-  const [incompleteGate, setIncompleteGate] = useState<{ ordinal: number; index: number }[] | null>(null);
+  // Gerbang kelengkapan kelompok: daftar soal (ordinal + indeks halaman +
+  // jenis butir) yang masih kosong saat murid menekan kumpulkan — selama
+  // tidak null, modal pemblokir tampil dan pengumpulan tidak mungkin
+  // terjadi. Jenis butir ikut dibawa agar chip modal menyebut JENIS soal
+  // yang kosong, bukan hanya nomornya.
+  const [incompleteGate, setIncompleteGate] = useState<{ ordinal: number; index: number; itemType: string }[] | null>(null);
   const [liveFlash, setLiveFlash] = useState<{ itemId: number; editorName: string | null } | null>(null);
   const [liveConflict, setLiveConflict] = useState<{ itemId: number; editorName: string | null; key: string } | null>(null);
   const liveConflictDismissedKeyRef = useRef("");
@@ -611,15 +602,16 @@ export default function WorksheetPage() {
     setSaving(false);
   }
 
-  // Soal terhitung yang belum terjawab, sebagai pasangan ordinal (untuk
-  // disebut ke murid) + indeks halaman (untuk lompat ke soalnya). Memakai
-  // definisi "terjawab" yang sama dengan answerProgress di halaman ini.
-  function unansweredQuestions(): { ordinal: number; index: number }[] {
+  // Soal terhitung yang belum terjawab, sebagai ordinal (untuk disebut ke
+  // murid) + indeks halaman (untuk lompat ke soalnya) + jenis butir (untuk
+  // disebut di chip modal gerbang). Memakai definisi "terjawab" yang sama
+  // dengan answerProgress di halaman ini.
+  function unansweredQuestions(): { ordinal: number; index: number; itemType: string }[] {
     if (!data) return [];
-    const missing: { ordinal: number; index: number }[] = [];
+    const missing: { ordinal: number; index: number; itemType: string }[] = [];
     data.items.forEach((item, index) => {
       const ordinal = ordinalOf(index);
-      if (ordinal !== null && !isItemAnswered(item)) missing.push({ ordinal, index });
+      if (ordinal !== null && !isItemAnswered(item)) missing.push({ ordinal, index, itemType: item.item_type });
     });
     return missing;
   }
@@ -742,6 +734,12 @@ export default function WorksheetPage() {
   }
 
   const { answered: answeredCount, total: totalCount } = answerProgress();
+  // Label tombol kumpulkan menyebut sisa soal yang belum terjawab —
+  // hitungan yang sama dengan answerProgress di atas — agar keadaan
+  // tombol terbaca SEBELUM diklik (tombol utama tidak punya gaya nonaktif
+  // yang terlihat). Label polos kembali begitu semua soal terjawab.
+  // Semantik disabled tombol tidak berubah: hanya `saving`/status.
+  const submitLabel = (base: string) => submitButtonLabel(base, answeredCount, totalCount);
   // Mode paginasi hanya untuk attempt yang masih bisa diedit; tampilan
   // terkumpul/dinilai tetap daftar penuh read-only seperti sebelumnya.
   const pagedMode = status === "draf" && data.items.length > 0;
@@ -857,7 +855,7 @@ export default function WorksheetPage() {
           </span>
           <span style={styles.progressActions}>
             <button type="button" disabled={saving} onClick={() => void saveDraft()} style={styles.secondaryButtonSmall}>Simpan draf</button>
-            <button type="button" disabled={saving} onClick={() => void submitWorksheet()} style={styles.primaryButtonSmall}>{groupInfo ? "Kumpulkan atas nama kelompok" : "Kumpulkan"}</button>
+            <button type="button" disabled={saving} onClick={() => void submitWorksheet()} style={styles.primaryButtonSmall}>{submitLabel(groupInfo ? "Kumpulkan atas nama kelompok" : "Kumpulkan")}</button>
           </span>
         </div>
       ) : null}
@@ -990,7 +988,7 @@ export default function WorksheetPage() {
           {onReview ? (
             <>
               <button type="button" disabled={autoSaving} onClick={() => void goToPage(data.items.length - 1)} style={styles.navButton}>← Kembali ke soal terakhir</button>
-              <button type="button" disabled={saving} onClick={() => void submitWorksheet()} style={{ ...styles.navButton, ...styles.navPrimary }}>{groupInfo ? "Kumpulkan atas nama kelompok" : "Kumpulkan"}</button>
+              <button type="button" disabled={saving} onClick={() => void submitWorksheet()} style={{ ...styles.navButton, ...styles.navPrimary }}>{submitLabel(groupInfo ? "Kumpulkan atas nama kelompok" : "Kumpulkan")}</button>
             </>
           ) : (
             <>
@@ -1006,7 +1004,7 @@ export default function WorksheetPage() {
       ) : (
         <div style={styles.actions}>
           <button type="button" disabled={saving || status !== "draf"} onClick={() => void saveDraft()} style={styles.secondaryButton}>Simpan draf</button>
-          <button type="button" disabled={saving || status !== "draf"} onClick={() => void submitWorksheet()} style={styles.primaryButton}>{groupInfo ? "Kumpulkan atas nama kelompok" : "Kumpulkan LKPD"}</button>
+          <button type="button" disabled={saving || status !== "draf"} onClick={() => void submitWorksheet()} style={styles.primaryButton}>{submitLabel(groupInfo ? "Kumpulkan atas nama kelompok" : "Kumpulkan LKPD")}</button>
         </div>
       )}
 
@@ -1038,7 +1036,7 @@ export default function WorksheetPage() {
                     void goToPage(missing.index);
                   }}
                 >
-                  Soal {missing.ordinal}
+                  Soal {missing.ordinal} · {itemTypeLabel(missing.itemType)}
                 </button>
               ))}
             </div>
@@ -1172,7 +1170,7 @@ const styles = {
   progressBar: { position: "sticky" as const, top: 0, zIndex: 10, display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" as const, background: "#f8f9fc", border: "1px solid #eaecf0", borderRadius: 10, padding: "10px 12px", marginTop: 20 },
   progressText: { fontWeight: 700, fontSize: 14 },
   saveState: { color: "#667085", fontWeight: 400 },
-  progressActions: { display: "flex", gap: 8 },
+  progressActions: { display: "flex", gap: 8, flexWrap: "wrap" as const, justifyContent: "flex-end" },
   chipRow: { display: "flex", gap: 8, flexWrap: "wrap" as const, marginTop: 12 },
   chip: { minHeight: 40, minWidth: 40, padding: "8px 10px", borderRadius: 999, border: "1px solid #d0d5dd", background: "white", color: "#475467", fontWeight: 700, fontSize: 13, cursor: "pointer" },
   chipAnswered: { background: "#eff8ff", borderColor: "#175cd3", color: "#175cd3" },
@@ -1192,7 +1190,7 @@ const styles = {
   reviewPrompt: { flex: 1, color: "#344054", lineHeight: 1.5 },
   reviewChipDone: { background: "#ecfdf3", border: "1px solid #a6f4c5", borderRadius: 999, padding: "3px 9px", color: "#027a48", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" as const },
   reviewChipTodo: { background: "#f9fafb", border: "1px solid #eaecf0", borderRadius: 999, padding: "3px 9px", color: "#667085", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" as const },
-  navBar: { position: "sticky" as const, bottom: 0, zIndex: 10, display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", background: "#f8f9fc", border: "1px solid #eaecf0", borderRadius: 10, padding: "10px 12px", marginTop: 16 },
+  navBar: { position: "sticky" as const, bottom: 0, zIndex: 10, display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" as const, background: "#f8f9fc", border: "1px solid #eaecf0", borderRadius: 10, padding: "10px 12px", marginTop: 16 },
   navButton: { minHeight: 48, border: "1px solid #d0d5dd", borderRadius: 8, background: "white", padding: "12px 18px", fontWeight: 700, fontSize: 15, cursor: "pointer" },
   navPrimary: { border: 0, background: "#175cd3", color: "white" },
   primaryButtonSmall: { border: 0, borderRadius: 8, background: "#175cd3", color: "white", padding: "8px 12px", fontWeight: 700 },
@@ -1243,7 +1241,7 @@ const styles = {
   explanationText: { margin: 0, lineHeight: 1.6, whiteSpace: "pre-wrap" as const },
   textarea: { border: "1px solid #d0d5dd", borderRadius: 8, padding: 11, fontFamily: "inherit", resize: "vertical" as const },
   notice: { color: "#667085", background: "#f8f9fc", padding: 12, borderRadius: 8 },
-  actions: { display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 24 },
+  actions: { display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" as const, marginTop: 24 },
   primaryButton: { border: 0, borderRadius: 8, background: "#175cd3", color: "white", padding: "11px 14px", fontWeight: 700 },
   secondaryButton: { border: "1px solid #d0d5dd", borderRadius: 8, background: "white", padding: "11px 14px" },
 };

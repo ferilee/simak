@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { eq, and, asc, sql } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
+import { z } from "zod";
 import { db, schema } from "@simak/db";
 import {
   createModuleBlockSchema,
@@ -10,12 +11,13 @@ import {
   updateModuleSchema,
 } from "@simak/shared";
 import { requireRole } from "../middleware/auth";
+import { nextShareState } from "../lib/library";
 
 // Modul materi + bloknya (Tahap 1). Isi content_json wajib lolos skema Zod
 // moduleBlockContentSchema dari @simak/shared sebelum disimpan.
 export const moduleRoutes = new Hono();
 
-const { modules, moduleBlocks, activityLogs } = schema;
+const { modules, moduleBlocks, activityLogs, worksheets } = schema;
 
 type ModuleViewerStats = {
   viewer_count: number;
@@ -35,6 +37,10 @@ function serializeModule(
     cover_key: module.coverKey,
     status: module.status,
     version: module.version,
+    is_shared: module.isShared,
+    shared_at: module.sharedAt,
+    copied_from_id: module.copiedFromId,
+    copied_from_teacher_name: module.copiedFromTeacherName,
     created_at: module.createdAt,
     updated_at: module.updatedAt,
     viewer_count: stats.viewer_count,
@@ -113,6 +119,46 @@ moduleRoutes.patch("/:id", requireRole("guru"), zValidator("json", updateModuleS
   await db.update(modules).set(c.req.valid("json")).where(eq(modules.id, moduleId));
   const [updated] = await db.select().from(modules).where(eq(modules.id, moduleId)).limit(1);
   return c.json({ ok: true, data: serializeModule(updated!) });
+});
+
+const shareModuleSchema = z.object({
+  shared: z.boolean(),
+  include_worksheets: z.boolean().optional(),
+});
+
+// Saklar Perpustakaan Bersama untuk modul (Fase 1): hanya pemilik yang
+// dapat menyalakan/mematikan. Menyalakan dengan include_worksheets=true
+// ikut membagikan semua LKPD yang menempel pada modul ini; mematikan
+// modul TIDAK menyentuh LKPD-nya (masing-masing LKPD punya saklarnya
+// sendiri). Respons selalu memuat shared_worksheet_count agar UI dapat
+// menjelaskan keadaan LKPD yang menempel apa adanya.
+moduleRoutes.patch("/:id/share", requireRole("guru"), zValidator("json", shareModuleSchema), async (c) => {
+  const user = c.get("user")!;
+  const moduleId = Number(c.req.param("id"));
+  if (!Number.isInteger(moduleId) || moduleId <= 0) return c.json({ ok: false, message: "ID modul tidak valid." }, 400);
+  const module = await ownedModule(user.userId, moduleId);
+  if (!module) return c.json({ ok: false, message: "Modul tidak ditemukan." }, 404);
+  const input = c.req.valid("json");
+  const now = new Date();
+  const state = nextShareState(input.shared, now);
+
+  await db.update(modules).set({ isShared: state.isShared, sharedAt: state.sharedAt }).where(eq(modules.id, moduleId));
+  if (state.isShared && input.include_worksheets === true) {
+    await db
+      .update(worksheets)
+      .set({ isShared: true, sharedAt: now })
+      .where(and(eq(worksheets.moduleId, moduleId), eq(worksheets.teacherId, user.userId)));
+  }
+
+  const [updated] = await db.select().from(modules).where(eq(modules.id, moduleId)).limit(1);
+  const [sharedCount] = await db
+    .select({ count: sql<number>`count(${worksheets.id})` })
+    .from(worksheets)
+    .where(and(eq(worksheets.moduleId, moduleId), eq(worksheets.teacherId, user.userId), eq(worksheets.isShared, true)));
+  return c.json({
+    ok: true,
+    data: { ...serializeModule(updated!), shared_worksheet_count: Number(sharedCount?.count ?? 0) },
+  });
 });
 
 moduleRoutes.get("/:id/blocks", requireRole("guru"), async (c) => {

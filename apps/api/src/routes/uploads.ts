@@ -201,7 +201,10 @@ uploadRoutes.get("/download", requireAuth, async (c) => {
       )
       .limit(1);
     if (!access) return c.json({ ok: false, message: "Lampiran belum tersedia untuk Anda." }, 403);
-  } else if (user.role === "guru" && module.teacherId !== user.userId) {
+  } else if (user.role === "guru" && module.teacherId !== user.userId && !module.isShared) {
+    // Guru lain hanya boleh mengambil lampiran modul yang sedang DIBAGIKAN
+    // ke Perpustakaan Bersama (untuk pratinjau katalog); modul privat guru
+    // lain tetap tertutup persis seperti sebelumnya.
     return c.json({ ok: false, message: "Modul tidak ditemukan." }, 404);
   }
 

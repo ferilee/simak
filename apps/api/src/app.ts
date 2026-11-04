@@ -13,6 +13,7 @@ import { reportRoutes } from "./routes/reports";
 import { uploadRoutes } from "./routes/uploads";
 import { activityRoutes } from "./routes/activity";
 import { integrityRoutes } from "./routes/integrity";
+import { libraryRoutes } from "./routes/library";
 import { env } from "./lib/env";
 import { loadSession } from "./middleware/auth";
 
@@ -44,6 +45,7 @@ export function createApp() {
   v1.route("/uploads", uploadRoutes);
   v1.route("/activity", activityRoutes);
   v1.route("/integrity", integrityRoutes);
+  v1.route("/library", libraryRoutes);
 
   app.route("/api/v1", v1);
 

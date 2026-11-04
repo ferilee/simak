@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
+import { z } from "zod";
 import { db, schema } from "@simak/db";
 import {
   createWorksheetItemSchema,
@@ -12,6 +13,7 @@ import {
   updateWorksheetSchema,
 } from "@simak/shared";
 import { requireRole } from "../middleware/auth";
+import { nextShareState } from "../lib/library";
 import { loadTeacherClassMemberships, resolveStudentClass } from "../lib/student-class";
 import { loadAttemptMemberScores, loadContributionSummary, resolveEffectiveMemberScore } from "../lib/groups";
 import { computeGradingProgress, countGradedByAttempt, gradingStatusAfterItemSave } from "../lib/grading-progress";
@@ -39,6 +41,10 @@ function serializeWorksheet(
     title: worksheet.title,
     instructions: worksheet.instructions,
     status: worksheet.status,
+    is_shared: worksheet.isShared,
+    shared_at: worksheet.sharedAt,
+    copied_from_id: worksheet.copiedFromId,
+    copied_from_teacher_name: worksheet.copiedFromTeacherName,
     created_at: worksheet.createdAt,
     updated_at: worksheet.updatedAt,
     started_count: stats.started_count,
@@ -121,6 +127,26 @@ worksheetRoutes.post(
     return c.json({ ok: true, data: serializeWorksheet(worksheet!) }, 201);
   },
 );
+
+const shareWorksheetSchema = z.object({
+  shared: z.boolean(),
+});
+
+// Saklar Perpustakaan Bersama untuk LKPD (Fase 1): hanya pemilik yang
+// dapat menyalakan/mematikan, dan saklar ini berdiri sendiri — tidak
+// mengikuti saklar modul induknya.
+worksheetRoutes.patch("/:id/share", requireRole("guru"), zValidator("json", shareWorksheetSchema), async (c) => {
+  const user = c.get("user")!;
+  const worksheetId = Number(c.req.param("id"));
+  if (!Number.isInteger(worksheetId) || worksheetId <= 0) return c.json({ ok: false, message: "ID LKPD tidak valid." }, 400);
+  const worksheet = await ownedWorksheet(user.userId, worksheetId);
+  if (!worksheet) return c.json({ ok: false, message: "LKPD tidak ditemukan." }, 404);
+  const input = c.req.valid("json");
+  const state = nextShareState(input.shared, new Date());
+  await db.update(worksheets).set({ isShared: state.isShared, sharedAt: state.sharedAt }).where(eq(worksheets.id, worksheetId));
+  const [updated] = await db.select().from(worksheets).where(eq(worksheets.id, worksheetId)).limit(1);
+  return c.json({ ok: true, data: serializeWorksheet(updated!) });
+});
 
 worksheetRoutes.get("/:id/attempts", requireRole("guru"), async (c) => {
   const user = c.get("user")!;

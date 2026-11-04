@@ -1,4 +1,4 @@
-import { bigint, index, int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { bigint, boolean, datetime, index, int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 import { users } from "./users";
 
 export const modules = mysqlTable("modules", {
@@ -14,6 +14,17 @@ export const modules = mysqlTable("modules", {
   coverKey: varchar("cover_key", { length: 512 }),
   status: mysqlEnum("status", ["draf", "terbit", "arsip"]).notNull().default("draf"),
   version: int("version").notNull().default(1),
+  // Perpustakaan Bersama (Fase 1): modul hanya tampil ke guru lain bila
+  // pemiliknya menyalakan is_shared secara eksplisit (bawaan privat).
+  // shared_at mencatat kapan terakhir dibagikan (NULL = tidak dibagikan).
+  isShared: boolean("is_shared").notNull().default(false),
+  sharedAt: datetime("shared_at"),
+  // Jejak salinan: terisi hanya pada modul hasil salinan dari perpustakaan.
+  // copied_from_id adalah kolom polos TANPA foreign key (sumber boleh
+  // berubah/dihapus tanpa menyeret salinan); nama guru sumber dibekukan
+  // sebagai teks agar atribusi tetap tampil apa adanya.
+  copiedFromId: bigint("copied_from_id", { mode: "number" }),
+  copiedFromTeacherName: varchar("copied_from_teacher_name", { length: 120 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
 });

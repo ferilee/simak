@@ -85,6 +85,13 @@
       "when": 1793671919259,
       "tag": "0011_sasaran_siswa",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1793683200000,
+      "tag": "0012_perpustakaan_bersama",
+      "breakpoints": true
     }
   ]
 }

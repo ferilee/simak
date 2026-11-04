@@ -1,4 +1,4 @@
-import { bigint, index, int, json, mysqlEnum, mysqlTable, text, timestamp } from "drizzle-orm/mysql-core";
+import { bigint, boolean, datetime, index, int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 import { users } from "./users";
 import { modules } from "./modules";
 
@@ -11,6 +11,12 @@ export const worksheets = mysqlTable("worksheets", {
   title: text("title").notNull(),
   instructions: text("instructions"),
   status: mysqlEnum("status", ["draf", "terbit", "arsip"]).notNull().default("draf"),
+  // Perpustakaan Bersama (Fase 1): sama seperti modul — bawaan privat,
+  // dibagikan hanya lewat saklar eksplisit pemiliknya. Lihat modules.ts.
+  isShared: boolean("is_shared").notNull().default(false),
+  sharedAt: datetime("shared_at"),
+  copiedFromId: bigint("copied_from_id", { mode: "number" }),
+  copiedFromTeacherName: varchar("copied_from_teacher_name", { length: 120 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
 });

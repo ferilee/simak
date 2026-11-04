@@ -1397,6 +1397,19 @@ a {
   white-space: nowrap;
 }
 
+/* Lencana "Terkunci" pada kartu kelompok panel Kelompok (Aturan B):
+   kelompok sudah penuh atau sudah mulai mengerjakan, jadi tidak ikut
+   pembentukan ulang sebagian. */
+.group-locked-chip {
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: #fffaeb;
+  color: #b54708;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .group-card-members {
   display: flex;
   gap: 6px;

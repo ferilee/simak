@@ -126,7 +126,7 @@ type AssignmentClassGroups = {
   class_id: number;
   class_name: string;
   shuffle_locked: boolean;
-  groups: { id: number; name: string; members: AssignmentGroupMemberView[]; attempt_status: "draf" | "terkumpul" | "dinilai" | null }[];
+  groups: { id: number; name: string; members: AssignmentGroupMemberView[]; attempt_status: "draf" | "terkumpul" | "dinilai" | null; locked: boolean }[];
   ungrouped: AssignmentGroupMemberView[];
   copy_sources: { assignment_id: number; title: string }[];
 };
@@ -134,6 +134,7 @@ type AssignmentGroupsData = {
   assignment_id: number;
   work_mode: "individu" | "kelompok";
   group_size: number | null;
+  shuffle_result?: { preserved: number; formed: number; pooled_students: number };
   classes: AssignmentClassGroups[];
 };
 type AssignmentGroupsResponse = { ok: true; data: AssignmentGroupsData };
@@ -2357,7 +2358,10 @@ export default function GuruPage() {
         body: JSON.stringify({ classId }),
       });
       setAssignmentGroups(response.data);
-      setMessage(`Kelompok kelas ${className} diacak ulang.`);
+      const shuffleResult = response.data.shuffle_result;
+      setMessage(shuffleResult
+        ? `${shuffleResult.preserved} kelompok dipertahankan, ${shuffleResult.formed} kelompok dibentuk.`
+        : `Kelompok kelas ${className} diacak ulang.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Kelompok belum dapat diacak ulang.");
     } finally {
@@ -3211,12 +3215,15 @@ export default function GuruPage() {
                         {kelas.groups.length === 0 ? (
                           <button type="button" disabled={assignmentGroupsLoading} onClick={() => void generateAssignmentGroups(selectedGroupAssignmentId)} style={styles.secondaryButton}>Bentuk kelompok</button>
                         ) : kelas.shuffle_locked ? (
-                          <span style={styles.muted}>Acak ulang terkunci — sudah ada kelompok yang mulai mengerjakan.</span>
+                          <span style={styles.muted}>Semua kelompok sudah terkunci dan tidak ada murid yang belum berkelompok.</span>
                         ) : (
                           <button type="button" disabled={assignmentGroupsLoading} onClick={() => void shuffleAssignmentClassGroups(selectedGroupAssignmentId, kelas.class_id, kelas.class_name)} style={styles.secondaryButton}>Acak ulang</button>
                         )}
                       </div>
                     </div>
+                    {!kelas.shuffle_locked && kelas.groups.some((group) => group.locked) ? (
+                      <p style={styles.muted}>Kelompok yang sudah penuh atau sudah mulai mengerjakan tidak ikut diacak ulang.</p>
+                    ) : null}
                     {kelas.copy_sources.length > 0 && (kelas.groups.length === 0 || !kelas.shuffle_locked) ? (
                       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                         <span style={styles.muted}>Salin dari penugasan lain:</span>
@@ -3249,6 +3256,7 @@ export default function GuruPage() {
                             <div className="group-card-header">
                               <strong className="group-card-title">👥 {group.name}</strong>
                               <span className="group-card-count">{group.members.length} anggota</span>
+                              {group.locked ? <span className="group-locked-chip">🔒 Terkunci</span> : null}
                               <span className={progress.className}>{progress.label}</span>
                             </div>
                             <div className="group-card-members">

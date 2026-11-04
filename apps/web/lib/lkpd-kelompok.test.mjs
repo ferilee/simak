@@ -38,7 +38,7 @@ check("panel Kelompok penugasan", guru.includes("Kelompok penugasan"));
 check("memuat GET groups", guru.includes("/groups`);") || guru.includes("/groups`"));
 check("tombol Bentuk kelompok memanggil generate", guru.includes("/groups/generate") && guru.includes("Bentuk kelompok"));
 check("tombol Acak ulang memanggil shuffle", guru.includes("/groups/shuffle") && guru.includes("Acak ulang"));
-check("keadaan terkunci dijelaskan", guru.includes("Acak ulang terkunci — sudah ada kelompok yang mulai mengerjakan."));
+check("keadaan terkunci dijelaskan", guru.includes("Semua kelompok sudah terkunci dan tidak ada murid yang belum berkelompok."));
 check("daftar belum berkelompok + tombol Tambah", guru.includes("Belum berkelompok") && guru.includes("Tambah"));
 check("tambah anggota memanggil endpoint members", guru.includes("/members`"));
 

@@ -148,13 +148,13 @@ console.log("Case 8: jalur lama tidak berubah (statis)");
 }
 
 // ---------------------------------------------------------------------------
-console.log("Case 9: Jalur A — tidak ada migrasi baru");
+console.log("Case 9: Jalur — tidak ada migrasi melampaui 0012 (Perpustakaan Bersama)");
 {
   const migrationsDir = new URL("../../../../packages/db/migrations/", import.meta.url);
   const files = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql"));
-  check("tidak ada berkas migrasi 0012+", !files.some((name) => /^001[2-9]/.test(name)), files.join(","));
+  check("tidak ada berkas migrasi 0013+", !files.some((name) => /^001[3-9]/.test(name)), files.join(","));
   const journal = JSON.parse(read("../../../../packages/db/migrations/meta/_journal.json"));
-  check("jurnal tetap 12 entri (idx terakhir 11)", journal.entries.length === 12 && journal.entries[journal.entries.length - 1].idx === 11);
+  check("jurnal tetap 13 entri (idx terakhir 12)", journal.entries.length === 13 && journal.entries[journal.entries.length - 1].idx === 12);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

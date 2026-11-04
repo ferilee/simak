@@ -647,9 +647,10 @@ export default function GuruPage() {
 
   // Daftar yang ditampilkan panel Pengumpulan LKPD: gabungan semua LKPD
   // (mode "Semua LKPD") atau daftar per-LKPD yang sedang aktif. Rantai
-  // saringannya: sumber → kelas → status. Urutan tampilan adalah antrean
-  // kerja: yang belum dinilai dulu, lalu draf, terakhir yang sudah dinilai
-  // (stabil di dalam kelompok). Saringan status diterapkan di klien untuk
+  // saringannya: sumber → kelas → status. Urutan tampilan mengikuti
+  // permintaan guru: kelompok menaik menurut nomor kelompoknya, individu
+  // menurut abjad nama murid (keadaan penilaian tidak menggeser urutan).
+  // Saringan status diterapkan di klien untuk
   // kedua mode: "belum dinilai" berarti sudah terkumpul tetapi belum punya
   // nilai, "sudah dinilai" berarti total nilai sudah terisi. Hitungan
   // ringkas dihitung sesudah saringan kelas, sebelum saringan status.

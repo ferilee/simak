@@ -15,6 +15,10 @@ export type GradingAttemptLike = {
   worksheet_id?: number;
   class_id?: number | null;
   class_name?: string | null;
+  student_name?: string;
+  is_group?: boolean;
+  group_id?: number | null;
+  group_name?: string | null;
 };
 
 export type GradingCounts = {
@@ -46,34 +50,85 @@ export function countGradingAttempts(attempts: GradingAttemptLike[]): GradingCou
   };
 }
 
-/**
- * Kelompok urutan antrean: 0 = belum dinilai, 1 = draf, 2 = sudah dinilai.
- * Sisa keadaan yang tidak lazim (mis. status "dinilai" tanpa total) jatuh ke
- * kelompok terakhir supaya tidak menyusup ke antrean belum dinilai.
- */
-export function gradingGroupIndex(attempt: GradingAttemptLike): number {
-  if (isUngradedAttempt(attempt)) return 0;
-  if (attempt.status === "draf") return 1;
-  return 2;
+// --- Urutan tampilan panel (Urutan Pengumpulan, v1.0.38) ---
+// Permintaan guru: pengumpulan kelompok tampil menaik menurut nomor
+// kelompoknya (Kelompok 1, 2, 3, …), pengumpulan individu menurut abjad
+// nama murid. Attempt kelompok selalu sebelum individu (hanya terasa pada
+// LKPD campuran; daftar murni tidak berubah polanya). Keadaan penilaian
+// TIDAK lagi menggeser urutan — status tetap terlihat pada kartu dan
+// saringan status tetap bekerja sebagai saringan, bukan pengurut.
+
+/** Attempt kelompok? Kedua sumber daftar API menandai is_group / group_id. */
+export function isGroupGradingAttempt(attempt: GradingAttemptLike): boolean {
+  return attempt.is_group === true || (attempt.group_id !== null && attempt.group_id !== undefined);
 }
 
 /**
- * Urutan tampilan panel: belum dinilai dulu, lalu draf, terakhir yang sudah
- * dinilai. Stabil — urutan masuk (API: updated_at menurun) dipertahankan di
- * dalam kelompok yang sama. Tidak mengubah array asal.
+ * Nomor urut kelompok dari nama kelompoknya: angka terakhir pada nama
+ * ("Kelompok 12" → 12, supaya pengurutan numerik — bukan leksikografis).
+ * Untuk attempt kelompok API juga mengisi student_name dengan nama
+ * kelompok, jadi itu cadangan bacanya bila group_name kosong. Null bila
+ * attempt bukan kelompok atau namanya tidak mengandung angka.
+ */
+export function groupSortNumber(attempt: GradingAttemptLike): number | null {
+  if (!isGroupGradingAttempt(attempt)) return null;
+  const name = (attempt.group_name ?? attempt.student_name ?? "").trim();
+  const match = /(\d+)$/.exec(name);
+  return match ? Number(match[1]) : null;
+}
+
+/**
+ * Banding dua attempt kelompok: nomor kelompok menaik; yang bernomor
+ * sebelum yang tidak bernomor; tanpa nomor bernama, id kelompok menaik;
+ * keduanya tidak dikenal → 0 (urutan masuk dipertahankan pemanggil).
+ */
+function compareGroupAttempts(a: GradingAttemptLike, b: GradingAttemptLike): number {
+  const numberA = groupSortNumber(a);
+  const numberB = groupSortNumber(b);
+  if (numberA !== null && numberB !== null && numberA !== numberB) return numberA - numberB;
+  if (numberA !== null && numberB === null) return -1;
+  if (numberA === null && numberB !== null) return 1;
+  const idA = a.group_id ?? null;
+  const idB = b.group_id ?? null;
+  if (idA !== null && idB !== null && idA !== idB) return idA - idB;
+  if (idA !== null && idB === null) return -1;
+  if (idA === null && idB !== null) return 1;
+  return 0;
+}
+
+/**
+ * Urutan tampilan panel: attempt kelompok dulu (nomor kelompok menaik),
+ * lalu attempt individu (nama murid A–Z dengan locale "id", sama seperti
+ * pengurutan nama lain di aplikasi ini). Nama yang sama mempertahankan
+ * urutan masuk, lalu id attempt sebagai penentu terakhir. Tidak mengubah
+ * array asal.
  */
 export function sortGradingAttempts<T extends GradingAttemptLike>(attempts: T[]): T[] {
   return attempts
     .map((attempt, index) => ({ attempt, index }))
-    .sort((a, b) => gradingGroupIndex(a.attempt) - gradingGroupIndex(b.attempt) || a.index - b.index)
+    .sort((x, y) => {
+      const a = x.attempt;
+      const b = y.attempt;
+      const groupA = isGroupGradingAttempt(a);
+      const groupB = isGroupGradingAttempt(b);
+      if (groupA !== groupB) return groupA ? -1 : 1;
+      if (groupA) {
+        const byGroup = compareGroupAttempts(a, b);
+        if (byGroup !== 0) return byGroup;
+      } else {
+        const byName = (a.student_name ?? "").localeCompare(b.student_name ?? "", "id");
+        if (byName !== 0) return byName;
+      }
+      return x.index - y.index || a.id - b.id;
+    })
     .map((entry) => entry.attempt);
 }
 
 /**
- * Pengumpulan berikutnya yang masih belum dinilai menurut urutan tampilan,
- * melewati attempt yang baru saja disimpan (excludeId). Karena yang belum
- * dinilai selalu terurut paling depan, kandidatnya adalah yang pertama
- * ditemukan dari awal daftar. Null bila tidak ada lagi.
+ * Pengumpulan berikutnya yang masih belum dinilai menurut urutan tampilan
+ * (nomor kelompok / abjad nama), melewati attempt yang baru saja disimpan
+ * (excludeId): kandidatnya adalah yang pertama ditemukan dari awal daftar
+ * tampil. Null bila tidak ada lagi.
  */
 export function pickNextUngradedAttempt<T extends GradingAttemptLike>(displayList: T[], excludeId: number | null): T | null {
   return displayList.find((attempt) => attempt.id !== excludeId && isUngradedAttempt(attempt)) ?? null;

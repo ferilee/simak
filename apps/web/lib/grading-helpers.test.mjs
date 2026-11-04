@@ -7,6 +7,8 @@ import {
   formatScoreValue,
   gradingClassFilterValue,
   GRADING_PAGE_SIZE,
+  groupSortNumber,
+  isGroupGradingAttempt,
   isUngradedAttempt,
   matchesGradingClassFilter,
   matchesGradingStatusFilter,
@@ -51,12 +53,12 @@ check("sudah dinilai = total terisi", counts.sudahDinilai === 2, JSON.stringify(
 check("terkumpul = belum + sudah", counts.terkumpul === counts.belumDinilai + counts.sudahDinilai);
 check("daftar kosong menghasilkan nol semua", JSON.stringify(countGradingAttempts([])) === JSON.stringify({ terkumpul: 0, belumDinilai: 0, sudahDinilai: 0 }));
 
-console.log("Case 2: urutan kelompok stabil (belum dinilai, draf, sudah dinilai)");
+console.log("Case 2: tanpa nama/kelompok, urutan masuk dipertahankan (stabil, status tidak menggeser)");
 const sorted = sortGradingAttempts(fixture);
-check("urutan id hasil sortir", JSON.stringify(sorted.map((a) => a.id)) === JSON.stringify([2, 3, 1, 6, 4, 5]), JSON.stringify(sorted.map((a) => a.id)));
+check("urutan id hasil sortir sama dengan urutan masuk", JSON.stringify(sorted.map((a) => a.id)) === JSON.stringify([1, 2, 3, 4, 5, 6]), JSON.stringify(sorted.map((a) => a.id)));
 check("array asal tidak berubah", JSON.stringify(fixture.map((a) => a.id)) === JSON.stringify([1, 2, 3, 4, 5, 6]));
 const sortedAgain = sortGradingAttempts(sorted);
-check("mengurutkan daftar yang sudah urut tidak menggeser apa pun", JSON.stringify(sortedAgain.map((a) => a.id)) === JSON.stringify([2, 3, 1, 6, 4, 5]));
+check("mengurutkan daftar yang sudah urut tidak menggeser apa pun", JSON.stringify(sortedAgain.map((a) => a.id)) === JSON.stringify([1, 2, 3, 4, 5, 6]));
 
 console.log("Case 3: pemilih pengumpulan berikutnya yang belum dinilai");
 check("dari awal daftar mengambil yang belum dinilai pertama", pickNextUngradedAttempt(sorted, null)?.id === 2);
@@ -160,6 +162,128 @@ check("indeks negatif jatuh ke satu halaman", revealedCountForIndex(-1) === 20);
 check(
   "target lompat otomatis selalu ikut terlihat sesudah perluasan",
   [0, 19, 20, 41, 59, 60, 99].every((index) => revealedCountForIndex(index) > index),
+);
+
+console.log("Case 11: urutan kelompok — nomor menaik numerik, status tidak menggeser (v1.0.38)");
+// Bentuk nyata payload API untuk attempt kelompok: student_name = nama kelompok.
+const groupFixture = [
+  { id: 31, status: "terkumpul", total_score: null, is_group: true, group_id: 103, group_name: "Kelompok 3", student_name: "Kelompok 3" },
+  { id: 32, status: "dinilai", total_score: 90, is_group: true, group_id: 105, group_name: "Kelompok 5", student_name: "Kelompok 5" },
+  { id: 33, status: "draf", total_score: null, is_group: true, group_id: 102, group_name: "Kelompok 2", student_name: "Kelompok 2" },
+  { id: 34, status: "terkumpul", total_score: null, is_group: true, group_id: 110, group_name: "Kelompok 10", student_name: "Kelompok 10" },
+  { id: 35, status: "terkumpul", total_score: null, is_group: true, group_id: 101, group_name: "Kelompok 1", student_name: "Kelompok 1" },
+];
+const groupSorted = sortGradingAttempts(groupFixture);
+check(
+  "kelompok 3,5,2,10,1 tampil 1,2,3,5,10",
+  JSON.stringify(groupSorted.map((a) => a.group_name)) === JSON.stringify(["Kelompok 1", "Kelompok 2", "Kelompok 3", "Kelompok 5", "Kelompok 10"]),
+  JSON.stringify(groupSorted.map((a) => a.group_name)),
+);
+check("Kelompok 10 sesudah Kelompok 5 (numerik, bukan leksikografis)", groupSorted[4].group_name === "Kelompok 10" && groupSorted[3].group_name === "Kelompok 5");
+check("Kelompok 5 yang sudah dinilai tetap di posisi nomornya", groupSorted[3].id === 32 && groupSorted[3].status === "dinilai");
+check("draf Kelompok 2 tetap di posisi nomornya", groupSorted[1].id === 33 && groupSorted[1].status === "draf");
+check("array asal kelompok tidak berubah", JSON.stringify(groupFixture.map((a) => a.id)) === JSON.stringify([31, 32, 33, 34, 35]));
+
+console.log("Case 12: groupSortNumber — parsing dan cadangan");
+check("Kelompok 1 → 1", groupSortNumber(groupFixture[4]) === 1);
+check("Kelompok 10 → 10 (bukan 1)", groupSortNumber(groupFixture[3]) === 10);
+check("Kelompok 2 → 2", groupSortNumber(groupFixture[2]) === 2);
+check(
+  "group_name kosong: dibaca dari student_name",
+  groupSortNumber({ id: 1, status: "terkumpul", total_score: null, is_group: true, group_id: 7, group_name: null, student_name: "Kelompok 7" }) === 7,
+);
+check(
+  "terdeteksi kelompok lewat group_id saja",
+  isGroupGradingAttempt({ id: 1, status: "terkumpul", total_score: null, group_id: 7 }) && !isGroupGradingAttempt({ id: 2, status: "terkumpul", total_score: null, group_id: null }),
+);
+check("attempt individu tidak punya nomor kelompok", groupSortNumber({ id: 1, status: "terkumpul", total_score: null, student_name: "Kelompok 7" }) === null);
+check(
+  "nama kelompok tanpa angka menghasilkan null",
+  groupSortNumber({ id: 1, status: "terkumpul", total_score: null, is_group: true, group_id: 3, group_name: "Kelompok Biru", student_name: "Kelompok Biru" }) === null,
+);
+const unnumberedGroups = [
+  { id: 61, status: "terkumpul", total_score: null, is_group: true, group_id: 209, group_name: "Kelompok Merah", student_name: "Kelompok Merah" },
+  { id: 62, status: "terkumpul", total_score: null, is_group: true, group_id: 204, group_name: "Kelompok Biru", student_name: "Kelompok Biru" },
+];
+check(
+  "tanpa nomor bernama: id kelompok menaik",
+  JSON.stringify(sortGradingAttempts(unnumberedGroups).map((a) => a.id)) === JSON.stringify([62, 61]),
+);
+const anonymousGroups = [
+  { id: 63, status: "terkumpul", total_score: null, is_group: true, group_id: null, group_name: null, student_name: "Kelompok" },
+  { id: 64, status: "draf", total_score: null, is_group: true, group_id: null, group_name: null, student_name: "Kelompok" },
+];
+check(
+  "tanpa nomor dan tanpa id: urutan masuk dipertahankan",
+  JSON.stringify(sortGradingAttempts(anonymousGroups).map((a) => a.id)) === JSON.stringify([63, 64]),
+);
+check(
+  "yang bernomor sebelum yang tidak bernomor",
+  JSON.stringify(sortGradingAttempts([unnumberedGroups[0], groupFixture[4]]).map((a) => a.id)) === JSON.stringify([35, 61]),
+);
+
+console.log("Case 13: urutan individu — abjad nama A–Z (locale id), status tidak menggeser");
+const nameFixture = [
+  { id: 41, status: "dinilai", total_score: 88, student_name: "Siti Rahma" },
+  { id: 42, status: "draf", total_score: null, student_name: "Andi Pratama" },
+  { id: 43, status: "terkumpul", total_score: null, student_name: "Zahra Aulia" },
+  { id: 44, status: "terkumpul", total_score: null, student_name: "Budi Santoso" },
+  { id: 45, status: "dinilai", total_score: 70, student_name: "Dewi Lestari" },
+];
+const nameSorted = sortGradingAttempts(nameFixture);
+check(
+  "nama acak tampil A–Z",
+  JSON.stringify(nameSorted.map((a) => a.student_name)) === JSON.stringify(["Andi Pratama", "Budi Santoso", "Dewi Lestari", "Siti Rahma", "Zahra Aulia"]),
+  JSON.stringify(nameSorted.map((a) => a.student_name)),
+);
+check("yang sudah dinilai tidak tenggelam ke bawah", nameSorted[0].id === 42 && nameSorted[3].id === 41);
+
+console.log("Case 14: daftar campuran — kelompok dulu menurut nomor, lalu individu menurut nama");
+const mixedFixture = [
+  { id: 71, status: "terkumpul", total_score: null, student_name: "Bima Arya" },
+  { id: 72, status: "terkumpul", total_score: null, is_group: true, group_id: 302, group_name: "Kelompok 2", student_name: "Kelompok 2" },
+  { id: 73, status: "terkumpul", total_score: null, student_name: "Alya Putri" },
+  { id: 74, status: "dinilai", total_score: 95, is_group: true, group_id: 301, group_name: "Kelompok 1", student_name: "Kelompok 1" },
+];
+check(
+  "urutan campuran: Kelompok 1, Kelompok 2, Alya, Bima",
+  JSON.stringify(sortGradingAttempts(mixedFixture).map((a) => a.id)) === JSON.stringify([74, 72, 73, 71]),
+  JSON.stringify(sortGradingAttempts(mixedFixture).map((a) => a.id)),
+);
+
+console.log("Case 15: nama sama stabil + lompatan Nilai Cepat mengikuti urutan baru");
+const sameNameFixture = [
+  { id: 52, status: "terkumpul", total_score: null, student_name: "Rina Marlina" },
+  { id: 51, status: "terkumpul", total_score: null, student_name: "Rina Marlina" },
+];
+check(
+  "nama sama: urutan masuk dipertahankan (bukan id)",
+  JSON.stringify(sortGradingAttempts(sameNameFixture).map((a) => a.id)) === JSON.stringify([52, 51]),
+);
+// Simulasi Nilai Cepat: Kelompok 1 baru selesai dinilai; daftar tampil
+// berasal dari urutan API (updated_at menurun: yang terakhir berubah dulu).
+const afterGradingFixture = [
+  { id: 83, status: "terkumpul", total_score: null, is_group: true, group_id: 403, group_name: "Kelompok 3", student_name: "Kelompok 3" },
+  { id: 81, status: "dinilai", total_score: 80, is_group: true, group_id: 401, group_name: "Kelompok 1", student_name: "Kelompok 1" },
+  { id: 82, status: "terkumpul", total_score: null, is_group: true, group_id: 402, group_name: "Kelompok 2", student_name: "Kelompok 2" },
+];
+const afterGradingDisplay = sortGradingAttempts(afterGradingFixture);
+check("sesudah menilai Kelompok 1, lompatan ke Kelompok 2", pickNextUngradedAttempt(afterGradingDisplay, 81)?.id === 82);
+check("sesudah Kelompok 2, lompatan ke Kelompok 3", pickNextUngradedAttempt(afterGradingDisplay, 82)?.id === 83);
+check("draf di tengah dilewati lompatan tetapi tetap pada posisi nomornya", pickNextUngradedAttempt(groupSorted, null)?.id === 35 && groupSorted[1].status === "draf");
+
+console.log("Case 16: hitungan dan saringan tidak tersentuh urutan baru");
+check(
+  "hitungan sama sebelum dan sesudah sortir kelompok",
+  JSON.stringify(countGradingAttempts(sortGradingAttempts(groupFixture))) === JSON.stringify(countGradingAttempts(groupFixture)),
+);
+check(
+  "saringan belum_dinilai pada urutan baru menyisakan nomor menaik",
+  JSON.stringify(groupSorted.filter((a) => matchesGradingStatusFilter(a, "belum_dinilai")).map((a) => a.group_name)) === JSON.stringify(["Kelompok 1", "Kelompok 3", "Kelompok 10"]),
+);
+check(
+  "saringan sudah_dinilai pada urutan abjad tetap bekerja",
+  JSON.stringify(nameSorted.filter((a) => matchesGradingStatusFilter(a, "sudah_dinilai")).map((a) => a.student_name)) === JSON.stringify(["Dewi Lestari", "Siti Rahma"]),
 );
 
 console.log(`\nHasil: ${passed} lulus, ${failed} gagal, ${passed + failed} total`);

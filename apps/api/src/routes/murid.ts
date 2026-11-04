@@ -10,7 +10,7 @@ import { listVisibleModuleIds, loadAssignmentSubject, studentCanAccessModule, st
 import { buildNotYetOpenBody } from "../lib/halaman-tunggu";
 import { contributionWindowOpen, loadMemberScoreOverride, loadStudentGroup, pickEffectiveAttempt, type AttemptSnapshot } from "../lib/groups";
 import { buildStudentGradeRow, chooseGradeAttempt, sortGradeRows, type GradeAttemptCandidate } from "../lib/nilai-saya";
-import { isSameAnswerValue, unansweredOrdinals, type SubmitGateAnswer } from "../lib/submit-gate";
+import { buildUnansweredMessage, isSameAnswerValue, unansweredDetails, type SubmitGateAnswer } from "../lib/submit-gate";
 
 // Beranda murid + detail penugasan — halaman paling ringan adalah prioritas.
 export const muridRoutes = new Hono();
@@ -915,11 +915,11 @@ muridRoutes.post("/worksheets/:id/submit", async (c) => {
       .from(worksheetAnswers)
       .where(eq(worksheetAnswers.attemptId, attempt.id));
     const answersByItemId = new Map<number, SubmitGateAnswer>(answerRows.map((row) => [row.itemId, row]));
-    const missing = unansweredOrdinals(items, answersByItemId);
+    const missing = unansweredDetails(items, answersByItemId);
     if (missing.length > 0) {
       return c.json({
         ok: false,
-        message: `Masih ada ${missing.length} soal yang belum dijawab (nomor ${missing.join(", ")}). Lengkapi dulu sebelum mengumpulkan.`,
+        message: buildUnansweredMessage(missing),
       }, 400);
     }
   }

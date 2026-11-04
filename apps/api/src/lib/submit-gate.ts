@@ -82,17 +82,65 @@ export function isStoredAnswerAnswered(item: SubmitGateItem, answer: SubmitGateA
 }
 
 /**
+ * Label bahasa Indonesia untuk jenis butir — cerminan peta yang sama pada
+ * sisi web (apps/web/lib/label-kumpulkan.ts; kedua basis kode terpisah,
+ * jadi petanya diduplikasi dan masing-masing dikunci oleh suite-nya).
+ * Dipakai gerbang agar murid tahu JENIS soal yang masih kosong, bukan
+ * hanya nomornya — pada insiden lapangan, butir unggah foto yang belum
+ * terisi tidak dikenali murid hanya dari nomornya.
+ */
+export const ITEM_TYPE_LABELS: Record<string, string> = {
+  pilihan_ganda: "Pilihan ganda",
+  isian_singkat: "Isian singkat",
+  uraian: "Uraian",
+  unggah_foto: "Unggah foto",
+  langkah_berurutan: "Langkah berurutan",
+  refleksi: "Refleksi",
+};
+
+export function itemTypeLabel(itemType: string): string {
+  return ITEM_TYPE_LABELS[itemType] ?? "Soal";
+}
+
+export type UnansweredDetail = {
+  /** Ordinal 1-based di antara butir terhitung (semua kecuali tautan_ruas). */
+  ordinal: number;
+  itemType: string;
+};
+
+/**
+ * Butir terhitung yang belum terjawab, sebagai ordinal + jenis butir,
+ * mengikuti urutan butir yang diberikan (pemanggil mengurutkan sama
+ * seperti halaman: sortOrder naik). Semantik hitungnya identik dengan
+ * unansweredOrdinals — yang berbeda hanya data yang dibawa pulang.
+ */
+export function unansweredDetails(items: SubmitGateItem[], answersByItemId: ReadonlyMap<number, SubmitGateAnswer>): UnansweredDetail[] {
+  const missing: UnansweredDetail[] = [];
+  let ordinal = 0;
+  for (const item of items) {
+    if (item.itemType === "tautan_ruas") continue;
+    ordinal += 1;
+    if (!isStoredAnswerAnswered(item, answersByItemId.get(item.id))) missing.push({ ordinal, itemType: item.itemType });
+  }
+  return missing;
+}
+
+/**
  * Ordinal (1-based, di antara butir terhitung — semua kecuali tautan_ruas)
  * dari butir-butir yang belum terjawab, mengikuti urutan butir yang
  * diberikan (pemanggil mengurutkan sama seperti halaman: sortOrder naik).
  */
 export function unansweredOrdinals(items: SubmitGateItem[], answersByItemId: ReadonlyMap<number, SubmitGateAnswer>): number[] {
-  const missing: number[] = [];
-  let ordinal = 0;
-  for (const item of items) {
-    if (item.itemType === "tautan_ruas") continue;
-    ordinal += 1;
-    if (!isStoredAnswerAnswered(item, answersByItemId.get(item.id))) missing.push(ordinal);
-  }
-  return missing;
+  return unansweredDetails(items, answersByItemId).map((entry) => entry.ordinal);
+}
+
+/**
+ * Pesan penolakan gerbang (HTTP 400), menyebut jumlah, nomor, dan JENIS
+ * tiap soal yang masih kosong:
+ * "Masih ada 3 soal yang belum dijawab: Soal 2 (Isian singkat), Soal 4
+ * (Unggah foto), Soal 6 (Refleksi). Lengkapi dulu sebelum mengumpulkan."
+ */
+export function buildUnansweredMessage(missing: UnansweredDetail[]): string {
+  const parts = missing.map((entry) => `Soal ${entry.ordinal} (${itemTypeLabel(entry.itemType)})`);
+  return `Masih ada ${missing.length} soal yang belum dijawab: ${parts.join(", ")}. Lengkapi dulu sebelum mengumpulkan.`;
 }

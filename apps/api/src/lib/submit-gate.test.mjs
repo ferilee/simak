@@ -8,7 +8,7 @@
 // convention (see groups.test.mjs), so their wiring (skip, wroteAny,
 // group-only gate, message) is locked statically against the route source.
 import { readFileSync } from "node:fs";
-import { isSameAnswerValue, isStoredAnswerAnswered, unansweredOrdinals } from "./submit-gate.ts";
+import { buildUnansweredMessage, isSameAnswerValue, isStoredAnswerAnswered, itemTypeLabel, unansweredDetails, unansweredOrdinals } from "./submit-gate.ts";
 
 let passed = 0;
 let failed = 0;
@@ -128,17 +128,71 @@ console.log("Case 7: pengawatan gerbang submit (statis)");
 {
   const route = murid.slice(murid.indexOf('muridRoutes.post("/worksheets/:id/submit"'), murid.indexOf('muridRoutes.get("/worksheets/:id/contribution-ratings"'));
   check("rute POST submit ditemukan", route.length > 0);
-  check("gerbang hanya di dalam cabang attempt kelompok", route.includes("if (context.group) {") && route.indexOf("if (context.group) {") < route.indexOf("unansweredOrdinals(items, answersByItemId)"));
+  check("gerbang hanya di dalam cabang attempt kelompok", route.includes("if (context.group) {") && route.indexOf("if (context.group) {") < route.indexOf("unansweredDetails(items, answersByItemId)"));
   check("butir dibaca terurut sortOrder (sama seperti halaman)", route.includes(".orderBy(asc(worksheetItems.sortOrder))"));
-  check("kelengkapan dihitung dari jawaban tersimpan attempt ini", route.includes("eq(worksheetAnswers.attemptId, attempt.id)") && route.includes("unansweredOrdinals(items, answersByItemId)"));
+  check("kelengkapan dihitung dari jawaban tersimpan attempt ini", route.includes("eq(worksheetAnswers.attemptId, attempt.id)") && route.includes("unansweredDetails(items, answersByItemId)"));
   check(
-    "pesan 400 menyebut jumlah + nomor soal",
-    route.includes("Masih ada ${missing.length} soal yang belum dijawab (nomor ${missing.join(\", \")}). Lengkapi dulu sebelum mengumpulkan.") && route.includes("}, 400);"),
+    "pesan 400 dibangun oleh pembangun pesan bersama (menyebut nomor + JENIS soal)",
+    route.includes("message: buildUnansweredMessage(missing),") && route.includes("}, 400);"),
   );
-  check("penolakan terjadi sebelum attempt diubah ke terkumpul", route.indexOf("unansweredOrdinals(items, answersByItemId)") < route.indexOf('status: "terkumpul"'));
+  check("format pesan lama (nomor saja) tidak tersisa", !route.includes("belum dijawab (nomor"));
+  check("penolakan terjadi sebelum attempt diubah ke terkumpul", route.indexOf("unansweredDetails(items, answersByItemId)") < route.indexOf('status: "terkumpul"'));
 }
 
-console.log("Case 8: Jalur A — tidak ada migrasi baru");
+console.log("Case 9: label jenis butir (untuk modal gerbang + pesan 400)");
+{
+  check("pilihan_ganda", itemTypeLabel("pilihan_ganda") === "Pilihan ganda");
+  check("isian_singkat", itemTypeLabel("isian_singkat") === "Isian singkat");
+  check("uraian", itemTypeLabel("uraian") === "Uraian");
+  check("unggah_foto", itemTypeLabel("unggah_foto") === "Unggah foto");
+  check("langkah_berurutan", itemTypeLabel("langkah_berurutan") === "Langkah berurutan");
+  check("refleksi", itemTypeLabel("refleksi") === "Refleksi");
+  check("jenis tak dikenal → 'Soal'", itemTypeLabel("jenis_aneh") === "Soal");
+}
+
+console.log("Case 10: unansweredDetails — ordinal identik dengan unansweredOrdinals, plus jenis");
+{
+  const sebagian = answers([[1, "B"], [3, "uraian"], [5, "C\nA\nB"]]);
+  const details = unansweredDetails(ITEMS, sebagian);
+  check(
+    "ordinal sama persis dengan unansweredOrdinals",
+    JSON.stringify(details.map((entry) => entry.ordinal)) === JSON.stringify(unansweredOrdinals(ITEMS, sebagian)),
+  );
+  check(
+    "jenis mengikuti butirnya: isian=2, foto=4, refleksi=6",
+    JSON.stringify(details) === JSON.stringify([
+      { ordinal: 2, itemType: "isian_singkat" },
+      { ordinal: 4, itemType: "unggah_foto" },
+      { ordinal: 6, itemType: "refleksi" },
+    ]),
+    JSON.stringify(details),
+  );
+  check("semua terjawab → rincian kosong", unansweredDetails(ITEMS, answers([[1, "B"], [2, "120000"], [3, "uraian"], [4, null, "k.webp"], [5, "C\nA\nB"], [7, "refleksi"]])).length === 0);
+  check("tautan_ruas tidak pernah muncul di rincian", unansweredDetails(ITEMS, new Map()).every((entry) => entry.itemType !== "tautan_ruas"));
+}
+
+console.log("Case 11: buildUnansweredMessage — format persis");
+{
+  check(
+    "satu soal: tanpa koma, jenis berkapital",
+    buildUnansweredMessage([{ ordinal: 7, itemType: "unggah_foto" }])
+      === "Masih ada 1 soal yang belum dijawab: Soal 7 (Unggah foto). Lengkapi dulu sebelum mengumpulkan.",
+    buildUnansweredMessage([{ ordinal: 7, itemType: "unggah_foto" }]),
+  );
+  const sebagian = answers([[1, "B"], [3, "uraian"], [5, "C\nA\nB"]]);
+  check(
+    "banyak soal: digabung koma dari rincian gerbang",
+    buildUnansweredMessage(unansweredDetails(ITEMS, sebagian))
+      === "Masih ada 3 soal yang belum dijawab: Soal 2 (Isian singkat), Soal 4 (Unggah foto), Soal 6 (Refleksi). Lengkapi dulu sebelum mengumpulkan.",
+    buildUnansweredMessage(unansweredDetails(ITEMS, sebagian)),
+  );
+  check(
+    "jumlah pada pesan = panjang daftar (hitungan gerbang tidak berubah)",
+    buildUnansweredMessage(unansweredDetails(ITEMS, new Map())).startsWith("Masih ada 6 soal yang belum dijawab: "),
+  );
+}
+
+console.log("Case 12: Jalur A — tidak ada migrasi baru");
 {
   const journal = readFileSync(new URL("../../../../packages/db/migrations/meta/_journal.json", import.meta.url), "utf8");
   check("jurnal migrasi tetap 12 entri", (journal.match(/"idx":/g) ?? []).length === 12);

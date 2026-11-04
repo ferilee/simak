@@ -6,7 +6,8 @@ import { contributionRatingsSchema, exitTicketSchema, presenceHeartbeatSchema, w
 import { requireRole } from "../middleware/auth";
 import { fetchRuasQuizCompleted, parseRuasQuizUrl } from "../lib/ruas-status";
 import { presenceSnapshot, presenceStore, recordHeartbeat } from "../lib/presence";
-import { listVisibleModuleIds, studentCanAccessModule, studentIsAssignmentTarget } from "../lib/assignment-target";
+import { listVisibleModuleIds, loadAssignmentSubject, studentCanAccessModule, studentIsAssignmentTarget } from "../lib/assignment-target";
+import { buildNotYetOpenBody } from "../lib/halaman-tunggu";
 import { contributionWindowOpen, loadMemberScoreOverride, loadStudentGroup, pickEffectiveAttempt, type AttemptSnapshot } from "../lib/groups";
 import { buildStudentGradeRow, chooseGradeAttempt, sortGradeRows, type GradeAttemptCandidate } from "../lib/nilai-saya";
 import { isSameAnswerValue, unansweredOrdinals, type SubmitGateAnswer } from "../lib/submit-gate";
@@ -480,7 +481,15 @@ muridRoutes.get("/assignments/:id", async (c) => {
   if (!assignment) return c.json({ ok: false, message: "Penugasan belum tersedia untuk kelas Anda." }, 404);
 
   const now = Date.now();
-  if (now < assignment.opensAt.getTime()) return c.json({ ok: false, message: "Penugasan belum dibuka." }, 403);
+  if (now < assignment.opensAt.getTime()) {
+    // Murid ini sudah pasti sasaran penugasan (accessibleAssignment di
+    // atas); hanya waktunya yang belum tiba. Sertakan data ringkas agar
+    // halaman murid menggambar halaman tunggu, bukan layar kosong —
+    // lihat lib/halaman-tunggu.ts. Murid bukan sasaran tidak pernah
+    // sampai di sini (404 polos di atas, tanpa data).
+    const subjectName = await loadAssignmentSubject(assignment);
+    return c.json(buildNotYetOpenBody(assignment, subjectName), 403);
+  }
   await db.insert(activityLogs).values({ studentId: user.userId, assignmentId, moduleId: assignment.moduleId, event: "buka_materi" });
 
   const [individualAttempt] = assignment.worksheetId === null

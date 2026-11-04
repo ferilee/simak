@@ -6,7 +6,7 @@ import { contributionRatingsSchema, exitTicketSchema, presenceHeartbeatSchema, w
 import { requireRole } from "../middleware/auth";
 import { fetchRuasQuizCompleted, parseRuasQuizUrl } from "../lib/ruas-status";
 import { presenceSnapshot, presenceStore, recordHeartbeat } from "../lib/presence";
-import { studentIsAssignmentTarget } from "../lib/assignment-target";
+import { listVisibleModuleIds, studentCanAccessModule, studentIsAssignmentTarget } from "../lib/assignment-target";
 import { contributionWindowOpen, loadMemberScoreOverride, loadStudentGroup, pickEffectiveAttempt, type AttemptSnapshot } from "../lib/groups";
 import { buildStudentGradeRow, chooseGradeAttempt, sortGradeRows, type GradeAttemptCandidate } from "../lib/nilai-saya";
 
@@ -237,17 +237,6 @@ async function contributionRatingsState(studentId: number, context: { attempt: t
   };
 }
 
-// Kunci perbandingan mapel: teks penuh (trim + huruf kecil) plus isi kurung
-// bila ada, mis. "Koding dan Kecerdasan Artifisial (KKA)" →
-// {"koding dan kecerdasan artifisial (kka)", "kka"}.
-function subjectKeys(subject: string): Set<string> {
-  const full = subject.trim().toLowerCase();
-  const keys = new Set<string>([full]);
-  const parenthetical = /\(([^)]*)\)/.exec(full)?.[1]?.trim();
-  if (parenthetical) keys.add(parenthetical);
-  return keys;
-}
-
 muridRoutes.get("/today", async (c) => {
   const user = c.get("user")!;
   const memberships = await db
@@ -262,25 +251,20 @@ muridRoutes.get("/today", async (c) => {
     .innerJoin(classes, eq(classes.id, classMembers.classId))
     .where(and(eq(classMembers.studentId, user.userId), eq(classes.isArchived, false)));
 
-  const teacherIds = [...new Set(memberships.map((membership) => membership.teacherId))];
-  // Daftar materi memakai aturan DAN: modul harus milik guru murid ini DAN
-  // mapelnya termasuk mapel kelas murid ini. Syarat guru saja (aturan ATAU)
-  // meloloskan semua modul terbit seorang guru ke semua muridnya, padahal
-  // satu guru bisa mengajar dua mapel. Penyaringan mapel dilakukan di kode
-  // dengan kunci ternormalisasi karena ejaan mapel kelas dan modul tidak
-  // selalu sama persis — mis. kelas "KKA" vs modul
-  // "Koding dan Kecerdasan Artifisial (KKA)".
-  const studentSubjectKeys = new Set(memberships.flatMap((membership) => [...subjectKeys(membership.subject)]));
-  const teacherModules = teacherIds.length
+  // Daftar materi memakai aturan keterlihatan berbasis penugasan
+  // (lib/assignment-target.ts): modul terbit hanya tampil bila tertaut dari
+  // penugasan terbit/ditutup yang menjadi sasaran murid ini — kelas tujuan
+  // atau sasaran langsung. Aturan lama (guru kelas + kecocokan mapel) tidak
+  // bisa membedakan jenjang kelas dalam satu mapel, sehingga materi kelas
+  // lain dari guru yang sama ikut bocor ke daftar ini.
+  const visibleModuleIds = await listVisibleModuleIds(user.userId);
+  const publishedModules = visibleModuleIds.length
     ? await db
         .select()
         .from(modules)
-        .where(and(eq(modules.status, "terbit"), inArray(modules.teacherId, teacherIds)))
+        .where(and(eq(modules.status, "terbit"), inArray(modules.id, visibleModuleIds)))
         .orderBy(asc(modules.updatedAt))
     : [];
-  const publishedModules = teacherModules.filter((module) =>
-    [...subjectKeys(module.subject)].some((key) => studentSubjectKeys.has(key)),
-  );
 
   const classIds = memberships.map((membership) => membership.id);
   const assignmentRows = classIds.length
@@ -584,19 +568,13 @@ muridRoutes.get("/modules/:id", async (c) => {
     .limit(1);
   if (!module) return c.json({ ok: false, message: "Materi tidak ditemukan." }, 404);
 
-  const [access] = await db
-    .select({ id: classMembers.id })
-    .from(classMembers)
-    .innerJoin(classes, eq(classes.id, classMembers.classId))
-    .where(
-      and(
-        eq(classMembers.studentId, user.userId),
-        eq(classes.isArchived, false),
-        or(eq(classes.teacherId, module.teacherId), eq(classes.subject, module.subject)),
-      ),
-    )
-    .limit(1);
-  if (!access) return c.json({ ok: false, message: "Materi ini belum tersedia untuk kelas Anda." }, 403);
+  // Akses baca mengikuti aturan keterlihatan yang sama dengan daftar
+  // materi di beranda (berbasis penugasan, lib/assignment-target.ts) —
+  // tidak ada jalan belakang lewat URL langsung untuk materi yang tidak
+  // dipetakan ke murid ini.
+  if (!(await studentCanAccessModule(user.userId, moduleId))) {
+    return c.json({ ok: false, message: "Materi ini belum tersedia untuk kelas Anda." }, 403);
+  }
 
   // Catat pembukaan materi per modul untuk statistik penonton guru.
   // Kegagalan pencatatan tidak boleh menggagalkan pembacaan materi.

@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNotNull } from "drizzle-orm";
 import { db, schema } from "@simak/db";
 import { resolveStudentClass, type ClassMembership } from "./student-class";
 
@@ -12,7 +12,7 @@ import { resolveStudentClass, type ClassMembership } from "./student-class";
 // - sasaran "siswa" wajib mode individu dan minimal satu murid;
 // - sasaran "kelas" wajib minimal satu kelas tujuan.
 
-const { assignmentClasses, assignmentStudents, classMembers, classes, modules, users, worksheets } = schema;
+const { assignmentClasses, assignmentStudents, assignments, classMembers, classes, modules, users, worksheets } = schema;
 
 export type AssignmentTargetType = "kelas" | "siswa";
 export type AssignmentWorkMode = "individu" | "kelompok";
@@ -63,6 +63,75 @@ export async function studentIsAssignmentTarget(assignmentId: number, studentId:
     ))
     .limit(1);
   return Boolean(viaClass);
+}
+
+// ---------------------------------------------------------------------------
+// Keterlihatan materi (modul) bagi murid — aturan berbasis penugasan
+// (v1.0.36). Sebuah modul terbit hanya terlihat oleh murid bila modul itu
+// tertaut (assignments.moduleId) dari penugasan yang menjadi sasarannya —
+// lewat kelas tujuan yang tidak diarsipkan ATAU catatan sasaran langsung —
+// dan penugasan itu berstatus "terbit" atau "ditutup" (materi tetap bisa
+// dibaca sesudah tugas ditutup; penugasan draf tidak memberi akses apa
+// pun). Waktu buka penugasan (opensAt) tidak memengaruhi keterlihatan
+// materi. Modul terbit tanpa penugasan yang memenuhi syarat tidak terlihat
+// oleh murid mana pun. Aturan ini dinyatakan SATU kali di sini dan dipakai
+// daftar materi beranda, halaman baca materi, dan pencatatan tuntas baca.
+// (Aturan lama — guru kelas + kecocokan mapel — tidak bisa membedakan
+// jenjang kelas dalam satu mapel dari guru yang sama, sehingga materi
+// kelas X bocor ke murid kelas XI.)
+
+/** Status penugasan yang memberi keterlihatan materi tertautnya. */
+export const MODULE_VISIBLE_ASSIGNMENT_STATUSES: readonly string[] = ["terbit", "ditutup"];
+
+/**
+ * Gerbang murni keterlihatan materi: dari baris penugasan kandidat yang
+ * SUDAH terlingkup pada sasaran murid tertentu (jalur kelas atau jalur
+ * langsung), kembalikan id modul yang terlihat — hanya penugasan berstatus
+ * terbit/ditutup dengan modul tertaut, tanpa duplikat.
+ */
+export function qualifyingModuleIds(
+  candidateAssignments: readonly { moduleId: number | null; status: string }[],
+): number[] {
+  const seen = new Set<number>();
+  for (const assignment of candidateAssignments) {
+    if (assignment.moduleId === null) continue;
+    if (!MODULE_VISIBLE_ASSIGNMENT_STATUSES.includes(assignment.status)) continue;
+    seen.add(assignment.moduleId);
+  }
+  return [...seen];
+}
+
+async function targetedModuleAssignments(studentId: number): Promise<{ moduleId: number | null; status: string }[]> {
+  const viaClass = await db
+    .select({ moduleId: assignments.moduleId, status: assignments.status })
+    .from(assignments)
+    .innerJoin(assignmentClasses, eq(assignmentClasses.assignmentId, assignments.id))
+    .innerJoin(classes, eq(classes.id, assignmentClasses.classId))
+    .innerJoin(classMembers, eq(classMembers.classId, classes.id))
+    .where(and(
+      eq(classMembers.studentId, studentId),
+      eq(classes.isArchived, false),
+      isNotNull(assignments.moduleId),
+    ));
+  const viaDirect = await db
+    .select({ moduleId: assignments.moduleId, status: assignments.status })
+    .from(assignments)
+    .innerJoin(assignmentStudents, eq(assignmentStudents.assignmentId, assignments.id))
+    .where(and(
+      eq(assignmentStudents.studentId, studentId),
+      isNotNull(assignments.moduleId),
+    ));
+  return [...viaClass, ...viaDirect];
+}
+
+/** Id semua modul yang terlihat oleh murid ini menurut aturan penugasan. */
+export async function listVisibleModuleIds(studentId: number): Promise<number[]> {
+  return qualifyingModuleIds(await targetedModuleAssignments(studentId));
+}
+
+/** Apakah modul ini terlihat oleh murid ini menurut aturan penugasan? */
+export async function studentCanAccessModule(studentId: number, moduleId: number): Promise<boolean> {
+  return (await listVisibleModuleIds(studentId)).includes(moduleId);
 }
 
 /** Mapel penugasan untuk aturan kelas murid: dari modul tertaut, atau dari modul induk LKPD tertaut. */

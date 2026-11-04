@@ -9,6 +9,7 @@ import { presenceSnapshot, presenceStore, recordHeartbeat } from "../lib/presenc
 import { listVisibleModuleIds, studentCanAccessModule, studentIsAssignmentTarget } from "../lib/assignment-target";
 import { contributionWindowOpen, loadMemberScoreOverride, loadStudentGroup, pickEffectiveAttempt, type AttemptSnapshot } from "../lib/groups";
 import { buildStudentGradeRow, chooseGradeAttempt, sortGradeRows, type GradeAttemptCandidate } from "../lib/nilai-saya";
+import { isSameAnswerValue, unansweredOrdinals, type SubmitGateAnswer } from "../lib/submit-gate";
 
 // Beranda murid + detail penugasan — halaman paling ringan adalah prioritas.
 export const muridRoutes = new Hono();
@@ -838,13 +839,23 @@ muridRoutes.put("/worksheets/:id/answers", zValidator("json", worksheetAnswersSc
   // Setiap simpan jawaban (teks maupun foto lewat attachmentKey) mencatat
   // penulisnya pada baris jawaban — jejak penulis per jawaban (Tahap 3 mini),
   // ditampilkan ke guru pada attempt kelompok.
+  //
+  // Jaga jawaban kelompok: butir yang isinya PERSIS sama dengan yang sudah
+  // tersimpan dilewati sepenuhnya — tidak ditulis ulang dan lastEditedBy
+  // tidak berpindah ke penyimpan terakhir. Tanpa ini, anggota kelompok yang
+  // halamannya memuat potret lama bisa menimpa jawaban tersimpan temannya
+  // (termasuk mengosongkannya) hanya dengan menyimpan drafnya sendiri.
+  // Pengosongan yang disengaja (isi berubah menjadi kosong) tetap perubahan
+  // sungguhan dan tetap dicatat.
+  let wroteAny = false;
   for (const answer of input.answers) {
     const [existing] = await db
-      .select({ id: worksheetAnswers.id })
+      .select({ id: worksheetAnswers.id, answerText: worksheetAnswers.answerText, attachmentKey: worksheetAnswers.attachmentKey })
       .from(worksheetAnswers)
       .where(and(eq(worksheetAnswers.attemptId, attempt.id), eq(worksheetAnswers.worksheetItemId, answer.itemId)))
       .limit(1);
     if (existing) {
+      if (isSameAnswerValue(existing, answer)) continue;
       await db.update(worksheetAnswers).set({ answerText: answer.answerText, attachmentKey: answer.attachmentKey, lastEditedBy: user.userId }).where(eq(worksheetAnswers.id, existing.id));
     } else {
       await db.insert(worksheetAnswers).values({
@@ -855,12 +866,17 @@ muridRoutes.put("/worksheets/:id/answers", zValidator("json", worksheetAnswersSc
         lastEditedBy: user.userId,
       });
     }
+    wroteAny = true;
   }
-  // Attempt kelompok mencatat siapa pengedit terakhir pada setiap simpan.
-  await db.update(worksheetAttempts).set({
-    status: "draf",
-    ...(context.group ? { lastEditedBy: user.userId } : {}),
-  }).where(eq(worksheetAttempts.id, attempt.id));
+  // Attempt kelompok mencatat siapa pengedit terakhir pada setiap simpan —
+  // hanya bila memang ada jawaban yang berubah; simpan yang seluruhnya
+  // terlewati tidak menyentuh attempt sama sekali.
+  if (wroteAny) {
+    await db.update(worksheetAttempts).set({
+      status: "draf",
+      ...(context.group ? { lastEditedBy: user.userId } : {}),
+    }).where(eq(worksheetAttempts.id, attempt.id));
+  }
   return c.json({ ok: true, data: { status: "draf" } });
 });
 
@@ -874,6 +890,30 @@ muridRoutes.post("/worksheets/:id/submit", async (c) => {
   if (context.kind === "ungrouped") return c.json({ ok: false, message: "Kamu belum masuk kelompok untuk penugasan ini. Hubungi gurumu." }, 403);
   const attempt = context.attempt;
   if (attempt.status !== "draf") return c.json({ ok: false, message: "LKPD sudah dikumpulkan." }, 409);
+  // Gerbang kelengkapan khusus attempt KELOMPOK: semua soal terhitung harus
+  // sudah terjawab (dari jawaban tersimpan) sebelum kelompok boleh
+  // mengumpulkan — definisi "terjawab" di lib/submit-gate.ts menyalin
+  // halaman murid. Attempt individu tidak digerbang (tetap boleh
+  // mengumpulkan dengan soal kosong, seperti sebelumnya).
+  if (context.group) {
+    const items = await db
+      .select({ id: worksheetItems.id, itemType: worksheetItems.itemType, optionsJson: worksheetItems.optionsJson })
+      .from(worksheetItems)
+      .where(eq(worksheetItems.worksheetId, worksheetId))
+      .orderBy(asc(worksheetItems.sortOrder));
+    const answerRows = await db
+      .select({ itemId: worksheetAnswers.worksheetItemId, answerText: worksheetAnswers.answerText, attachmentKey: worksheetAnswers.attachmentKey })
+      .from(worksheetAnswers)
+      .where(eq(worksheetAnswers.attemptId, attempt.id));
+    const answersByItemId = new Map<number, SubmitGateAnswer>(answerRows.map((row) => [row.itemId, row]));
+    const missing = unansweredOrdinals(items, answersByItemId);
+    if (missing.length > 0) {
+      return c.json({
+        ok: false,
+        message: `Masih ada ${missing.length} soal yang belum dijawab (nomor ${missing.join(", ")}). Lengkapi dulu sebelum mengumpulkan.`,
+      }, 400);
+    }
+  }
   await db.update(worksheetAttempts).set({ status: "terkumpul", submittedAt: new Date() }).where(eq(worksheetAttempts.id, attempt.id));
   return c.json({ ok: true, data: { status: "terkumpul" } });
 });

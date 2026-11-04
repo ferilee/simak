@@ -33,6 +33,13 @@ import {
   filterIntegrityAlerts,
   sortIntegrityAlerts,
 } from "../../lib/hasil-helpers";
+import {
+  EXIT_TICKET_CLASS_SECTIONS,
+  exitTicketStudentMatches,
+  filterExitAnswerGroups,
+  groupExitAnswers,
+  type ExitTicketEntry,
+} from "../../lib/exit-ticket-summary";
 import { submissionStatusLabel } from "../lib/labels";
 import { Toast } from "../../components/Toast";
 import { ModuleBlockPreview } from "../../components/ModuleBlockPreview";
@@ -423,6 +430,15 @@ export default function GuruPage() {
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<number | null>(null);
   const [assignmentSummary, setAssignmentSummary] = useState<AssignmentGradingSummary | null>(null);
   const [assignmentSummaryLoading, setAssignmentSummaryLoading] = useState(false);
+  // Panel exit ticket punya dua tampilan: "kelas" (bawaan — jawaban
+  // terlipat per pola kelas) dan "murid" (kartu per murid seperti
+  // semula). Pencarian + kelompok yang dibuka + bagian yang ditampilkan
+  // penuh diatur ulang setiap penugasan berganti (lihat
+  // loadAssignmentSummary) agar tidak bocor antarpenugasan.
+  const [exitTicketView, setExitTicketView] = useState<"kelas" | "murid">("kelas");
+  const [exitTicketQuery, setExitTicketQuery] = useState("");
+  const [exitTicketExpanded, setExitTicketExpanded] = useState<ReadonlySet<string>>(new Set());
+  const [exitTicketShowAll, setExitTicketShowAll] = useState<{ confusing_1: boolean; understood_3: boolean; examples_2: boolean }>({ confusing_1: false, understood_3: false, examples_2: false });
   const [selectedReportAssignmentId, setSelectedReportAssignmentId] = useState<number | null>(null);
   const [sessionReport, setSessionReport] = useState<SessionReport | null>(null);
   const [sessionReportLoading, setSessionReportLoading] = useState(false);
@@ -869,6 +885,9 @@ export default function GuruPage() {
   async function loadAssignmentSummary(assignmentId: number) {
     setSelectedAssignmentId(assignmentId);
     setAssignmentSummaryLoading(true);
+    setExitTicketQuery("");
+    setExitTicketExpanded(new Set());
+    setExitTicketShowAll({ confusing_1: false, understood_3: false, examples_2: false });
     try {
       const response = await apiRequest<AssignmentGradingResponse>(`/grading/assignments/${assignmentId}`);
       setAssignmentSummary(response.data);
@@ -877,6 +896,15 @@ export default function GuruPage() {
     } finally {
       setAssignmentSummaryLoading(false);
     }
+  }
+
+  function toggleExitTicketGroup(groupKey: string) {
+    setExitTicketExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(groupKey)) next.delete(groupKey);
+      else next.add(groupKey);
+      return next;
+    });
   }
 
   async function loadSessionReport(assignmentId: number) {
@@ -2428,6 +2456,25 @@ export default function GuruPage() {
 
   if (loading) return <main className="dashboard-shell container"><p>Memuat ruang guru...</p></main>;
 
+  // Turunan panel exit ticket dari payload ringkasan penugasan yang sama:
+  // murid yang sudah mengirim, kelompok jawaban per bagian untuk
+  // tampilan Ringkasan kelas, dan daftar tersaring untuk Per murid.
+  const exitTicketStudents = assignmentSummary?.students.filter((student) => student.exit_ticket) ?? [];
+  const exitTicketEntries: ExitTicketEntry[] = exitTicketStudents.map((student) => ({
+    student_id: student.id,
+    student_name: student.name,
+    submitted_at: student.exit_ticket!.submitted_at,
+    understood_3: student.exit_ticket!.understood_3,
+    examples_2: student.exit_ticket!.examples_2,
+    confusing_1: student.exit_ticket!.confusing_1,
+  }));
+  const exitTicketClassSections = EXIT_TICKET_CLASS_SECTIONS.map((section) => ({
+    ...section,
+    groups: filterExitAnswerGroups(groupExitAnswers(exitTicketEntries, section.field), exitTicketQuery),
+  }));
+  const exitTicketMatchedGroups = exitTicketClassSections.reduce((total, section) => total + section.groups.length, 0);
+  const exitTicketVisibleStudents = exitTicketStudents.filter((student) => exitTicketStudentMatches(student, exitTicketQuery));
+
   return (
     <main className="dashboard-shell">
       <header className="dashboard-header container">
@@ -3500,9 +3547,60 @@ export default function GuruPage() {
           <h2 style={styles.sectionTitle}>Ringkasan exit ticket</h2>
           {assignmentSummaryLoading ? <p style={styles.muted}>Memuat jawaban exit ticket...</p> : null}
           {!assignmentSummaryLoading && assignmentSummary?.students.every((student) => !student.exit_ticket) ? <p style={styles.empty}>Belum ada murid yang mengirim exit ticket untuk penugasan ini.</p> : null}
-          {!assignmentSummaryLoading && assignmentSummary ? (
+          {!assignmentSummaryLoading && assignmentSummary && exitTicketStudents.length > 0 ? (
             <div style={styles.exitTicketLayout}>
-              {assignmentSummary.students.map((student) => student.exit_ticket ? (
+              <p style={styles.muted}>{exitTicketStudents.length} dari {assignmentSummary.students.length} murid mengirim exit ticket</p>
+              <div style={styles.exitTicketToolbar}>
+                <div style={styles.exitTicketViewChips} role="group" aria-label="Tampilan ringkasan exit ticket">
+                  <button type="button" className={`filter-chip${exitTicketView === "kelas" ? " is-active" : ""}`} aria-pressed={exitTicketView === "kelas"} onClick={() => setExitTicketView("kelas")}>Ringkasan kelas</button>
+                  <button type="button" className={`filter-chip${exitTicketView === "murid" ? " is-active" : ""}`} aria-pressed={exitTicketView === "murid"} onClick={() => setExitTicketView("murid")}>Per murid</button>
+                </div>
+                <input
+                  type="search"
+                  value={exitTicketQuery}
+                  onChange={(event) => setExitTicketQuery(event.target.value)}
+                  placeholder="Cari jawaban atau nama murid"
+                  aria-label="Cari jawaban exit ticket"
+                  style={{ ...styles.input, ...styles.moduleSearchInput }}
+                />
+              </div>
+              {exitTicketView === "kelas" ? (
+                exitTicketQuery.trim() && exitTicketMatchedGroups === 0 ? (
+                  <p style={styles.empty}>Tidak ada hasil untuk &quot;{exitTicketQuery.trim()}&quot;.</p>
+                ) : (
+                  exitTicketClassSections.map((section) => {
+                    const showAll = exitTicketShowAll[section.field];
+                    const visibleGroups = showAll ? section.groups : section.groups.slice(0, 10);
+                    return (
+                      <div key={section.field} style={styles.exitTicketSection}>
+                        <h3 style={styles.exitTicketSectionTitle}>{section.label}</h3>
+                        {section.groups.length === 0 ? <p style={styles.muted}>Belum ada jawaban pada bagian ini.</p> : null}
+                        {visibleGroups.map((group) => {
+                          const groupKey = `${section.field}:${group.key}`;
+                          const expanded = exitTicketExpanded.has(groupKey);
+                          return (
+                            <div key={groupKey} style={styles.exitGroupRow}>
+                              <button type="button" style={styles.exitGroupToggle} aria-expanded={expanded} onClick={() => toggleExitTicketGroup(groupKey)}>
+                                <span>{group.text}</span>
+                                <span style={styles.exitGroupCount}>{group.count} murid</span>
+                              </button>
+                              {expanded ? <p style={styles.exitGroupNames}>{group.students.map((student) => student.name).join(", ")}</p> : null}
+                            </div>
+                          );
+                        })}
+                        {section.groups.length > 10 ? (
+                          <button type="button" className="filter-chip" style={{ justifySelf: "start" }} onClick={() => setExitTicketShowAll((current) => ({ ...current, [section.field]: !showAll }))}>
+                            {showAll ? "Tampilkan lebih sedikit" : `Lihat semua (${section.groups.length})`}
+                          </button>
+                        ) : null}
+                      </div>
+                    );
+                  })
+                )
+              ) : exitTicketQuery.trim() && exitTicketVisibleStudents.length === 0 ? (
+                <p style={styles.empty}>Tidak ada hasil untuk &quot;{exitTicketQuery.trim()}&quot;.</p>
+              ) : (
+                exitTicketVisibleStudents.map((student) => student.exit_ticket ? (
                 <article key={student.id} style={styles.exitTicketCard}>
                   <div style={styles.assignmentInfo}>
                     <strong>{student.name}</strong>
@@ -3512,7 +3610,8 @@ export default function GuruPage() {
                   <div style={styles.exitTicketField}><strong>2 contoh penerapan</strong><p>{student.exit_ticket.examples_2}</p></div>
                   <div style={styles.exitTicketField}><strong>1 hal yang membingungkan</strong><p>{student.exit_ticket.confusing_1}</p></div>
                 </article>
-              ) : null)}
+                ) : null)
+              )}
             </div>
           ) : null}
         </section>
@@ -4131,6 +4230,14 @@ const styles = {
   exitTicketLayout: { display: "grid", gap: 12 },
   exitTicketCard: { display: "grid", gap: 12, border: "1px solid #eaecf0", borderRadius: 10, padding: 14 },
   exitTicketField: { display: "grid", gap: 6, background: "#f8f9fc", borderRadius: 8, padding: 12 },
+  exitTicketToolbar: { display: "flex", flexWrap: "wrap" as const, gap: 10, alignItems: "center" },
+  exitTicketViewChips: { display: "flex", flexWrap: "wrap" as const, gap: 8 },
+  exitTicketSection: { display: "grid", gap: 8 },
+  exitTicketSectionTitle: { fontSize: 15, fontWeight: 700, color: "#1d2939", margin: "6px 0 0" },
+  exitGroupRow: { display: "grid", gap: 8, border: "1px solid #eaecf0", borderRadius: 10, padding: "10px 12px", background: "#ffffff" },
+  exitGroupToggle: { display: "flex", gap: 10, alignItems: "flex-start", justifyContent: "space-between", width: "100%", background: "none", border: 0, padding: 0, cursor: "pointer", font: "inherit", color: "inherit", textAlign: "left" as const },
+  exitGroupCount: { background: "#eef4ff", color: "#175cd3", borderRadius: 999, padding: "2px 10px", fontSize: 12.5, fontWeight: 700, whiteSpace: "nowrap" as const, flexShrink: 0 },
+  exitGroupNames: { margin: 0, color: "#475467", fontSize: 13.5, lineHeight: 1.5 },
   reportSummary: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10 },
   reportMetric: { display: "grid", gap: 4, border: "1px solid #eaecf0", borderRadius: 10, padding: 12 },
   reportTableWrap: { overflowX: "auto" as const },

@@ -2350,7 +2350,7 @@ export default function GuruPage() {
   }
 
   async function shuffleAssignmentClassGroups(assignmentId: number, classId: number, className: string) {
-    if (!(await confirmDialog(`Acak ulang kelompok kelas ${className}? Susunan kelompok saat ini akan diganti seluruhnya.`, { confirmLabel: "Acak ulang" }))) return;
+    if (!(await confirmDialog(`Acak ulang kelompok kelas ${className}? Kelompok yang terkunci (sudah penuh atau sudah mulai mengerjakan) tidak akan berubah. Kelompok lainnya beserta murid yang belum berkelompok akan diacak ulang. Lanjutkan?`, { confirmLabel: "Acak ulang" }))) return;
     setAssignmentGroupsLoading(true);
     try {
       const response = await apiRequest<AssignmentGroupsResponse>(`/assignments/${assignmentId}/groups/shuffle`, {

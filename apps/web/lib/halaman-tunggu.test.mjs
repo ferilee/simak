@@ -146,8 +146,9 @@ console.log("Case 8: responsif — disiplin seluler v1.0.25 pada halaman tunggu"
   const anywhereCount = (page.match(/overflowWrap: "anywhere" as const/g) ?? []).length;
   check("teks panjang (judul/mapel/pernyataan/isi/baris jadwal) memakai overflowWrap anywhere", anywhereCount >= 6, `${anywhereCount} temuan`);
   check("ilustrasi cair: lebar tetap dibatasi 62vw", page.includes('waitingIllustration: { width: 200, maxWidth: "62vw", height: "auto" }'));
-  check("baris hitung mundur membungkus + minWidth 0 + maxWidth 100%", page.includes('countdownRow: { display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" as const, justifyContent: "center" as const, minWidth: 0, maxWidth: "100%" }'));
-  check("chip hitung mundur menyusut luwes (flex 1 1 56px, maxWidth 76, minWidth 0)", page.includes('flex: "1 1 56px", maxWidth: 76, minWidth: 0'));
+  check("baris hitung mundur SEBARIS: lebar penuh (width 100%) + nowrap + minWidth 0 + maxWidth 100%", page.includes('countdownRow: { display: "flex", gap: 8, marginTop: 12, width: "100%", flexWrap: "nowrap" as const, justifyContent: "center" as const, minWidth: 0, maxWidth: "100%" }'));
+  check("baris hitung mundur tidak lagi membungkus (flexWrap wrap pada marginTop 12 hilang)", !page.includes('marginTop: 12, flexWrap: "wrap"'));
+  check("chip berbagi lebar baris sama rata + menyusut sampai nol (flex 1 1 0, maxWidth 76, minWidth 0)", page.includes('flex: "1 1 0", maxWidth: 76, minWidth: 0'));
   check("chip tidak lagi berlebar tetap 68", !page.includes("width: 68"));
   check("jadwal minWidth 0 agar teksnya bisa membungkus", page.includes("waitingSchedule: { display: \"grid\", gap: 4, marginTop: 8, color: \"#475467\", fontSize: 15, minWidth: 0 }"));
   check("kedua tombol setinggi sentuh minimal 44px", (page.match(/minHeight: 44/g) ?? []).length >= 2);

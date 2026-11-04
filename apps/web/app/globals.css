@@ -1645,6 +1645,61 @@ a {
 }
 
 /* Aksi Hapus diberi nuansa bahaya lembut di semua viewport. */
+.module-row-action.is-shared {
+  border-color: #067647;
+  background: #067647;
+  color: #ffffff;
+}
+
+.module-row-action.is-shared:hover {
+  background: #05603a;
+}
+
+.module-share-hint {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.wizard-library-link {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+  border: 1px solid var(--wizard-accent-ring);
+  border-radius: var(--radius-md);
+  padding: 8px;
+  background: var(--wizard-accent-soft);
+  color: var(--color-ink);
+  text-decoration: none;
+}
+
+.wizard-library-link:hover {
+  background: var(--wizard-accent-ring);
+}
+
+.wizard-library-link .wizard-library-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: var(--wizard-accent);
+  color: #ffffff;
+}
+
+.wizard-library-link strong {
+  display: block;
+  font-size: 14px;
+}
+
+.wizard-library-link small {
+  display: block;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
 .module-row-action.is-danger {
   border-color: #fecdca;
   background: #fef3f2;

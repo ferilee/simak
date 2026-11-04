@@ -35,8 +35,9 @@ import {
 } from "../../lib/hasil-helpers";
 import { submissionStatusLabel } from "../lib/labels";
 import { Toast } from "../../components/Toast";
+import { ModuleBlockPreview } from "../../components/ModuleBlockPreview";
 import { useConfirm } from "../../components/ConfirmDialog";
-import { MarkdownHtml, MathHtml, MathText } from "../../components/MathContent";
+import { MathText } from "../../components/MathContent";
 import { markdownToHtml, htmlToMarkdown } from "../../components/markdown";
 import { RichTextEditor, sanitizeBlockHtml } from "../../components/RichTextEditor";
 
@@ -48,6 +49,10 @@ type ModuleSummary = {
   cover_key: string | null;
   status: "draf" | "terbit" | "arsip";
   version: number;
+  is_shared: boolean;
+  shared_at: string | null;
+  copied_from_id: number | null;
+  copied_from_teacher_name: string | null;
   viewer_count: number;
   view_count: number;
   last_viewed_at: string | null;
@@ -69,6 +74,10 @@ type WorksheetSummary = {
   title: string;
   instructions: string | null;
   status: "draf" | "terbit" | "arsip";
+  is_shared: boolean;
+  shared_at: string | null;
+  copied_from_id: number | null;
+  copied_from_teacher_name: string | null;
   started_count: number;
   submitted_count: number;
   last_activity_at: string | null;
@@ -304,6 +313,10 @@ export default function GuruPage() {
   const [blockRichHtml, setBlockRichHtml] = useState("");
   const [blockMarkdown, setBlockMarkdown] = useState("");
   const textEditedSideRef = useRef<"rich" | "markdown">("rich");
+  // Tautan dalam dari Perpustakaan Bersama (?modul= / ?lkpd=) hanya
+  // diterapkan sekali pada muatan pertama, agar muat ulang data berikutnya
+  // tidak merebut pilihan guru.
+  const libraryDeepLinkRef = useRef(false);
   const [blockType, setBlockType] = useState<"teks" | "sub_bab" | "video" | "lampiran">("teks");
   const [attachment, setAttachment] = useState<File | null>(null);
   const [moduleBlocks, setModuleBlocks] = useState<ModuleBlock[]>([]);
@@ -535,6 +548,7 @@ export default function GuruPage() {
   }
 
   function renderModuleRow(module: ModuleSummary, dimmed = false) {
+    const separatelySharedWorksheets = worksheets.filter((worksheet) => worksheet.module_id === module.id && worksheet.is_shared).length;
     return (
       <article
         key={module.id}
@@ -556,6 +570,18 @@ export default function GuruPage() {
         <button type="button" onClick={() => void changeStatus(module)} className="module-row-action">
           {module.status === "terbit" ? "Arsipkan" : "Terbitkan"}
         </button>
+        <button
+          type="button"
+          onClick={() => void toggleModuleShare(module)}
+          className={`module-row-action ${module.is_shared ? "is-shared" : ""}`}
+          aria-pressed={module.is_shared}
+          title={module.is_shared ? "Sedang dibagikan ke Perpustakaan Bersama — klik untuk berhenti membagikan" : "Bagikan ke Perpustakaan Bersama"}
+        >
+          {module.is_shared ? "Dibagikan" : "Bagikan"}
+        </button>
+        {!module.is_shared && separatelySharedWorksheets > 0 ? (
+          <p className="module-share-hint" style={{ gridColumn: "1 / -1" }}>LKPD pada modul ini masih dibagikan terpisah.</p>
+        ) : null}
       </article>
     );
   }
@@ -638,6 +664,15 @@ export default function GuruPage() {
         <button type="button" onClick={() => void changeWorksheetStatus(worksheet)} className="module-row-action">
           {worksheet.status === "terbit" ? "Arsipkan" : "Terbitkan"}
         </button>
+        <button
+          type="button"
+          onClick={() => void toggleWorksheetShare(worksheet)}
+          className={`module-row-action ${worksheet.is_shared ? "is-shared" : ""}`}
+          aria-pressed={worksheet.is_shared}
+          title={worksheet.is_shared ? "Sedang dibagikan ke Perpustakaan Bersama — klik untuk berhenti membagikan" : "Bagikan ke Perpustakaan Bersama"}
+        >
+          {worksheet.is_shared ? "Dibagikan" : "Bagikan"}
+        </button>
       </article>
     );
   }
@@ -706,6 +741,20 @@ export default function GuruPage() {
       setSelectedId((current) => current ?? response.data[0]?.id ?? null);
       setWorksheets(worksheetResponse.data);
       setSelectedWorksheetId((current) => current ?? worksheetResponse.data[0]?.id ?? null);
+      if (!libraryDeepLinkRef.current) {
+        libraryDeepLinkRef.current = true;
+        const params = new URLSearchParams(window.location.search);
+        const moduleParam = Number(params.get("modul"));
+        if (Number.isInteger(moduleParam) && response.data.some((module) => module.id === moduleParam)) {
+          setSelectedId(moduleParam);
+          setGuruStep(0);
+        }
+        const worksheetParam = Number(params.get("lkpd"));
+        if (Number.isInteger(worksheetParam) && worksheetResponse.data.some((worksheet) => worksheet.id === worksheetParam)) {
+          setSelectedWorksheetId(worksheetParam);
+          setGuruStep(1);
+        }
+      }
       setClasses(classResponse.data.filter((kelas) => !kelas.is_archived));
       setAssignments(assignmentResponse.data);
       setIntegrityAlerts(integrityResponse.data);
@@ -1703,6 +1752,51 @@ export default function GuruPage() {
     }
   }
 
+  // Saklar Perpustakaan Bersama pada kartu modul: menyalakan selalu lewat
+  // dialog konfirmasi (bila ada LKPD yang menempel, dialog menyebut mereka
+  // ikut dibagikan — tidak ada pilihan sebagian pada Fase 1); mematikan
+  // langsung tanpa dialog, dan tidak menyentuh saklar LKPD yang menempel.
+  async function toggleModuleShare(module: ModuleSummary) {
+    if (!module.is_shared) {
+      const attachedCount = worksheets.filter((worksheet) => worksheet.module_id === module.id).length;
+      const text = attachedCount > 0
+        ? `Bagikan modul ini ke Perpustakaan Bersama? ${attachedCount} LKPD pada modul ini ikut dibagikan.`
+        : "Bagikan modul ini ke Perpustakaan Bersama?";
+      if (!(await confirmDialog(text, { confirmLabel: "Bagikan" }))) return;
+    }
+    try {
+      const response = await apiRequest<{ ok: true; data: ModuleSummary & { shared_worksheet_count: number } }>(
+        `/modules/${module.id}/share`,
+        { method: "PATCH", body: JSON.stringify({ shared: !module.is_shared, include_worksheets: true }) },
+      );
+      setMessage(
+        module.is_shared
+          ? "Modul tidak lagi dibagikan. LKPD pada modul ini mempertahankan keadaan baginya masing-masing."
+          : response.data.shared_worksheet_count > 0
+            ? `Modul dibagikan ke Perpustakaan Bersama — ${response.data.shared_worksheet_count} LKPD ikut dibagikan.`
+            : "Modul dibagikan ke Perpustakaan Bersama.",
+      );
+      await loadModules();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Keadaan bagikan modul belum dapat diubah.");
+    }
+  }
+
+  // Saklar Perpustakaan Bersama pada kartu LKPD: langsung, tanpa dialog —
+  // saklar ini berdiri sendiri dan tidak mengikuti modul induknya.
+  async function toggleWorksheetShare(worksheet: WorksheetSummary) {
+    try {
+      await apiRequest(`/worksheets/${worksheet.id}/share`, {
+        method: "PATCH",
+        body: JSON.stringify({ shared: !worksheet.is_shared }),
+      });
+      setMessage(worksheet.is_shared ? "LKPD tidak lagi dibagikan." : "LKPD dibagikan ke Perpustakaan Bersama.");
+      await loadModules();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Keadaan bagikan LKPD belum dapat diubah.");
+    }
+  }
+
   async function changeWorksheetStatus(worksheet: WorksheetSummary) {
     const status = worksheet.status === "terbit" ? "arsip" : "terbit";
     if (status === "arsip") {
@@ -2381,6 +2475,15 @@ export default function GuruPage() {
               </button>
             ))}
           </nav>
+          <Link href="/guru/perpustakaan" className="wizard-library-link">
+            <span className="wizard-library-icon" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" /></svg>
+            </span>
+            <span>
+              <strong>Perpustakaan Bersama</strong>
+              <small>Materi &amp; LKPD dari guru lain</small>
+            </span>
+          </Link>
           <p className="wizard-side-note">Mulai dari materi, lanjutkan ke LKPD dan kelas, lalu pantau hasil belajar murid.</p>
         </aside>
 
@@ -2532,6 +2635,9 @@ export default function GuruPage() {
               <div>
                 <p className="module-section-summary">Modul terpilih</p>
                 <strong>{selectedModule.title}</strong>
+                {selectedModule.copied_from_teacher_name ? (
+                  <p className="module-section-summary">Disalin dari materi oleh {selectedModule.copied_from_teacher_name}</p>
+                ) : null}
               </div>
               {!editingModuleMeta ? (
                 <button type="button" className="module-row-action" onClick={startEditModuleMeta}>Edit modul</button>
@@ -2806,6 +2912,9 @@ export default function GuruPage() {
             <div>
               <p className="module-section-summary">LKPD terpilih</p>
               <h2 style={styles.sectionTitle}>{editingItem ? "Edit soal LKPD" : "Tambah soal LKPD"}</h2>
+              {selectedWorksheet?.copied_from_teacher_name ? (
+                <p className="module-section-summary">Disalin dari materi oleh {selectedWorksheet.copied_from_teacher_name}</p>
+              ) : null}
             </div>
             {!editingWorksheetMeta ? (
               <button type="button" className="module-row-action" onClick={startEditWorksheetMeta}>Edit LKPD</button>
@@ -3672,7 +3781,7 @@ export default function GuruPage() {
                   <p style={styles.empty}>Belum ada isi pada materi ini.</p>
                 ) : (
                   previewBlocks.map((block) => (
-                    <PreviewBlock key={block.id} block={block} moduleId={previewModule.id} />
+                    <ModuleBlockPreview key={block.id} block={block} moduleId={previewModule.id} />
                   ))
                 )
               ) : null}
@@ -3811,25 +3920,6 @@ function CoverField({
       ) : null}
     </div>
   );
-}
-
-function PreviewBlock({ block, moduleId }: { block: ModuleBlock; moduleId: number }) {
-  if (block.type === "sub_bab") {
-    return <h3 style={styles.previewSubheading}><MathText text={String(block.content.title ?? "Sub-bab")} /></h3>;
-  }
-  if (block.type === "teks") {
-    if (block.content.format === "markdown" || typeof block.content.markdown === "string") {
-      return <MarkdownHtml markdown={String(block.content.markdown ?? "")} className="math-rich-content" moduleId={moduleId} />;
-    }
-    return <MathHtml html={String(block.content.html ?? "")} className="math-rich-content" moduleId={moduleId} />;
-  }
-  if (block.type === "video") {
-    return <PreviewVideoBlock block={block} />;
-  }
-  if (block.type === "gambar" || block.type === "berkas") {
-    return <PreviewAttachmentBlock block={block} moduleId={moduleId} />;
-  }
-  return null;
 }
 
 const BLOCK_TYPE_LABELS: Record<ModuleBlock["type"], string> = {
@@ -3984,66 +4074,6 @@ function WorksheetPreviewAnswer({ item }: { item: WorksheetPreviewItem }) {
     );
   }
   return <p style={styles.previewNotice}>Jenis soal ini tidak dikenal.</p>;
-}
-
-function youtubeEmbedId(url: string): string | null {
-  const match = url.match(/(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
-  return match ? match[1]! : null;
-}
-
-function PreviewVideoBlock({ block }: { block: ModuleBlock }) {
-  const url = typeof block.content.youtubeUrl === "string" ? block.content.youtubeUrl : "";
-  const caption = typeof block.content.caption === "string" ? block.content.caption : "";
-  const videoId = url ? youtubeEmbedId(url) : null;
-  return (
-    <figure style={styles.previewFigure}>
-      {videoId ? (
-        <iframe
-          src={`https://www.youtube-nocookie.com/embed/${videoId}`}
-          title={caption || "Video pembelajaran"}
-          style={styles.previewVideo}
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowFullScreen
-        />
-      ) : url ? (
-        <a href={url} target="_blank" rel="noreferrer" style={styles.previewFileLink}>Buka video →</a>
-      ) : null}
-      {caption ? <figcaption><MathText text={caption} /></figcaption> : null}
-    </figure>
-  );
-}
-
-function PreviewAttachmentBlock({ block, moduleId }: { block: ModuleBlock; moduleId: number }) {
-  const contentKey = typeof block.content.attachmentKey === "string" ? block.content.attachmentKey : null;
-  const key = block.attachment_key ?? contentKey;
-  const [url, setUrl] = useState<string | null>(null);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (!key) {
-      setError("Lampiran tidak ditemukan.");
-      return;
-    }
-    void apiRequest<{ ok: true; data: { download_url: string } }>(
-      `/uploads/download?moduleId=${moduleId}&key=${encodeURIComponent(key)}`,
-    )
-      .then((response) => setUrl(response.data.download_url))
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Lampiran belum dapat dibuka."));
-  }, [key, moduleId]);
-
-  if (error) return <p style={styles.previewNotice}>{error}</p>;
-  if (!url) return <p style={styles.previewNotice}>Memuat lampiran...</p>;
-  if (block.type === "gambar") {
-    const caption = typeof block.content.caption === "string" ? block.content.caption : "";
-    return (
-      <figure style={styles.previewFigure}>
-        <img src={url} alt={caption || "Lampiran materi"} style={styles.previewImage} />
-        {caption ? <figcaption><MathText text={caption} /></figcaption> : null}
-      </figure>
-    );
-  }
-  const label = typeof block.content.label === "string" ? block.content.label : "lampiran";
-  return <a href={url} target="_blank" rel="noreferrer" style={styles.previewFileLink}>Buka {label} →</a>;
 }
 
 const styles = {

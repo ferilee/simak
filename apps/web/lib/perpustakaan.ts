@@ -14,6 +14,8 @@ export type LibraryEntry = {
   kontributor_total?: number;
   shared_at: string | null;
   sudah_disalin?: boolean;
+  salinan_count?: number;
+  cover_key?: string | null;
   block_count?: number;
   shared_worksheet_count?: number;
   item_count?: number;
@@ -207,4 +209,107 @@ export function approvalTarikPath(entry: LibraryEntry): string {
 /** Teks konfirmasi penarikan oleh penyetuju (persis yang disetujui). */
 export function tarikConfirmText(): string {
   return "Tarik materi ini dari Perpustakaan Bersama? Salinan yang sudah dibuat guru lain tidak terpengaruh.";
+}
+
+// ---------------------------------------------------------------------------
+// Desain ulang tampilan katalog (ala toko buku): panel hero ungu dengan
+// statistik semesta, rak "Populer" dari jumlah salinan, sampul tipografis
+// pastel untuk butir tanpa gambar sampul, dan panel kontributor teratas.
+// Semua keputusan tampilannya murni di sini; halaman hanya merender.
+// ---------------------------------------------------------------------------
+
+export type LibraryStats = {
+  total_items: number;
+  total_kontributor: number;
+  sudah_disalin_count: number;
+};
+
+/** Tiga label chip statistik pada panel hero, berurutan. */
+export function libraryStatsChips(stats: LibraryStats): string[] {
+  return [
+    `${stats.total_items} materi dibagikan`,
+    `${stats.total_kontributor} kontributor`,
+    `${stats.sudah_disalin_count} sudah kamu salin`,
+  ];
+}
+
+/**
+ * Label jumlah salinan pada baris meta kartu: "Disalin {n} kali" bila
+ * butir ini pernah disalin guru lain, null bila belum pernah (barisnya
+ * tidak ditambah apa pun).
+ */
+export function salinanCountLabel(entry: LibraryEntry): string | null {
+  const count = entry.salinan_count ?? 0;
+  return count > 0 ? `Disalin ${count} kali` : null;
+}
+
+/**
+ * Rak Populer: dari hasil katalog saat ini, ambil butir yang sudah pernah
+ * disalin (salinan_count ≥ 1), urut jumlah salinan terbanyak lalu yang
+ * paling baru dibagikan, paling banyak `limit` butir. Masukan tidak
+ * diubah; butir tanpa ladang salinan_count (payload lama) dianggap 0.
+ */
+export function pickPopular(entries: readonly LibraryEntry[], limit = 8): LibraryEntry[] {
+  const millis = (entry: LibraryEntry) => {
+    if (!entry.shared_at) return 0;
+    const time = new Date(entry.shared_at).getTime();
+    return Number.isNaN(time) ? 0 : time;
+  };
+  return entries
+    .filter((entry) => (entry.salinan_count ?? 0) >= 1)
+    .sort((a, b) => (b.salinan_count ?? 0) - (a.salinan_count ?? 0) || millis(b) - millis(a))
+    .slice(0, Math.max(0, limit));
+}
+
+/** Palet gradien pastel tetap untuk sampul tipografis (≥ 6 pilihan). */
+export const COVER_GRADIENTS: readonly string[] = [
+  "linear-gradient(135deg, #a78bfa, #7c3aed)",
+  "linear-gradient(135deg, #f9a8d4, #db2777)",
+  "linear-gradient(135deg, #fbbf24, #d97706)",
+  "linear-gradient(135deg, #6ee7b7, #059669)",
+  "linear-gradient(135deg, #7dd3fc, #2563eb)",
+  "linear-gradient(135deg, #fca5a5, #dc2626)",
+  "linear-gradient(135deg, #c4b5fd, #8b5cf6)",
+  "linear-gradient(135deg, #5eead4, #0d9488)",
+];
+
+/** Hash deterministik sederhana (djb2) untuk pilihan palet sampul. */
+export function coverGradientIndex(seed: string, paletteSize: number = COVER_GRADIENTS.length): number {
+  let hash = 5381;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = ((hash << 5) + hash + seed.charCodeAt(index)) >>> 0;
+  }
+  return paletteSize > 0 ? hash % paletteSize : 0;
+}
+
+/** Benih pilihan sampul satu butir: mapelnya, atau judulnya bila tanpa mapel. */
+export function coverSeed(entry: LibraryEntry): string {
+  return entry.subject ?? entry.title;
+}
+
+/** Gradien sampul tipografis satu butir — deterministik per mapel/judul. */
+export function coverGradient(entry: LibraryEntry): string {
+  return COVER_GRADIENTS[coverGradientIndex(coverSeed(entry))] ?? COVER_GRADIENTS[0]!;
+}
+
+/** Huruf awal besar untuk sampul tipografis (huruf pertama judul). */
+export function coverInitial(title: string): string {
+  const trimmed = title.trim();
+  if (trimmed === "") return "?";
+  const first = [...trimmed][0] ?? "?";
+  return first.toUpperCase();
+}
+
+/** Lima kontributor teratas untuk panel samping (masukan sudah terurut API). */
+export function topContributors(
+  contributors: readonly ContributorSummary[],
+  limit = 5,
+): ContributorSummary[] {
+  return contributors.slice(0, Math.max(0, limit));
+}
+
+/** Lebar batang mini kontributor: totalnya relatif terhadap yang teratas. */
+export function contributorBarPercent(contributor: ContributorSummary, topTotal: number): number {
+  if (topTotal <= 0) return 0;
+  return Math.min(100, Math.round((contributor.total / topTotal) * 100));
 }

@@ -52,7 +52,11 @@ const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
   check("disabled style is visibly greyed + not-allowed",
     page.includes('primaryButtonDisabled: {') && page.includes('cursor: "not-allowed"') && page.includes('background: "#eaecf0"'));
   check("not-yet-copied card keeps the active copy button",
-    page.includes('onClick={() => void copyEntry(entry)}') && page.includes('"Salin ke punya saya"'));
+    // Desain ulang: kartu kini komponen LibraryCard — tombolnya memanggil
+    // prop onCopy, yang dihalaman dihubungkan ke copyEntry yang sama.
+    page.includes("onClick={() => onCopy(entry)}")
+    && page.includes("onCopy={(entry) => void copyEntry(entry)}")
+    && page.includes('"Salin ke punya saya"'));
   check("copy flow still confirms via the shared confirm text", page.includes("confirmDialog(copyConfirmText(entry)"));
   check("Pratinjau button is untouched by the copied state",
     page.includes("onClick={() => void openPreview(entry)}") && page.includes("styles.secondaryButton"));

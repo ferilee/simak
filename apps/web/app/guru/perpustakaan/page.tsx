@@ -10,22 +10,30 @@ import {
   approvalKindLabel,
   approvalTarikPath,
   approvalToLibraryEntry,
+  contributorBarPercent,
   contributorChipLabel,
   copiedDraftHref,
   copyConfirmText,
+  coverGradient,
+  coverInitial,
   formatRequestedDate,
   formatSharedDate,
   isSudahDisalin,
   kontributorBadgeLabel,
   libraryEntryMeta,
   libraryKindLabel,
+  libraryStatsChips,
+  pickPopular,
   resolveSelectedContributor,
+  salinanCountLabel,
   tarikConfirmText,
+  topContributors,
   SUDAH_DISALIN_LABEL,
   type ApprovalEntry,
   type ContributorSummary,
   type LibraryEntry,
   type LibraryKindFilter,
+  type LibraryStats,
 } from "../../../lib/perpustakaan";
 import { ModuleBlockPreview, type ModulePreviewBlockData } from "../../../components/ModuleBlockPreview";
 import { MathText } from "../../../components/MathContent";
@@ -45,9 +53,13 @@ type LibraryResponse = {
   approver?: boolean;
   pending_count?: number;
   contributors?: ContributorSummary[];
+  stats?: LibraryStats;
 };
 type ApprovalsResponse = { ok: true; data: ApprovalEntry[] };
-type MeResponse = { ok: true; user: { role: "guru" | "murid" } };
+type MeResponse = {
+  ok: true;
+  user: { display_name?: string; name?: string; username?: string; role: "guru" | "murid" };
+};
 
 type LibraryModulePreview = {
   kind: "module";
@@ -118,6 +130,10 @@ export default function PerpustakaanPage() {
   const [contributors, setContributors] = useState<ContributorSummary[]>([]);
   const [selectedContributor, setSelectedContributor] = useState<number | null>(null);
   const [entries, setEntries] = useState<LibraryEntry[] | null>(null);
+  // Nama tampilan guru untuk sapaan hero — dari /auth/me, sumber yang
+  // sama seperti sapaan beranda murid (display_name, cadangan name).
+  const [teacherName, setTeacherName] = useState("");
+  const [stats, setStats] = useState<LibraryStats | null>(null);
   const [loadError, setLoadError] = useState("");
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -141,6 +157,7 @@ export default function PerpustakaanPage() {
         const me = await apiRequest<MeResponse>("/auth/me");
         if (cancelled) return;
         if (me.user.role !== "guru") setForbidden(true);
+        setTeacherName(me.user.display_name ?? me.user.name ?? "");
       } catch (error) {
         if (error instanceof Error && error.message === "Belum masuk.") {
           router.replace("/login");
@@ -169,6 +186,7 @@ export default function PerpustakaanPage() {
           setEntries(response.data);
           setIsApprover(response.approver === true);
           setPendingCount(response.pending_count ?? 0);
+          setStats(response.stats ?? null);
           const freshContributors = response.contributors ?? [];
           setContributors(freshContributors);
           // Kontributor terpilih yang sudah tidak punya butir tayang
@@ -290,16 +308,34 @@ export default function PerpustakaanPage() {
   }
 
   const filtersActive = query.trim() !== "" || kind !== "all" || selectedContributor !== null;
+  // Rak Populer diturunkan dari hasil katalog saat ini; disembunyikan
+  // selama pencarian aktif agar hasil cari tampil bersih.
+  const popularEntries = entries !== null && query.trim() === "" ? pickPopular(entries) : [];
+  const topFive = topContributors(contributors);
+  const topTotal = contributors[0]?.total ?? 0;
 
   return (
     <main style={styles.container}>
       <Link href="/guru" style={styles.back}>← Ruang guru</Link>
-      <p style={styles.eyebrow}>SIMAK · PERPUSTAKAAN BERSAMA</p>
-      <h1 style={styles.title}>Perpustakaan Bersama</h1>
-      <p style={styles.muted}>
-        Materi dan LKPD yang dibagikan guru lain. Pratinjau isinya, lalu salin ke akun Anda sebagai Draf —
-        salinan bebas Anda ubah dan tugaskan tanpa memengaruhi aslinya.
-      </p>
+      <section style={styles.hero}>
+        <div style={styles.heroText}>
+          <p style={styles.heroEyebrow}>SIMAK · PERPUSTAKAAN BERSAMA</p>
+          <h1 style={styles.heroTitle}>Perpustakaan Bersama</h1>
+          {teacherName ? <p style={styles.heroGreeting}>Halo, {teacherName}</p> : null}
+          <p style={styles.heroTagline}>
+            Materi dan LKPD yang dibagikan guru lain. Pratinjau isinya, lalu salin ke akun Anda sebagai Draf —
+            salinan bebas Anda ubah dan tugaskan tanpa memengaruhi aslinya.
+          </p>
+          {stats ? (
+            <div style={styles.heroChips}>
+              {libraryStatsChips(stats).map((label) => (
+                <span key={label} style={styles.heroChip}>{label}</span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <BooksIllustration />
+      </section>
       {message ? <Toast message={message} onDismiss={() => setMessage("")} /> : null}
       {copiedLink ? (
         <p style={styles.copiedBanner}>
@@ -318,9 +354,10 @@ export default function PerpustakaanPage() {
           onCopy={(entry) => void copyEntry(entry)}
         />
       ) : (
-        <>
+        <div className="library-shell">
+          <div style={styles.mainColumn}>
           {isApprover && approvals !== null && approvals.length > 0 ? (
-            <section style={styles.approvalSection}>
+            <section id="antrean-persetujuan" style={styles.approvalSection}>
               <h2 style={styles.sectionTitle}>Menunggu persetujuan ({pendingCount || approvals.length})</h2>
               <p style={styles.muted}>
                 Pengajuan berbagi dari guru lain. Pratinjau isinya terlebih dahulu, lalu putuskan.
@@ -426,59 +463,233 @@ export default function PerpustakaanPage() {
                 : "Belum ada materi yang dibagikan guru lain."}
             </p>
           ) : null}
+          {popularEntries.length >= 2 ? (
+            <section>
+              <h2 style={styles.sectionTitle}>Populer — paling sering disalin</h2>
+              <div className="library-shelf">
+                {popularEntries.map((entry) => (
+                  <article
+                    key={`populer-${entry.kind}:${entry.id}`}
+                    style={styles.shelfCard}
+                    onClick={() => void openPreview(entry)}
+                  >
+                    <LibraryCoverArt entry={entry} compact />
+                    <div style={styles.shelfBody}>
+                      <span className="library-clamp-2" style={styles.shelfTitle}>
+                        <MathText text={entry.title} />
+                      </span>
+                      <span style={styles.shelfMeta}>disalin {entry.salinan_count ?? 0} kali</span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
           {entries !== null && entries.length > 0 ? (
-            <div style={styles.list}>
+            <div className="library-card-grid">
               {entries.map((entry) => (
-                <article key={`${entry.kind}:${entry.id}`} style={styles.card}>
-                  <div style={styles.cardHeader}>
-                    <span style={styles.kindChip}>{libraryKindLabel(entry.kind)}</span>
-                    {entry.subject ? <span style={styles.subjectChip}>{entry.subject}</span> : null}
-                  </div>
-                  <h2 style={styles.cardTitle}><MathText text={entry.title} /></h2>
-                  <p style={styles.meta}>
-                    oleh {entry.owner_name}
-                    <span style={styles.contributorBadge}>{kontributorBadgeLabel(entry)}</span>
-                  </p>
-                  <p style={styles.meta}>{libraryEntryMeta(entry)}</p>
-                  {formatSharedDate(entry.shared_at) ? (
-                    <p style={styles.meta}>Dibagikan {formatSharedDate(entry.shared_at)}</p>
-                  ) : null}
-                  <div style={styles.cardActions}>
-                    <button type="button" onClick={() => void openPreview(entry)} disabled={previewLoading} style={styles.secondaryButton}>
-                      Pratinjau
-                    </button>
-                    {isSudahDisalin(entry) ? (
-                      <button type="button" disabled style={styles.primaryButtonDisabled}>
-                        {SUDAH_DISALIN_LABEL}
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => void copyEntry(entry)}
-                        disabled={copyingId === `${entry.kind}:${entry.id}`}
-                        style={styles.primaryButton}
-                      >
-                        {copyingId === `${entry.kind}:${entry.id}` ? "Menyalin..." : "Salin ke punya saya"}
-                      </button>
-                    )}
-                    {isApprover ? (
-                      <button
-                        type="button"
-                        onClick={() => void tarikEntry(entry)}
-                        disabled={decidingKey === `${entry.kind}:${entry.id}`}
-                        style={styles.tarikButton}
-                      >
-                        Tarik
-                      </button>
-                    ) : null}
-                  </div>
-                </article>
+                <LibraryCard
+                  key={`${entry.kind}:${entry.id}`}
+                  entry={entry}
+                  previewLoading={previewLoading}
+                  copyingId={copyingId}
+                  decidingKey={decidingKey}
+                  isApprover={isApprover}
+                  onPreview={(entry) => void openPreview(entry)}
+                  onCopy={(entry) => void copyEntry(entry)}
+                  onTarik={(entry) => void tarikEntry(entry)}
+                />
               ))}
             </div>
           ) : null}
-        </>
+          </div>
+
+          <aside style={styles.sidebar}>
+            {contributors.length > 0 ? (
+              <section style={styles.sideCard}>
+                <h2 style={styles.sideTitle}>Kontributor teratas</h2>
+                <div style={styles.contributorRows}>
+                  {topFive.map((contributor) => (
+                    <button
+                      key={contributor.teacher_id}
+                      type="button"
+                      aria-pressed={selectedContributor === contributor.teacher_id}
+                      onClick={() => setSelectedContributor(contributor.teacher_id)}
+                      style={
+                        selectedContributor === contributor.teacher_id
+                          ? { ...styles.contributorRow, ...styles.contributorRowActive }
+                          : styles.contributorRow
+                      }
+                    >
+                      <span style={styles.contributorRowTop}>
+                        <span style={styles.contributorName}>{contributor.name}</span>
+                        <span style={styles.contributorRowCount}>{contributor.total} dibagikan</span>
+                      </span>
+                      <span style={styles.barTrack}>
+                        <span style={{ ...styles.barFill, width: `${contributorBarPercent(contributor, topTotal)}%` }} />
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+            {isApprover ? (
+              <section style={styles.sideCard}>
+                <h2 style={styles.sideTitle}>Menunggu persetujuan</h2>
+                <p style={styles.sideBigCount}>{pendingCount}</p>
+                <p style={styles.meta}>pengajuan berbagi dari guru lain menunggu keputusan Anda.</p>
+                <a href="#antrean-persetujuan" style={styles.sideLink}>Lihat antrean</a>
+              </section>
+            ) : null}
+          </aside>
+        </div>
       )}
     </main>
+  );
+}
+
+// Ilustrasi hero: tumpukan buku datar ungu/putih/kuning dalam semangat
+// ilustrasi halaman tunggu murid — SVG sebaris, murni dekoratif, tanpa
+// aset eksternal.
+function BooksIllustration() {
+  return (
+    <svg viewBox="0 0 220 150" style={styles.heroArt} aria-hidden="true" focusable="false">
+      <circle cx="188" cy="26" r="5" fill="#fde68a" />
+      <circle cx="30" cy="38" r="4" fill="#ddd6fe" />
+      <circle cx="200" cy="66" r="3.5" fill="#fde68a" />
+      <rect x="150" y="34" width="17" height="76" rx="5" fill="#a78bfa" transform="rotate(16 158 72)" />
+      <rect x="42" y="110" width="128" height="19" rx="6" fill="#f59e0b" />
+      <rect x="42" y="116" width="128" height="4" fill="#fde68a" opacity="0.75" />
+      <rect x="54" y="87" width="106" height="19" rx="6" fill="#ffffff" />
+      <rect x="54" y="87" width="16" height="19" fill="#ddd6fe" />
+      <path d="M118 87 h10 v14 l-5 -3.6 -5 3.6 Z" fill="#f59e0b" />
+      <rect x="66" y="64" width="84" height="19" rx="6" fill="#c4b5fd" />
+      <rect x="66" y="70" width="84" height="4" fill="#ede9fe" opacity="0.8" />
+      <rect x="84" y="44" width="52" height="16" rx="6" fill="#8b5cf6" />
+    </svg>
+  );
+}
+
+// Sampul kartu katalog: gambar sampul asli modul (bila ada) menutupi
+// sampul tipografisnya. URL unduhan diterbitkan segar lewat
+// /uploads/download dengan id modul SUMBER — mekanisme yang sama seperti
+// sampul pada pratinjau dan ruang guru; selama URL belum terbit atau
+// gagal, sampul tipografis (gradien pastel deterministik + huruf awal
+// judul + mapel) yang tampil. LKPD selalu tipografis.
+function LibraryCoverArt({ entry, compact = false }: { entry: LibraryEntry; compact?: boolean }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const coverKey = entry.kind === "module" ? (entry.cover_key ?? null) : null;
+
+  useEffect(() => {
+    if (!coverKey) {
+      setUrl(null);
+      return;
+    }
+    let cancelled = false;
+    setUrl(null);
+    void apiRequest<{ ok: true; data: { download_url: string } }>(
+      `/uploads/download?moduleId=${entry.id}&key=${encodeURIComponent(coverKey)}`,
+    )
+      .then((response) => {
+        if (!cancelled) setUrl(response.data.download_url);
+      })
+      .catch(() => {
+        // Sampul gagal diterbitkan URL-nya: tipografis tetap tampil.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [entry.id, coverKey]);
+
+  return (
+    <div
+      style={{ ...(compact ? styles.coverArtCompact : styles.coverArt), background: coverGradient(entry) }}
+      aria-hidden="true"
+    >
+      <span style={compact ? styles.coverInitialSmall : styles.coverInitial}>{coverInitial(entry.title)}</span>
+      <span style={styles.coverSubject}>
+        {entry.kind === "worksheet" ? (entry.subject ?? "LKPD") : entry.subject}
+      </span>
+      {url ? <img src={url} alt="" style={styles.coverImg} /> : null}
+    </div>
+  );
+}
+
+// Kartu katalog bergaya buku: sampul di atas (chip jenis di kiri atas,
+// chip mapel di kanan atas), badan di bawahnya. Semua tombol dan
+// penangannya sama persis seperti kartu daftar sebelumnya — Pratinjau,
+// Salin/✓ Sudah disalin, dan Tarik khusus penyetuju.
+function LibraryCard({
+  entry,
+  previewLoading,
+  copyingId,
+  decidingKey,
+  isApprover,
+  onPreview,
+  onCopy,
+  onTarik,
+}: {
+  entry: LibraryEntry;
+  previewLoading: boolean;
+  copyingId: string | null;
+  decidingKey: string | null;
+  isApprover: boolean;
+  onPreview: (entry: LibraryEntry) => void;
+  onCopy: (entry: LibraryEntry) => void;
+  onTarik: (entry: LibraryEntry) => void;
+}) {
+  const sharedLabel = formatSharedDate(entry.shared_at) ? `Dibagikan ${formatSharedDate(entry.shared_at)}` : null;
+  const salinanLabel = salinanCountLabel(entry);
+  return (
+    <article style={styles.bookCard}>
+      <div style={styles.coverWrap}>
+        <LibraryCoverArt entry={entry} />
+        <div style={styles.coverChips}>
+          <span style={styles.kindChip}>{libraryKindLabel(entry.kind)}</span>
+          {entry.subject ? <span style={styles.subjectChip}>{entry.subject}</span> : null}
+        </div>
+      </div>
+      <div style={styles.bookBody}>
+        <h2 className="library-clamp-2" style={styles.cardTitle}><MathText text={entry.title} /></h2>
+        <p style={styles.meta}>
+          oleh {entry.owner_name}
+          <span style={styles.contributorBadge}>{kontributorBadgeLabel(entry)}</span>
+        </p>
+        <p style={styles.meta}>{libraryEntryMeta(entry)}</p>
+        {sharedLabel || salinanLabel ? (
+          <p style={styles.meta}>{[sharedLabel, salinanLabel].filter(Boolean).join(" · ")}</p>
+        ) : null}
+        <div style={{ ...styles.cardActions, ...styles.cardActionsPush }}>
+          <button type="button" onClick={() => onPreview(entry)} disabled={previewLoading} style={styles.secondaryButton}>
+            Pratinjau
+          </button>
+          {isSudahDisalin(entry) ? (
+            <button type="button" disabled style={styles.primaryButtonDisabled}>
+              {SUDAH_DISALIN_LABEL}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onCopy(entry)}
+              disabled={copyingId === `${entry.kind}:${entry.id}`}
+              style={styles.primaryButton}
+            >
+              {copyingId === `${entry.kind}:${entry.id}` ? "Menyalin..." : "Salin ke punya saya"}
+            </button>
+          )}
+          {isApprover ? (
+            <button
+              type="button"
+              onClick={() => onTarik(entry)}
+              disabled={decidingKey === `${entry.kind}:${entry.id}`}
+              style={styles.tarikButton}
+            >
+              Tarik
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -661,7 +872,115 @@ function LibraryCoverImage({ moduleId, coverKey }: { moduleId: number; coverKey:
 }
 
 const styles: Record<string, CSSProperties> = {
-  container: { maxWidth: 860, margin: "0 auto", padding: "32px 20px 64px" },
+  container: { maxWidth: 1240, margin: "0 auto", padding: "32px 20px 64px" },
+  hero: {
+    background: "linear-gradient(135deg, #6941c6 0%, #8b5cf6 55%, #a78bfa 100%)",
+    borderRadius: 20,
+    padding: "28px 28px 30px",
+    marginTop: 20,
+    color: "#ffffff",
+    display: "flex",
+    gap: 20,
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+  heroText: { flex: "1 1 320px", minWidth: 0, display: "grid", gap: 8 },
+  heroEyebrow: { color: "#ddd6fe", fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", margin: 0 },
+  heroTitle: { fontSize: 32, margin: 0, color: "#ffffff" },
+  heroGreeting: { margin: 0, fontSize: 17, fontWeight: 600, color: "#ede9fe" },
+  heroTagline: { color: "rgba(255, 255, 255, 0.88)", lineHeight: 1.55, margin: 0 },
+  heroChips: { display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 },
+  heroChip: {
+    background: "rgba(255, 255, 255, 0.16)",
+    border: "1px solid rgba(255, 255, 255, 0.35)",
+    color: "#ffffff",
+    borderRadius: 999,
+    padding: "4px 12px",
+    fontSize: 13,
+    fontWeight: 600,
+  },
+  heroArt: { width: 180, maxWidth: "40vw", height: "auto", flex: "0 0 auto" },
+  mainColumn: { minWidth: 0 },
+  sidebar: { display: "grid", gap: 16, alignContent: "start", minWidth: 0 },
+  sideCard: { border: "1px solid #eaecf0", borderRadius: 12, padding: 16, background: "#ffffff", display: "grid", gap: 10 },
+  sideTitle: { fontSize: 16, margin: 0 },
+  sideBigCount: { fontSize: 34, fontWeight: 800, margin: 0, color: "#6941c6", lineHeight: 1 },
+  sideLink: { color: "#175cd3", fontWeight: 700, textDecoration: "none" },
+  contributorRows: { display: "grid", gap: 2 },
+  contributorRow: {
+    border: 0,
+    borderRadius: 8,
+    background: "transparent",
+    padding: "6px 6px",
+    cursor: "pointer",
+    font: "inherit",
+    display: "grid",
+    gap: 5,
+    textAlign: "left",
+    width: "100%",
+  },
+  contributorRowActive: { background: "#f5f3ff" },
+  contributorRowTop: { display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" },
+  contributorName: { fontWeight: 600, color: "#101828", fontSize: 14 },
+  contributorRowCount: { color: "#667085", fontSize: 13, whiteSpace: "nowrap" },
+  barTrack: { display: "block", height: 6, borderRadius: 999, background: "#eaecf0", overflow: "hidden" },
+  barFill: { display: "block", height: "100%", background: "#8b5cf6", borderRadius: 999 },
+  bookCard: {
+    border: "1px solid #eaecf0",
+    borderRadius: 14,
+    overflow: "hidden",
+    background: "#ffffff",
+    display: "flex",
+    flexDirection: "column",
+    minWidth: 0,
+  },
+  coverWrap: { position: "relative" },
+  coverArt: { position: "relative", aspectRatio: "16 / 10", display: "grid", placeItems: "center", overflow: "hidden" },
+  coverArtCompact: { position: "relative", aspectRatio: "16 / 9", display: "grid", placeItems: "center", overflow: "hidden" },
+  coverInitial: { fontSize: 52, fontWeight: 800, color: "rgba(255, 255, 255, 0.92)", lineHeight: 1 },
+  coverInitialSmall: { fontSize: 32, fontWeight: 800, color: "rgba(255, 255, 255, 0.92)", lineHeight: 1 },
+  coverSubject: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 8,
+    textAlign: "center",
+    fontSize: 11,
+    fontWeight: 700,
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
+    color: "rgba(255, 255, 255, 0.88)",
+    padding: "0 10px",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
+  coverImg: { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" },
+  coverChips: {
+    position: "absolute",
+    top: 8,
+    left: 8,
+    right: 8,
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 8,
+    pointerEvents: "none",
+  },
+  bookBody: { padding: "14px 16px 16px", display: "flex", flexDirection: "column", gap: 8, flex: 1, minWidth: 0 },
+  cardActionsPush: { marginTop: "auto", paddingTop: 4 },
+  shelfCard: {
+    flex: "0 0 150px",
+    width: 150,
+    border: "1px solid #eaecf0",
+    borderRadius: 12,
+    overflow: "hidden",
+    background: "#ffffff",
+    cursor: "pointer",
+  },
+  shelfBody: { padding: "8px 10px 10px", display: "grid", gap: 2 },
+  shelfTitle: { fontSize: 14, fontWeight: 600, lineHeight: 1.35, color: "#101828" },
+  shelfMeta: { fontSize: 12, color: "#667085" },
   back: { color: "#175cd3", textDecoration: "none", fontWeight: 600 },
   backButton: { border: 0, background: "transparent", color: "#175cd3", fontWeight: 700, cursor: "pointer", padding: 0, font: "inherit" },
   eyebrow: { color: "#475467", fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", margin: "28px 0 8px" },

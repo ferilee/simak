@@ -130,10 +130,15 @@ const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
       && page.includes(">Setujui<") === false && page.includes("Setujui") && page.includes("Tolak"));
   check("decisions post through the decision-path helper", page.includes("approvalDecisionPath(entry)"));
   {
-    const tarikButtonAt = page.indexOf("void tarikEntry(entry)");
-    const conditionalAt = page.lastIndexOf("{isApprover ? (", tarikButtonAt);
+    // Desain ulang: kartu katalog kini komponen LibraryCard — tombol
+    // Tarik-nya memanggil prop onTarik (dihubungkan halaman ke
+    // tarikEntry) dan tetap hanya dirender di dalam kondisi isApprover.
+    const cardSegment = page.slice(page.indexOf("function LibraryCard"), page.indexOf("function PreviewView"));
+    const tarikButtonAt = cardSegment.indexOf("onClick={() => onTarik(entry)}");
+    const conditionalAt = cardSegment.lastIndexOf("{isApprover ? (", tarikButtonAt);
     check("live cards gain a Tarik action ONLY inside the approver conditional",
       page.includes("approvalTarikPath(entry)") && page.includes("tarikConfirmText()")
+        && page.includes("onTarik={(entry) => void tarikEntry(entry)}")
         && tarikButtonAt > -1 && conditionalAt > -1 && tarikButtonAt - conditionalAt < 400,
       `button@${tarikButtonAt} conditional@${conditionalAt}`);
   }

@@ -15,6 +15,10 @@ export const worksheets = mysqlTable("worksheets", {
   // dibagikan hanya lewat saklar eksplisit pemiliknya. Lihat modules.ts.
   isShared: boolean("is_shared").notNull().default(false),
   sharedAt: datetime("shared_at"),
+  // Antrean persetujuan berbagi: sama seperti modul — lihat modules.ts.
+  // Invarian: is_shared bernilai true tepat bila share_status = 'dibagikan'.
+  shareStatus: mysqlEnum("share_status", ["pribadi", "menunggu", "dibagikan", "ditolak"]).notNull().default("pribadi"),
+  shareRequestedAt: datetime("share_requested_at"),
   copiedFromId: bigint("copied_from_id", { mode: "number" }),
   copiedFromTeacherName: varchar("copied_from_teacher_name", { length: 120 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),

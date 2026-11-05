@@ -92,6 +92,13 @@
       "when": 1793683200000,
       "tag": "0012_perpustakaan_bersama",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "5",
+      "when": 1793855210263,
+      "tag": "0013_persetujuan_berbagi",
+      "breakpoints": true
     }
   ]
 }

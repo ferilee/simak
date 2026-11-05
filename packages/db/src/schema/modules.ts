@@ -19,6 +19,14 @@ export const modules = mysqlTable("modules", {
   // shared_at mencatat kapan terakhir dibagikan (NULL = tidak dibagikan).
   isShared: boolean("is_shared").notNull().default(false),
   sharedAt: datetime("shared_at"),
+  // Antrean persetujuan berbagi: status pengajuan berbagi modul ini.
+  // is_shared tetap menjadi penanda tayang (invarian: is_shared bernilai
+  // true tepat bila share_status = 'dibagikan'); share_status mencatat
+  // perjalanan pengajuannya — 'pribadi' (tidak diajukan), 'menunggu'
+  // (menunggu keputusan penyetuju), 'dibagikan' (tayang), 'ditolak'.
+  // share_requested_at mencatat kapan pengajuan terakhir diajukan.
+  shareStatus: mysqlEnum("share_status", ["pribadi", "menunggu", "dibagikan", "ditolak"]).notNull().default("pribadi"),
+  shareRequestedAt: datetime("share_requested_at"),
   // Jejak salinan: terisi hanya pada modul hasil salinan dari perpustakaan.
   // copied_from_id adalah kolom polos TANPA foreign key (sumber boleh
   // berubah/dihapus tanpa menyeret salinan); nama guru sumber dibekukan

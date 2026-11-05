@@ -11,7 +11,16 @@ import {
   updateModuleSchema,
 } from "@simak/shared";
 import { requireRole } from "../middleware/auth";
-import { nextShareState } from "../lib/library";
+import { env } from "../lib/env";
+import {
+  isLibraryApprover,
+  libraryApprovalActive,
+  nextShareState,
+  nextShareTransition,
+  planShareCascadeIds,
+  shareFieldsForStatus,
+  shareTransitionValues,
+} from "../lib/library";
 import { moduleDeleteGuard } from "../lib/deletion";
 
 // Modul materi + bloknya (Tahap 1). Isi content_json wajib lolos skema Zod
@@ -40,6 +49,8 @@ function serializeModule(
     version: module.version,
     is_shared: module.isShared,
     shared_at: module.sharedAt,
+    share_status: module.shareStatus,
+    share_requested_at: module.shareRequestedAt,
     copied_from_id: module.copiedFromId,
     copied_from_teacher_name: module.copiedFromTeacherName,
     created_at: module.createdAt,
@@ -141,14 +152,50 @@ moduleRoutes.patch("/:id/share", requireRole("guru"), zValidator("json", shareMo
   if (!module) return c.json({ ok: false, message: "Modul tidak ditemukan." }, 404);
   const input = c.req.valid("json");
   const now = new Date();
-  const state = nextShareState(input.shared, now);
 
-  await db.update(modules).set({ isShared: state.isShared, sharedAt: state.sharedAt }).where(eq(modules.id, moduleId));
-  if (state.isShared && input.include_worksheets === true) {
-    await db
-      .update(worksheets)
-      .set({ isShared: true, sharedAt: now })
-      .where(and(eq(worksheets.moduleId, moduleId), eq(worksheets.teacherId, user.userId)));
+  if (!libraryApprovalActive(env.SIMAK_LIBRARY_APPROVER)) {
+    // Mode persetujuan NONAKTIF (SIMAK_LIBRARY_APPROVER belum diatur):
+    // perilaku Fase 1 persis — tayang langsung, tanpa antrean.
+    const state = nextShareState(input.shared, now);
+
+    await db.update(modules).set({ isShared: state.isShared, sharedAt: state.sharedAt }).where(eq(modules.id, moduleId));
+    if (state.isShared && input.include_worksheets === true) {
+      await db
+        .update(worksheets)
+        .set({ isShared: true, sharedAt: now })
+        .where(and(eq(worksheets.moduleId, moduleId), eq(worksheets.teacherId, user.userId)));
+    }
+  } else {
+    // Mode persetujuan AKTIF: saklar berjalan lewat mesin keadaan
+    // nextShareTransition. Guru bukan penyetuju berhenti di 'menunggu';
+    // penyetuju (dan penarikan oleh siapa pun) langsung berlaku.
+    const next = nextShareTransition(
+      {
+        isShared: module.isShared,
+        sharedAt: module.sharedAt,
+        shareStatus: module.shareStatus,
+        shareRequestedAt: module.shareRequestedAt,
+      },
+      input.shared,
+      !isLibraryApprover(user, env.SIMAK_LIBRARY_APPROVER),
+      now,
+    );
+    await db.update(modules).set(shareTransitionValues(next)).where(eq(modules.id, moduleId));
+    if (input.shared && input.include_worksheets === true) {
+      // Rangkaian: LKPD yang masih 'pribadi'/'ditolak' mengikuti keadaan
+      // baru modul; yang sudah 'menunggu'/'dibagikan' tidak disentuh.
+      const attached = await db
+        .select({ id: worksheets.id, shareStatus: worksheets.shareStatus })
+        .from(worksheets)
+        .where(and(eq(worksheets.moduleId, moduleId), eq(worksheets.teacherId, user.userId)));
+      const cascadeIds = planShareCascadeIds(attached, next.shareStatus);
+      if (cascadeIds.length > 0) {
+        await db
+          .update(worksheets)
+          .set(shareTransitionValues(shareFieldsForStatus(next.shareStatus, now)))
+          .where(inArray(worksheets.id, cascadeIds));
+      }
+    }
   }
 
   const [updated] = await db.select().from(modules).where(eq(modules.id, moduleId)).limit(1);

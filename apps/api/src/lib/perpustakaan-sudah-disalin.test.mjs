@@ -179,7 +179,7 @@ const WORKSHEET_DUP_MESSAGE = "LKPD ini sudah pernah Anda salin.";
     worksheetCopySegment.includes("eq(worksheets.teacherId, user.userId), eq(worksheets.copiedFromId, worksheetId)"));
 
   const journal = JSON.parse(readRepo("packages/db/migrations/meta/_journal.json"));
-  check("no new migration: journal still has exactly 13 entries", journal.entries.length === 13, `got ${journal.entries.length}`);
+  check("journal has exactly 14 entries (0013 persetujuan-berbagi menyusul, tanpa migrasi baru dari paket ini)", journal.entries.length === 14, `got ${journal.entries.length}`);
 }
 
 console.log(`\nperpustakaan-sudah-disalin: ${passed} passed, ${failed} failed`);

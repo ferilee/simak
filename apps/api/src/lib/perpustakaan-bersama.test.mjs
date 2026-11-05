@@ -8,7 +8,8 @@
 // copy planning, deep-copy value builders) are tested behaviorally, and
 // the route wiring (owner-only toggles, guru-only catalog, transaction
 // copies, serializer fields) is locked statically against the sources.
-// Jalur B is locked: migration 0012 exists, journal = 13 entries.
+// Jalur B is locked: migration 0012 exists (the journal has since grown
+// to 14 entries with 0013_persetujuan_berbagi — see that package's suite).
 import { readFileSync, readdirSync } from "node:fs";
 import {
   buildLibraryModuleEntry,
@@ -41,15 +42,15 @@ const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
 const readRepo = (rel) => readFileSync(new URL(`../../../../${rel}`, import.meta.url), "utf8");
 
 // ---------------------------------------------------------------------------
-// Case 1 — Jalur B lock: migration 0012, journal = 13, safe identifiers.
+// Case 1 — Jalur B lock: migration 0012, journal entries, safe identifiers.
 // ---------------------------------------------------------------------------
 {
   const journal = JSON.parse(readRepo("packages/db/migrations/meta/_journal.json"));
-  check("journal has exactly 13 entries", journal.entries.length === 13, `got ${journal.entries.length}`);
-  const last = journal.entries[journal.entries.length - 1];
-  const prev = journal.entries[journal.entries.length - 2];
-  check("last journal entry is 0012_perpustakaan_bersama", last.tag === "0012_perpustakaan_bersama" && last.idx === 12);
-  check("0012 'when' is after 0011 'when'", last.when > prev.when, `${last.when} vs ${prev.when}`);
+  check("journal has exactly 14 entries (0013 persetujuan-berbagi menyusul 0012)", journal.entries.length === 14, `got ${journal.entries.length}`);
+  const entry0012 = journal.entries[12];
+  const entry0011 = journal.entries[11];
+  check("journal entry idx 12 is 0012_perpustakaan_bersama", entry0012.tag === "0012_perpustakaan_bersama" && entry0012.idx === 12);
+  check("0012 'when' is after 0011 'when'", entry0012.when > entry0011.when, `${entry0012.when} vs ${entry0011.when}`);
 
   const files = readdirSync(new URL("../../../../packages/db/migrations", import.meta.url));
   check("migration file 0012 exists", files.some((name) => name.startsWith("0012_") && name.endsWith(".sql")));

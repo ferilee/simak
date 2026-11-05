@@ -30,7 +30,249 @@ export function nextShareState(shared: boolean, now: Date): ShareState {
   return shared ? { isShared: true, sharedAt: now } : { isShared: false, sharedAt: null };
 }
 
-export type CopyGuardResult = { ok: true } | { ok: false; status: 400 | 404; message: string };
+// ---------------------------------------------------------------------------
+// Antrean persetujuan berbagi (Fase 2): guru LAIN yang membagikan materi
+// harus disetujui dulu oleh penyetuju Perpustakaan Bersama (pemilik
+// platform) sebelum tayang. SIMAK tidak mempunyai peran admin, jadi
+// kewenangan menyetujui datang dari konfigurasi: username penyetuju di
+// variabel lingkungan SIMAK_LIBRARY_APPROVER.
+//
+// - Mode NONAKTIF (env kosong): state machine ini tidak dipakai sama
+//   sekali — route berbagi menjalankan nextShareState persis seperti
+//   Fase 1 (tayang langsung), tanpa kecuali.
+// - Mode AKTIF: berbagi dari guru bukan penyetuju berhenti di 'menunggu'
+//   sampai diputuskan; berbagi milik penyetuju sendiri tetap langsung
+//   tayang. Invarian di semua jalur tulis: is_shared bernilai true tepat
+//   bila share_status = 'dibagikan'; shared_at terisi saat masuk
+//   'dibagikan' dan dibersihkan saat keluar darinya.
+// ---------------------------------------------------------------------------
+
+export type ShareStatus = "pribadi" | "menunggu" | "dibagikan" | "ditolak";
+
+/** Seluruh ladang berbagi satu baris (modul atau LKPD) dalam satu nilai. */
+export type ShareFields = ShareState & {
+  shareStatus: ShareStatus;
+  shareRequestedAt: Date | null;
+};
+
+/** Username penyetuju yang terkonfigurasi, dinormalkan (trim + huruf
+ *  kecil); null bila mode persetujuan nonaktif. */
+export function libraryApproverUsername(configured: string | null | undefined): string | null {
+  const normalized = (configured ?? "").trim().toLowerCase();
+  return normalized === "" ? null : normalized;
+}
+
+/** Apakah mode persetujuan aktif (ada penyetuju yang terkonfigurasi). */
+export function libraryApprovalActive(configured: string | null | undefined): boolean {
+  return libraryApproverUsername(configured) !== null;
+}
+
+/**
+ * Apakah pengguna ini penyetuju Perpustakaan Bersama: mode aktif DAN
+ * username sesinya sama dengan yang terkonfigurasi (perbandingan
+ * menormalkan spasi pinggir dan huruf besar/kecil di kedua sisi).
+ */
+export function isLibraryApprover(
+  user: { username: string } | null | undefined,
+  configured: string | null | undefined,
+): boolean {
+  const target = libraryApproverUsername(configured);
+  if (target === null || !user) return false;
+  return user.username.trim().toLowerCase() === target;
+}
+
+/**
+ * Mesin keadaan saklar Bagikan pada mode persetujuan AKTIF.
+ * `approvalRequired` = pemilik bukan penyetuju. Mematikan saklar selalu
+ * bebas (penarikan tidak butuh persetujuan) dan membersihkan semuanya.
+ * Menyalakan dari 'menunggu'/'dibagikan' adalah no-op yang mempertahankan
+ * cap waktu yang ada (requested_at tidak digeser oleh penekanan ulang).
+ * Bila persetujuan tidak diperlukan (pemilik = penyetuju), hasilnya sama
+ * dengan tayang langsung nextShareState, diperkaya ladang statusnya.
+ */
+export function nextShareTransition(
+  current: ShareFields,
+  shared: boolean,
+  approvalRequired: boolean,
+  now: Date,
+): ShareFields {
+  if (!shared) {
+    return { shareStatus: "pribadi", isShared: false, sharedAt: null, shareRequestedAt: null };
+  }
+  if (current.shareStatus === "dibagikan") {
+    return { ...current, isShared: true, shareRequestedAt: null };
+  }
+  if (current.shareStatus === "menunggu" && approvalRequired) {
+    return { ...current, isShared: false, sharedAt: null };
+  }
+  if (approvalRequired) {
+    return { shareStatus: "menunggu", isShared: false, sharedAt: null, shareRequestedAt: now };
+  }
+  return { shareStatus: "dibagikan", isShared: true, sharedAt: now, shareRequestedAt: null };
+}
+
+/** Ladang berbagi lengkap untuk satu status tujuan pada waktu `now` —
+ *  dipakai jalur keputusan penyetuju, penarikan, dan rangkaian modul,
+ *  yang semuanya mendarat pada keadaan bersih (cap waktu hanya terisi
+ *  pada status yang memang mencatatnya). */
+export function shareFieldsForStatus(status: ShareStatus, now: Date): ShareFields {
+  switch (status) {
+    case "dibagikan":
+      return { shareStatus: "dibagikan", isShared: true, sharedAt: now, shareRequestedAt: null };
+    case "menunggu":
+      return { shareStatus: "menunggu", isShared: false, sharedAt: null, shareRequestedAt: now };
+    case "ditolak":
+      return { shareStatus: "ditolak", isShared: false, sharedAt: null, shareRequestedAt: null };
+    case "pribadi":
+      return { shareStatus: "pribadi", isShared: false, sharedAt: null, shareRequestedAt: null };
+  }
+}
+
+/** Nilai kolom basis data untuk satu keadaan berbagi (nama kolom Drizzle). */
+export function shareTransitionValues(fields: ShareFields) {
+  return {
+    isShared: fields.isShared,
+    sharedAt: fields.sharedAt,
+    shareStatus: fields.shareStatus,
+    shareRequestedAt: fields.shareRequestedAt,
+  };
+}
+
+/**
+ * Rencana rangkaian saklar modul (mode aktif): LKPD modul yang masih
+ * 'pribadi' atau 'ditolak' mengikuti keadaan BARU modulnya ('menunggu'
+ * atau 'dibagikan'); yang sudah 'menunggu'/'dibagikan' tidak disentuh.
+ * Mengembalikan id LKPD yang ikut berpindah (kosong bila modul tidak
+ * masuk salah satu dari dua keadaan itu).
+ */
+export function planShareCascadeIds<T extends { id: number; shareStatus: ShareStatus }>(
+  worksheets: readonly T[],
+  moduleNextStatus: ShareStatus,
+): number[] {
+  if (moduleNextStatus !== "menunggu" && moduleNextStatus !== "dibagikan") return [];
+  return worksheets
+    .filter((worksheet) => worksheet.shareStatus === "pribadi" || worksheet.shareStatus === "ditolak")
+    .map((worksheet) => worksheet.id);
+}
+
+/**
+ * Rencana bawaan persetujuan modul: LKPD modul yang masih 'menunggu'
+ * ikut menjadi 'dibagikan' bersama modulnya, dalam transaksi yang sama.
+ * Penolakan TIDAK memakai rencana ini — menolak modul hanya menolak
+ * modulnya; LKPD-nya yang 'menunggu' tetap berdiri sebagai pengajuan
+ * sendiri di antrean (asimetri yang disengaja: persetujuan membawa,
+ * penolakan bedah).
+ */
+export function planApprovalCarryIds<T extends { id: number; shareStatus: ShareStatus }>(
+  worksheets: readonly T[],
+): number[] {
+  return worksheets.filter((worksheet) => worksheet.shareStatus === "menunggu").map((worksheet) => worksheet.id);
+}
+
+export const APPROVALS_FORBIDDEN_MESSAGE = "Hanya penyetuju Perpustakaan Bersama yang dapat membuka antrean persetujuan.";
+
+/** Gerbang semua endpoint persetujuan: hanya penyetuju, hanya saat mode aktif. */
+export function approvalsGuard(approver: boolean): CopyGuardResult {
+  if (!approver) return { ok: false, status: 403, message: APPROVALS_FORBIDDEN_MESSAGE };
+  return { ok: true };
+}
+
+export const DECISION_ALREADY_MADE_MESSAGE = "Pengajuan ini sudah diputuskan.";
+
+/**
+ * Gerbang keputusan persetujuan: butir harus ada (404 gaya katalog —
+ * keberadaan pengajuan guru lain tidak dibocorkan ke non-penyetuju, dan
+ * gerbang penyetuju sudah berjalan lebih dulu) dan masih 'menunggu'.
+ */
+export function decisionGuard(
+  item: { shareStatus: ShareStatus } | null | undefined,
+  notFoundMessage: string,
+): CopyGuardResult {
+  if (!item) return { ok: false, status: 404, message: notFoundMessage };
+  if (item.shareStatus !== "menunggu") return { ok: false, status: 409, message: DECISION_ALREADY_MADE_MESSAGE };
+  return { ok: true };
+}
+
+export const TARIK_NOT_LIVE_MESSAGE = "Materi ini tidak sedang tayang di Perpustakaan Bersama.";
+export const TARIK_OWN_MESSAGE = "Ini materi Anda sendiri; matikan lewat saklar Bagikan.";
+
+/**
+ * Gerbang penarikan oleh penyetuju: butir harus ada, BUKAN milik penyetuju
+ * sendiri (milik sendiri diatur lewat saklar Bagikan biasa — pemeriksaan
+ * ini lebih dulu, mengikuti kebiasaan copyGuard), dan sedang tayang.
+ */
+export function tarikGuard(
+  item: { teacherId: number; shareStatus: ShareStatus } | null | undefined,
+  approverUserId: number,
+  notFoundMessage: string,
+): CopyGuardResult {
+  if (!item) return { ok: false, status: 404, message: notFoundMessage };
+  if (item.teacherId === approverUserId) return { ok: false, status: 400, message: TARIK_OWN_MESSAGE };
+  if (item.shareStatus !== "dibagikan") return { ok: false, status: 409, message: TARIK_NOT_LIVE_MESSAGE };
+  return { ok: true };
+}
+
+export type ApprovalQueueRow = {
+  kind: "module" | "worksheet";
+  id: number;
+  title: string;
+  ownerName: string;
+  shareRequestedAt: Date | null;
+  subject: string | null;
+  blockCount: number | null;
+  pendingWorksheetCount: number | null;
+  itemCount: number | null;
+};
+
+export type ApprovalQueueEntry = {
+  kind: "modul" | "lkpd";
+  id: number;
+  title: string;
+  teacher_name: string;
+  share_requested_at: Date | null;
+  subject: string | null;
+  block_count?: number;
+  pending_worksheet_count?: number;
+  item_count?: number;
+};
+
+export function buildApprovalQueueEntry(row: ApprovalQueueRow): ApprovalQueueEntry {
+  if (row.kind === "module") {
+    return {
+      kind: "modul",
+      id: row.id,
+      title: row.title,
+      teacher_name: row.ownerName,
+      share_requested_at: row.shareRequestedAt,
+      subject: row.subject,
+      block_count: row.blockCount ?? 0,
+      pending_worksheet_count: row.pendingWorksheetCount ?? 0,
+    };
+  }
+  return {
+    kind: "lkpd",
+    id: row.id,
+    title: row.title,
+    teacher_name: row.ownerName,
+    share_requested_at: row.shareRequestedAt,
+    subject: row.subject,
+    item_count: row.itemCount ?? 0,
+  };
+}
+
+function requestedAtMillis(entry: ApprovalQueueEntry): number {
+  return entry.share_requested_at ? entry.share_requested_at.getTime() : 0;
+}
+
+/**
+ * Gabungan antrean persetujuan: modul dan LKPD dalam satu daftar, yang
+ * diajukan PALING LAMA di atas (keputusan mengikuti urutan kedatangan).
+ */
+export function mergeApprovalQueue(moduleEntries: ApprovalQueueEntry[], worksheetEntries: ApprovalQueueEntry[]): ApprovalQueueEntry[] {
+  return [...moduleEntries, ...worksheetEntries].sort((a, b) => requestedAtMillis(a) - requestedAtMillis(b));
+}
+
+export type CopyGuardResult = { ok: true } | { ok: false; status: 400 | 403 | 404 | 409; message: string };
 
 /**
  * Gerbang penyalinan dari katalog. Sumber yang tidak ada ATAU tidak
@@ -85,16 +327,24 @@ export function copiedSourceIdSet(rows: readonly { copiedFromId: number | null }
  * materi yang dibagikan MILIK GURU LAIN. Milik sendiri pun 404 dari katalog
  * (katalog menurut definisi hanya memuat guru lain; pemilik mempratinjau
  * materinya dari ruang kerjanya sendiri).
+ *
+ * Perluasan penyetuju (Fase 2): bila penampil adalah PENYETUJU, butir yang
+ * masih 'menunggu' keputusan pun dapat dipratinjau — ia harus dapat
+ * memeriksa isi sebelum menyetujui atau menolak. Untuk semua penampil
+ * lain, butir 'menunggu' tetap 404 persis seperti materi privat.
  */
 export function previewGuard(
-  source: { teacherId: number; isShared: boolean } | null | undefined,
+  source: { teacherId: number; isShared: boolean; shareStatus?: ShareStatus } | null | undefined,
   userId: number,
   notFoundMessage: string,
+  viewer?: { isApprover?: boolean },
 ): CopyGuardResult {
-  if (!source || !source.isShared || source.teacherId === userId) {
+  if (!source || source.teacherId === userId) {
     return { ok: false, status: 404, message: notFoundMessage };
   }
-  return { ok: true };
+  if (source.isShared) return { ok: true };
+  if (viewer?.isApprover === true && source.shareStatus === "menunggu") return { ok: true };
+  return { ok: false, status: 404, message: notFoundMessage };
 }
 
 export type LibraryModuleRow = {

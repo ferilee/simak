@@ -1,18 +1,30 @@
 import { Hono } from "hono";
 import { and, asc, desc, eq, inArray, like, ne, or, sql } from "drizzle-orm";
+import { zValidator } from "@hono/zod-validator";
+import { z } from "zod";
 import { db, schema } from "@simak/db";
 import { requireRole } from "../middleware/auth";
+import { env } from "../lib/env";
 import {
   alreadyCopiedGuard,
+  approvalsGuard,
+  buildApprovalQueueEntry,
   buildLibraryModuleEntry,
   buildLibraryWorksheetEntry,
   copiedSourceIdSet,
   copyGuard,
+  decisionGuard,
+  isLibraryApprover,
+  mergeApprovalQueue,
   mergeLibraryEntries,
   moduleBlockCopyValues,
   moduleCopyValues,
+  planApprovalCarryIds,
   planModuleCopyWorksheets,
   previewGuard,
+  shareFieldsForStatus,
+  shareTransitionValues,
+  tarikGuard,
   worksheetCopyValues,
   worksheetItemCopyValues,
 } from "../lib/library";
@@ -171,7 +183,25 @@ libraryRoutes.get("/", requireRole("guru"), async (c) => {
     }
   }
 
-  return c.json({ ok: true, data: mergeLibraryEntries(moduleEntries, worksheetEntries) });
+  // Meta penampil untuk halaman katalog: apakah penampil adalah penyetuju
+  // Perpustakaan Bersama (mode persetujuan aktif + username cocok) dan
+  // berapa pengajuan yang sedang menunggu keputusannya. Guru lain selalu
+  // menerima approver=false dan pending_count=0.
+  const approver = isLibraryApprover(user, env.SIMAK_LIBRARY_APPROVER);
+  let pendingCount = 0;
+  if (approver) {
+    const [modulePending] = await db
+      .select({ count: sql<number>`count(${modules.id})` })
+      .from(modules)
+      .where(eq(modules.shareStatus, "menunggu"));
+    const [worksheetPending] = await db
+      .select({ count: sql<number>`count(${worksheets.id})` })
+      .from(worksheets)
+      .where(eq(worksheets.shareStatus, "menunggu"));
+    pendingCount = Number(modulePending?.count ?? 0) + Number(worksheetPending?.count ?? 0);
+  }
+
+  return c.json({ ok: true, data: mergeLibraryEntries(moduleEntries, worksheetEntries), approver, pending_count: pendingCount });
 });
 
 libraryRoutes.get("/modules/:id", requireRole("guru"), async (c) => {
@@ -179,7 +209,9 @@ libraryRoutes.get("/modules/:id", requireRole("guru"), async (c) => {
   const moduleId = parseLibraryId(c.req.param("id"));
   if (moduleId === null) return c.json({ ok: false, message: MODULE_NOT_FOUND }, 404);
   const [module] = await db.select().from(modules).where(eq(modules.id, moduleId)).limit(1);
-  const guard = previewGuard(module, user.userId, MODULE_NOT_FOUND);
+  const guard = previewGuard(module, user.userId, MODULE_NOT_FOUND, {
+    isApprover: isLibraryApprover(user, env.SIMAK_LIBRARY_APPROVER),
+  });
   if (!guard.ok) return c.json({ ok: false, message: guard.message }, guard.status);
 
   const blocks = await db
@@ -237,7 +269,9 @@ libraryRoutes.get("/worksheets/:id", requireRole("guru"), async (c) => {
   const worksheetId = parseLibraryId(c.req.param("id"));
   if (worksheetId === null) return c.json({ ok: false, message: WORKSHEET_NOT_FOUND }, 404);
   const [worksheet] = await db.select().from(worksheets).where(eq(worksheets.id, worksheetId)).limit(1);
-  const guard = previewGuard(worksheet, user.userId, WORKSHEET_NOT_FOUND);
+  const guard = previewGuard(worksheet, user.userId, WORKSHEET_NOT_FOUND, {
+    isApprover: isLibraryApprover(user, env.SIMAK_LIBRARY_APPROVER),
+  });
   if (!guard.ok) return c.json({ ok: false, message: guard.message }, guard.status);
 
   const [module] = worksheet!.moduleId
@@ -392,4 +426,202 @@ libraryRoutes.post("/worksheets/:id/copy", requireRole("guru"), async (c) => {
     copyWorksheetInsideTx(tx, source!, items, user.userId, null, sourceOwnerName),
   );
   return c.json({ ok: true, data: { worksheet_id: newWorksheetId } }, 201);
+});
+
+// ---------------------------------------------------------------------------
+// Antrean persetujuan berbagi (Fase 2). Semua endpoint di bawah khusus
+// PENYETUJU Perpustakaan Bersama (username yang terkonfigurasi di
+// SIMAK_LIBRARY_APPROVER): guru lain — dan siapa pun saat mode persetujuan
+// nonaktif — menerima 403 yang sama. Pengajuan 'menunggu' tidak pernah
+// bocor ke katalog, pratinjau guru lain, atau penyalinan; hanya penyetuju
+// yang melihatnya, lewat antrean ini dan pratinjau yang diperluas untuknya.
+// ---------------------------------------------------------------------------
+
+function approverGate(user: { username: string }) {
+  return approvalsGuard(isLibraryApprover(user, env.SIMAK_LIBRARY_APPROVER));
+}
+
+libraryRoutes.get("/approvals", requireRole("guru"), async (c) => {
+  const user = c.get("user")!;
+  const gate = approverGate(user);
+  if (!gate.ok) return c.json({ ok: false, message: gate.message }, gate.status);
+
+  const moduleRows = await db
+    .select({
+      id: modules.id,
+      title: modules.title,
+      subject: modules.subject,
+      ownerName: users.name,
+      shareRequestedAt: modules.shareRequestedAt,
+    })
+    .from(modules)
+    .innerJoin(users, eq(users.id, modules.teacherId))
+    .where(eq(modules.shareStatus, "menunggu"));
+  const moduleIds = moduleRows.map((row) => row.id);
+  const blockCounts = new Map<number, number>();
+  const pendingWorksheetCounts = new Map<number, number>();
+  if (moduleIds.length > 0) {
+    const blockRows = await db
+      .select({ moduleId: moduleBlocks.moduleId, count: sql<number>`count(${moduleBlocks.id})` })
+      .from(moduleBlocks)
+      .where(inArray(moduleBlocks.moduleId, moduleIds))
+      .groupBy(moduleBlocks.moduleId);
+    for (const row of blockRows) blockCounts.set(row.moduleId, Number(row.count));
+    const worksheetRows = await db
+      .select({ moduleId: worksheets.moduleId, count: sql<number>`count(${worksheets.id})` })
+      .from(worksheets)
+      .where(and(inArray(worksheets.moduleId, moduleIds), eq(worksheets.shareStatus, "menunggu")))
+      .groupBy(worksheets.moduleId);
+    for (const row of worksheetRows) {
+      if (row.moduleId !== null) pendingWorksheetCounts.set(row.moduleId, Number(row.count));
+    }
+  }
+  const moduleEntries = moduleRows.map((row) =>
+    buildApprovalQueueEntry({
+      kind: "module",
+      id: row.id,
+      title: row.title,
+      ownerName: row.ownerName,
+      shareRequestedAt: row.shareRequestedAt,
+      subject: row.subject,
+      blockCount: blockCounts.get(row.id) ?? 0,
+      pendingWorksheetCount: pendingWorksheetCounts.get(row.id) ?? 0,
+      itemCount: null,
+    }),
+  );
+
+  const worksheetRows = await db
+    .select({
+      id: worksheets.id,
+      title: worksheets.title,
+      subject: modules.subject,
+      ownerName: users.name,
+      shareRequestedAt: worksheets.shareRequestedAt,
+    })
+    .from(worksheets)
+    .innerJoin(users, eq(users.id, worksheets.teacherId))
+    .leftJoin(modules, eq(modules.id, worksheets.moduleId))
+    .where(eq(worksheets.shareStatus, "menunggu"));
+  const worksheetIds = worksheetRows.map((row) => row.id);
+  const itemCounts = new Map<number, number>();
+  if (worksheetIds.length > 0) {
+    const itemRows = await db
+      .select({ worksheetId: worksheetItems.worksheetId, count: sql<number>`count(${worksheetItems.id})` })
+      .from(worksheetItems)
+      .where(inArray(worksheetItems.worksheetId, worksheetIds))
+      .groupBy(worksheetItems.worksheetId);
+    for (const row of itemRows) itemCounts.set(row.worksheetId, Number(row.count));
+  }
+  const worksheetEntries = worksheetRows.map((row) =>
+    buildApprovalQueueEntry({
+      kind: "worksheet",
+      id: row.id,
+      title: row.title,
+      ownerName: row.ownerName,
+      shareRequestedAt: row.shareRequestedAt,
+      subject: row.subject,
+      blockCount: null,
+      pendingWorksheetCount: null,
+      itemCount: itemCounts.get(row.id) ?? 0,
+    }),
+  );
+
+  return c.json({ ok: true, data: mergeApprovalQueue(moduleEntries, worksheetEntries) });
+});
+
+const approvalDecisionSchema = z.object({ decision: z.enum(["setujui", "tolak"]) });
+
+libraryRoutes.post("/approvals/modules/:id", requireRole("guru"), zValidator("json", approvalDecisionSchema), async (c) => {
+  const user = c.get("user")!;
+  const gate = approverGate(user);
+  if (!gate.ok) return c.json({ ok: false, message: gate.message }, gate.status);
+  const moduleId = parseLibraryId(c.req.param("id"));
+  if (moduleId === null) return c.json({ ok: false, message: MODULE_NOT_FOUND }, 404);
+  const [module] = await db.select().from(modules).where(eq(modules.id, moduleId)).limit(1);
+  const guard = decisionGuard(module, MODULE_NOT_FOUND);
+  if (!guard.ok) return c.json({ ok: false, message: guard.message }, guard.status);
+  const { decision } = c.req.valid("json");
+  const now = new Date();
+
+  if (decision === "tolak") {
+    // Penolakan bersifat bedah: hanya modul ini yang berubah. LKPD-nya
+    // yang masih 'menunggu' TETAP 'menunggu' sebagai pengajuan sendiri.
+    await db
+      .update(modules)
+      .set(shareTransitionValues(shareFieldsForStatus("ditolak", now)))
+      .where(eq(modules.id, moduleId));
+    return c.json({ ok: true, data: { kind: "modul", id: moduleId, share_status: "ditolak" } });
+  }
+
+  // Persetujuan membawa: LKPD modul yang masih 'menunggu' ikut tayang
+  // dalam transaksi yang sama dengan modulnya.
+  const attached = await db
+    .select({ id: worksheets.id, shareStatus: worksheets.shareStatus })
+    .from(worksheets)
+    .where(eq(worksheets.moduleId, moduleId));
+  const carryIds = planApprovalCarryIds(attached);
+  const approved = shareTransitionValues(shareFieldsForStatus("dibagikan", now));
+  await db.transaction(async (tx) => {
+    await tx.update(modules).set(approved).where(eq(modules.id, moduleId));
+    if (carryIds.length > 0) {
+      await tx.update(worksheets).set(approved).where(inArray(worksheets.id, carryIds));
+    }
+  });
+  return c.json({ ok: true, data: { kind: "modul", id: moduleId, share_status: "dibagikan" } });
+});
+
+libraryRoutes.post("/approvals/worksheets/:id", requireRole("guru"), zValidator("json", approvalDecisionSchema), async (c) => {
+  const user = c.get("user")!;
+  const gate = approverGate(user);
+  if (!gate.ok) return c.json({ ok: false, message: gate.message }, gate.status);
+  const worksheetId = parseLibraryId(c.req.param("id"));
+  if (worksheetId === null) return c.json({ ok: false, message: WORKSHEET_NOT_FOUND }, 404);
+  const [worksheet] = await db.select().from(worksheets).where(eq(worksheets.id, worksheetId)).limit(1);
+  const guard = decisionGuard(worksheet, WORKSHEET_NOT_FOUND);
+  if (!guard.ok) return c.json({ ok: false, message: guard.message }, guard.status);
+  const { decision } = c.req.valid("json");
+  const now = new Date();
+  const nextStatus = decision === "setujui" ? "dibagikan" : "ditolak";
+  await db
+    .update(worksheets)
+    .set(shareTransitionValues(shareFieldsForStatus(nextStatus, now)))
+    .where(eq(worksheets.id, worksheetId));
+  return c.json({ ok: true, data: { kind: "lkpd", id: worksheetId, share_status: nextStatus } });
+});
+
+// Penarikan oleh penyetuju: menurunkan materi guru lain yang sedang tayang
+// kembali menjadi pribadi. Salinan yang sudah dibuat guru lain adalah
+// baris mandiri dan tidak terpengaruh — handler ini hanya menyentuh baris
+// sumbernya. Materi milik penyetuju sendiri tidak ditarik dari sini
+// (saklar Bagikan biasa yang mematikannya).
+libraryRoutes.post("/approvals/modules/:id/tarik", requireRole("guru"), async (c) => {
+  const user = c.get("user")!;
+  const gate = approverGate(user);
+  if (!gate.ok) return c.json({ ok: false, message: gate.message }, gate.status);
+  const moduleId = parseLibraryId(c.req.param("id"));
+  if (moduleId === null) return c.json({ ok: false, message: MODULE_NOT_FOUND }, 404);
+  const [module] = await db.select().from(modules).where(eq(modules.id, moduleId)).limit(1);
+  const guard = tarikGuard(module, user.userId, MODULE_NOT_FOUND);
+  if (!guard.ok) return c.json({ ok: false, message: guard.message }, guard.status);
+  await db
+    .update(modules)
+    .set(shareTransitionValues(shareFieldsForStatus("pribadi", new Date())))
+    .where(eq(modules.id, moduleId));
+  return c.json({ ok: true, data: { kind: "modul", id: moduleId, share_status: "pribadi" } });
+});
+
+libraryRoutes.post("/approvals/worksheets/:id/tarik", requireRole("guru"), async (c) => {
+  const user = c.get("user")!;
+  const gate = approverGate(user);
+  if (!gate.ok) return c.json({ ok: false, message: gate.message }, gate.status);
+  const worksheetId = parseLibraryId(c.req.param("id"));
+  if (worksheetId === null) return c.json({ ok: false, message: WORKSHEET_NOT_FOUND }, 404);
+  const [worksheet] = await db.select().from(worksheets).where(eq(worksheets.id, worksheetId)).limit(1);
+  const guard = tarikGuard(worksheet, user.userId, WORKSHEET_NOT_FOUND);
+  if (!guard.ok) return c.json({ ok: false, message: guard.message }, guard.status);
+  await db
+    .update(worksheets)
+    .set(shareTransitionValues(shareFieldsForStatus("pribadi", new Date())))
+    .where(eq(worksheets.id, worksheetId));
+  return c.json({ ok: true, data: { kind: "lkpd", id: worksheetId, share_status: "pribadi" } });
 });

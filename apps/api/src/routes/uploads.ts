@@ -7,6 +7,7 @@ import { zValidator } from "@hono/zod-validator";
 import { db, schema } from "@simak/db";
 import { presignUploadSchema, presignWorksheetUploadSchema } from "@simak/shared";
 import { env } from "../lib/env";
+import { isLibraryApprover } from "../lib/library";
 import { requireAuth, requireRole } from "../middleware/auth";
 
 const MAX_PRESIGN_SECONDS = 10 * 60;
@@ -204,8 +205,14 @@ uploadRoutes.get("/download", requireAuth, async (c) => {
   } else if (user.role === "guru" && module.teacherId !== user.userId && !module.isShared) {
     // Guru lain hanya boleh mengambil lampiran modul yang sedang DIBAGIKAN
     // ke Perpustakaan Bersama (untuk pratinjau katalog); modul privat guru
-    // lain tetap tertutup persis seperti sebelumnya.
-    return c.json({ ok: false, message: "Modul tidak ditemukan." }, 404);
+    // lain tetap tertutup persis seperti sebelumnya. Satu-satunya perluasan:
+    // PENYETUJU Perpustakaan Bersama boleh mengambil lampiran modul yang
+    // sedang MENUNGGU persetujuannya, agar pengajuan dapat dipratinjau
+    // utuh dari antrean sebelum diputuskan.
+    const approverPreview = module.shareStatus === "menunggu" && isLibraryApprover(user, env.SIMAK_LIBRARY_APPROVER);
+    if (!approverPreview) {
+      return c.json({ ok: false, message: "Modul tidak ditemukan." }, 404);
+    }
   }
 
   // Key sah bila salah satu dari: sampul modul ini, lampiran sebuah blok

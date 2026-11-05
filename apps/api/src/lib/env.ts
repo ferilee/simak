@@ -10,6 +10,14 @@ const envSchema = z.object({
   // Keduanya opsional: bila salah satu kosong, cek status tidak dilakukan.
   RUAS_STATUS_ENDPOINT: z.string().optional(),
   RUAS_INTERNAL_SECRET: z.string().optional(),
+  // Penyetuju Perpustakaan Bersama: username SIMAK pemilik platform yang
+  // menyetujui pengajuan berbagi guru lain. Opsional — bila kosong, mode
+  // persetujuan NONAKTIF dan berbagi berjalan tayang-langsung seperti
+  // sebelumnya. String kosong diperlakukan sama seperti tidak diatur.
+  SIMAK_LIBRARY_APPROVER: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().optional(),
+  ),
   SESSION_SECRET: z.string().min(16),
   RUSTFS_ENDPOINT: z.string().url(),
   RUSTFS_PUBLIC_ENDPOINT: z.preprocess(

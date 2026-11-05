@@ -13,7 +13,14 @@ import {
   updateWorksheetSchema,
 } from "@simak/shared";
 import { requireRole } from "../middleware/auth";
-import { nextShareState } from "../lib/library";
+import { env } from "../lib/env";
+import {
+  isLibraryApprover,
+  libraryApprovalActive,
+  nextShareState,
+  nextShareTransition,
+  shareTransitionValues,
+} from "../lib/library";
 import { worksheetDeleteGuard } from "../lib/deletion";
 import { loadTeacherClassMemberships, resolveStudentClass } from "../lib/student-class";
 import { loadAttemptMemberScores, loadContributionSummary, resolveEffectiveMemberScore } from "../lib/groups";
@@ -44,6 +51,8 @@ function serializeWorksheet(
     status: worksheet.status,
     is_shared: worksheet.isShared,
     shared_at: worksheet.sharedAt,
+    share_status: worksheet.shareStatus,
+    share_requested_at: worksheet.shareRequestedAt,
     copied_from_id: worksheet.copiedFromId,
     copied_from_teacher_name: worksheet.copiedFromTeacherName,
     created_at: worksheet.createdAt,
@@ -143,8 +152,26 @@ worksheetRoutes.patch("/:id/share", requireRole("guru"), zValidator("json", shar
   const worksheet = await ownedWorksheet(user.userId, worksheetId);
   if (!worksheet) return c.json({ ok: false, message: "LKPD tidak ditemukan." }, 404);
   const input = c.req.valid("json");
-  const state = nextShareState(input.shared, new Date());
-  await db.update(worksheets).set({ isShared: state.isShared, sharedAt: state.sharedAt }).where(eq(worksheets.id, worksheetId));
+  if (!libraryApprovalActive(env.SIMAK_LIBRARY_APPROVER)) {
+    // Mode persetujuan NONAKTIF: perilaku Fase 1 persis — tayang langsung.
+    const state = nextShareState(input.shared, new Date());
+    await db.update(worksheets).set({ isShared: state.isShared, sharedAt: state.sharedAt }).where(eq(worksheets.id, worksheetId));
+  } else {
+    // Mode persetujuan AKTIF: mesin keadaan nextShareTransition — guru
+    // bukan penyetuju berhenti di 'menunggu' sampai diputuskan.
+    const next = nextShareTransition(
+      {
+        isShared: worksheet.isShared,
+        sharedAt: worksheet.sharedAt,
+        shareStatus: worksheet.shareStatus,
+        shareRequestedAt: worksheet.shareRequestedAt,
+      },
+      input.shared,
+      !isLibraryApprover(user, env.SIMAK_LIBRARY_APPROVER),
+      new Date(),
+    );
+    await db.update(worksheets).set(shareTransitionValues(next)).where(eq(worksheets.id, worksheetId));
+  }
   const [updated] = await db.select().from(worksheets).where(eq(worksheets.id, worksheetId)).limit(1);
   return c.json({ ok: true, data: serializeWorksheet(updated!) });
 });

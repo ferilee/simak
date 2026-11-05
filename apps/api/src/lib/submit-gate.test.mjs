@@ -192,10 +192,10 @@ console.log("Case 11: buildUnansweredMessage — format persis");
   );
 }
 
-console.log("Case 12: Jalur — tidak ada migrasi melampaui 0012 (Perpustakaan Bersama)");
+console.log("Case 12: Jalur — jurnal migrasi sesuai rantai paket (terakhir 0013 persetujuan-berbagi)");
 {
   const journal = readFileSync(new URL("../../../../packages/db/migrations/meta/_journal.json", import.meta.url), "utf8");
-  check("jurnal migrasi tetap 13 entri", (journal.match(/"idx":/g) ?? []).length === 13);
+  check("jurnal migrasi 14 entri", (journal.match(/"idx":/g) ?? []).length === 14);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

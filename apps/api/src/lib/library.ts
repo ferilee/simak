@@ -355,9 +355,11 @@ export type LibraryModuleRow = {
   ownerName: string;
   kontributorTotal: number;
   sharedAt: Date | null;
+  coverKey: string | null;
   blockCount: number;
   sharedWorksheetCount: number;
   sudahDisalin: boolean;
+  salinanCount: number;
 };
 
 export type LibraryWorksheetRow = {
@@ -371,6 +373,7 @@ export type LibraryWorksheetRow = {
   itemCount: number;
   totalPoints: number;
   sudahDisalin: boolean;
+  salinanCount: number;
 };
 
 export type LibraryEntry = {
@@ -383,6 +386,8 @@ export type LibraryEntry = {
   kontributor_total: number;
   shared_at: Date | null;
   sudah_disalin: boolean;
+  salinan_count: number;
+  cover_key: string | null;
   block_count?: number;
   shared_worksheet_count?: number;
   item_count?: number;
@@ -400,6 +405,8 @@ export function buildLibraryModuleEntry(row: LibraryModuleRow): LibraryEntry {
     kontributor_total: row.kontributorTotal,
     shared_at: row.sharedAt,
     sudah_disalin: row.sudahDisalin,
+    salinan_count: row.salinanCount,
+    cover_key: row.coverKey,
     block_count: row.blockCount,
     shared_worksheet_count: row.sharedWorksheetCount,
   };
@@ -416,8 +423,63 @@ export function buildLibraryWorksheetEntry(row: LibraryWorksheetRow): LibraryEnt
     kontributor_total: row.kontributorTotal,
     shared_at: row.sharedAt,
     sudah_disalin: row.sudahDisalin,
+    salinan_count: row.salinanCount,
+    cover_key: null,
     item_count: row.itemCount,
     total_points: row.totalPoints,
+  };
+}
+
+/**
+ * Agregasi hitungan salinan per butir sumber: baris-baris hasil GROUP BY
+ * copied_from_id (satu query per jenis untuk semua id di halaman katalog)
+ * dilipat menjadi peta id sumber → jumlah salinan yang MASIH ADA. Salinan
+ * milik guru mana pun terhitung; salinan yang sudah dihapus tidak lagi
+ * berupa baris sehingga otomatis tidak terhitung. Baris berkelompok yang
+ * copied_from_id-nya NULL (bukan salinan) dibuang.
+ */
+export function countCopiesBySourceId(
+  rows: readonly { copiedFromId: number | null; count: number }[],
+): Map<number, number> {
+  const counts = new Map<number, number>();
+  for (const row of rows) {
+    if (row.copiedFromId === null || row.count <= 0) continue;
+    counts.set(row.copiedFromId, (counts.get(row.copiedFromId) ?? 0) + row.count);
+  }
+  return counts;
+}
+
+export type LibraryStats = {
+  total_items: number;
+  total_kontributor: number;
+  sudah_disalin_count: number;
+};
+
+/**
+ * Statistik hero katalog, dihitung dari SELURUH semesta tayang (butir
+ * is_shared milik guru lain) dan tidak mengikuti saringan aktif:
+ * total butir tayang, jumlah kontributor (panjang ringkasan kontributor),
+ * dan berapa butir semesta yang sudah disalin penampil (irisan himpunan
+ * sumber salinan milik penampil dengan id-id semesta, per jenis).
+ */
+export function buildLibraryStats(input: {
+  universeModuleIds: readonly number[];
+  universeWorksheetIds: readonly number[];
+  totalKontributor: number;
+  viewerCopiedModuleIds: ReadonlySet<number>;
+  viewerCopiedWorksheetIds: ReadonlySet<number>;
+}): LibraryStats {
+  let sudahDisalin = 0;
+  for (const id of input.universeModuleIds) {
+    if (input.viewerCopiedModuleIds.has(id)) sudahDisalin += 1;
+  }
+  for (const id of input.universeWorksheetIds) {
+    if (input.viewerCopiedWorksheetIds.has(id)) sudahDisalin += 1;
+  }
+  return {
+    total_items: input.universeModuleIds.length + input.universeWorksheetIds.length,
+    total_kontributor: input.totalKontributor,
+    sudah_disalin_count: sudahDisalin,
   };
 }
 

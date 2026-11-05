@@ -11,8 +11,10 @@ import {
   buildApprovalQueueEntry,
   buildContributorSummaries,
   buildLibraryModuleEntry,
+  buildLibraryStats,
   buildLibraryWorksheetEntry,
   copiedSourceIdSet,
+  countCopiesBySourceId,
   copyGuard,
   decisionGuard,
   isLibraryApprover,
@@ -105,6 +107,35 @@ libraryRoutes.get("/", requireRole("guru"), async (c) => {
   );
   const kontributorTotals = new Map(contributors.map((summary) => [summary.teacher_id, summary.total]));
 
+  // Statistik hero katalog: juga dari seluruh semesta tayang (bukan hasil
+  // saringan), agar panel sambutan halaman stabil saat menyaring. Irisan
+  // salinan milik penampil dengan semesta memakai pendekatan
+  // copiedSourceIdSet yang sama seperti penanda sudah_disalin, tetapi
+  // cakupannya seluruh semesta — bukan hanya halaman hasil saringan.
+  const universeModuleRows = await db
+    .select({ id: modules.id })
+    .from(modules)
+    .where(and(eq(modules.isShared, true), ne(modules.teacherId, user.userId)));
+  const universeWorksheetRows = await db
+    .select({ id: worksheets.id })
+    .from(worksheets)
+    .where(and(eq(worksheets.isShared, true), ne(worksheets.teacherId, user.userId)));
+  const viewerModuleCopyRows = await db
+    .select({ copiedFromId: modules.copiedFromId })
+    .from(modules)
+    .where(eq(modules.teacherId, user.userId));
+  const viewerWorksheetCopyRows = await db
+    .select({ copiedFromId: worksheets.copiedFromId })
+    .from(worksheets)
+    .where(eq(worksheets.teacherId, user.userId));
+  const stats = buildLibraryStats({
+    universeModuleIds: universeModuleRows.map((row) => row.id),
+    universeWorksheetIds: universeWorksheetRows.map((row) => row.id),
+    totalKontributor: contributors.length,
+    viewerCopiedModuleIds: copiedSourceIdSet(viewerModuleCopyRows),
+    viewerCopiedWorksheetIds: copiedSourceIdSet(viewerWorksheetCopyRows),
+  });
+
   const moduleEntries = [];
   if (kindParam === "all" || kindParam === "module") {
     const rows = await db
@@ -115,6 +146,7 @@ libraryRoutes.get("/", requireRole("guru"), async (c) => {
         teacherId: modules.teacherId,
         ownerName: users.name,
         sharedAt: modules.sharedAt,
+        coverKey: modules.coverKey,
       })
       .from(modules)
       .innerJoin(users, eq(users.id, modules.teacherId))
@@ -131,6 +163,7 @@ libraryRoutes.get("/", requireRole("guru"), async (c) => {
     const blockCounts = new Map<number, number>();
     const sharedWorksheetCounts = new Map<number, number>();
     const copiedModuleIds = new Set<number>();
+    const salinanModuleCounts = new Map<number, number>();
     if (ids.length > 0) {
       // Satu query untuk semua id di halaman ini: salinan MILIK peminta
       // (keadaan apa pun) yang copied_from_id-nya menunjuk ke katalog ini.
@@ -139,6 +172,19 @@ libraryRoutes.get("/", requireRole("guru"), async (c) => {
         .from(modules)
         .where(and(eq(modules.teacherId, user.userId), inArray(modules.copiedFromId, ids)));
       for (const id of copiedSourceIdSet(copyRows)) copiedModuleIds.add(id);
+      // Satu query berkelompok untuk semua id di halaman ini: berapa
+      // salinan yang MASIH ADA dari tiap modul, milik guru mana pun
+      // (bahan lencana "Disalin {n} kali" dan rak Populer di halaman).
+      const salinanRows = await db
+        .select({ copiedFromId: modules.copiedFromId, count: sql<number>`count(${modules.id})` })
+        .from(modules)
+        .where(inArray(modules.copiedFromId, ids))
+        .groupBy(modules.copiedFromId);
+      for (const [sourceId, count] of countCopiesBySourceId(
+        salinanRows.map((row) => ({ copiedFromId: row.copiedFromId, count: Number(row.count) })),
+      )) {
+        salinanModuleCounts.set(sourceId, count);
+      }
       const blockRows = await db
         .select({ moduleId: moduleBlocks.moduleId, count: sql<number>`count(${moduleBlocks.id})` })
         .from(moduleBlocks)
@@ -164,9 +210,11 @@ libraryRoutes.get("/", requireRole("guru"), async (c) => {
           ownerName: row.ownerName,
           kontributorTotal: kontributorTotals.get(row.teacherId) ?? 0,
           sharedAt: row.sharedAt,
+          coverKey: row.coverKey,
           blockCount: blockCounts.get(row.id) ?? 0,
           sharedWorksheetCount: sharedWorksheetCounts.get(row.id) ?? 0,
           sudahDisalin: copiedModuleIds.has(row.id),
+          salinanCount: salinanModuleCounts.get(row.id) ?? 0,
         }),
       );
     }
@@ -198,12 +246,25 @@ libraryRoutes.get("/", requireRole("guru"), async (c) => {
     const ids = rows.map((row) => row.id);
     const itemStats = new Map<number, { count: number; points: number }>();
     const copiedWorksheetIds = new Set<number>();
+    const salinanWorksheetCounts = new Map<number, number>();
     if (ids.length > 0) {
       const copyRows = await db
         .select({ copiedFromId: worksheets.copiedFromId })
         .from(worksheets)
         .where(and(eq(worksheets.teacherId, user.userId), inArray(worksheets.copiedFromId, ids)));
       for (const id of copiedSourceIdSet(copyRows)) copiedWorksheetIds.add(id);
+      // Pasangan query berkelompok di sisi modul: salinan LKPD yang masih
+      // ada per sumber, milik guru mana pun.
+      const salinanRows = await db
+        .select({ copiedFromId: worksheets.copiedFromId, count: sql<number>`count(${worksheets.id})` })
+        .from(worksheets)
+        .where(inArray(worksheets.copiedFromId, ids))
+        .groupBy(worksheets.copiedFromId);
+      for (const [sourceId, count] of countCopiesBySourceId(
+        salinanRows.map((row) => ({ copiedFromId: row.copiedFromId, count: Number(row.count) })),
+      )) {
+        salinanWorksheetCounts.set(sourceId, count);
+      }
       const statRows = await db
         .select({
           worksheetId: worksheetItems.worksheetId,
@@ -229,6 +290,7 @@ libraryRoutes.get("/", requireRole("guru"), async (c) => {
           itemCount: stats.count,
           totalPoints: stats.points,
           sudahDisalin: copiedWorksheetIds.has(row.id),
+          salinanCount: salinanWorksheetCounts.get(row.id) ?? 0,
         }),
       );
     }
@@ -258,6 +320,7 @@ libraryRoutes.get("/", requireRole("guru"), async (c) => {
     approver,
     pending_count: pendingCount,
     contributors,
+    stats,
   });
 });
 

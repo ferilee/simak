@@ -10,16 +10,20 @@ import {
   approvalKindLabel,
   approvalTarikPath,
   approvalToLibraryEntry,
+  contributorChipLabel,
   copiedDraftHref,
   copyConfirmText,
   formatRequestedDate,
   formatSharedDate,
   isSudahDisalin,
+  kontributorBadgeLabel,
   libraryEntryMeta,
   libraryKindLabel,
+  resolveSelectedContributor,
   tarikConfirmText,
   SUDAH_DISALIN_LABEL,
   type ApprovalEntry,
+  type ContributorSummary,
   type LibraryEntry,
   type LibraryKindFilter,
 } from "../../../lib/perpustakaan";
@@ -35,7 +39,13 @@ import { useConfirm } from "../../../components/ConfirmDialog";
 // sebagai Draf miliknya sendiri. Materi sendiri tidak pernah tampil di
 // sini; API menegakkan itu, halaman hanya merender.
 
-type LibraryResponse = { ok: true; data: LibraryEntry[]; approver?: boolean; pending_count?: number };
+type LibraryResponse = {
+  ok: true;
+  data: LibraryEntry[];
+  approver?: boolean;
+  pending_count?: number;
+  contributors?: ContributorSummary[];
+};
 type ApprovalsResponse = { ok: true; data: ApprovalEntry[] };
 type MeResponse = { ok: true; user: { role: "guru" | "murid" } };
 
@@ -102,6 +112,11 @@ export default function PerpustakaanPage() {
   const [forbidden, setForbidden] = useState(false);
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<LibraryKindFilter>("all");
+  // Saringan kontributor: daftarnya datang dari meta respons katalog
+  // (seluruh semesta tayang), pilihannya teacher_id guru penyumbang;
+  // null = semua kontributor.
+  const [contributors, setContributors] = useState<ContributorSummary[]>([]);
+  const [selectedContributor, setSelectedContributor] = useState<number | null>(null);
   const [entries, setEntries] = useState<LibraryEntry[] | null>(null);
   const [loadError, setLoadError] = useState("");
   const [preview, setPreview] = useState<PreviewState | null>(null);
@@ -147,12 +162,18 @@ export default function PerpustakaanPage() {
         const params = new URLSearchParams();
         if (query.trim()) params.set("q", query.trim());
         if (kind !== "all") params.set("kind", kind);
+        if (selectedContributor !== null) params.set("teacher_id", String(selectedContributor));
         const suffix = params.toString() ? `?${params.toString()}` : "";
         const response = await apiRequest<LibraryResponse>(`/library${suffix}`);
         if (!cancelled) {
           setEntries(response.data);
           setIsApprover(response.approver === true);
           setPendingCount(response.pending_count ?? 0);
+          const freshContributors = response.contributors ?? [];
+          setContributors(freshContributors);
+          // Kontributor terpilih yang sudah tidak punya butir tayang
+          // gugur sendiri ke "Semua kontributor" pada muatan berikutnya.
+          setSelectedContributor((current) => resolveSelectedContributor(current, freshContributors));
         }
       } catch (error) {
         if (!cancelled) setLoadError(error instanceof Error ? error.message : "Katalog belum dapat dimuat.");
@@ -161,7 +182,7 @@ export default function PerpustakaanPage() {
     return () => {
       cancelled = true;
     };
-  }, [query, kind, forbidden, listVersion]);
+  }, [query, kind, selectedContributor, forbidden, listVersion]);
 
   useEffect(() => {
     if (forbidden || !isApprover) return;
@@ -268,7 +289,7 @@ export default function PerpustakaanPage() {
     }
   }
 
-  const filtersActive = query.trim() !== "" || kind !== "all";
+  const filtersActive = query.trim() !== "" || kind !== "all" || selectedContributor !== null;
 
   return (
     <main style={styles.container}>
@@ -371,6 +392,29 @@ export default function PerpustakaanPage() {
                 </button>
               ))}
             </div>
+            {contributors.length > 0 ? (
+              <div style={styles.chipRow} role="group" aria-label="Saring kontributor">
+                <button
+                  type="button"
+                  aria-pressed={selectedContributor === null}
+                  onClick={() => setSelectedContributor(null)}
+                  style={selectedContributor === null ? styles.chipActive : styles.chip}
+                >
+                  Semua kontributor
+                </button>
+                {contributors.map((contributor) => (
+                  <button
+                    key={contributor.teacher_id}
+                    type="button"
+                    aria-pressed={selectedContributor === contributor.teacher_id}
+                    onClick={() => setSelectedContributor(contributor.teacher_id)}
+                    style={selectedContributor === contributor.teacher_id ? styles.chipActive : styles.chip}
+                  >
+                    {contributorChipLabel(contributor)}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
 
           {entries === null && !loadError ? <p style={styles.muted}>Memuat katalog...</p> : null}
@@ -391,7 +435,10 @@ export default function PerpustakaanPage() {
                     {entry.subject ? <span style={styles.subjectChip}>{entry.subject}</span> : null}
                   </div>
                   <h2 style={styles.cardTitle}><MathText text={entry.title} /></h2>
-                  <p style={styles.meta}>oleh {entry.owner_name}</p>
+                  <p style={styles.meta}>
+                    oleh {entry.owner_name}
+                    <span style={styles.contributorBadge}>{kontributorBadgeLabel(entry)}</span>
+                  </p>
                   <p style={styles.meta}>{libraryEntryMeta(entry)}</p>
                   {formatSharedDate(entry.shared_at) ? (
                     <p style={styles.meta}>Dibagikan {formatSharedDate(entry.shared_at)}</p>
@@ -636,6 +683,7 @@ const styles: Record<string, CSSProperties> = {
   cardHeader: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
   kindChip: { background: "#eff8ff", color: "#175cd3", border: "1px solid #b2ddff", borderRadius: 999, padding: "1px 10px", fontSize: 12, fontWeight: 700 },
   subjectChip: { background: "#f8f9fc", color: "#475467", border: "1px solid #eaecf0", borderRadius: 999, padding: "1px 10px", fontSize: 12, fontWeight: 600 },
+  contributorBadge: { background: "#f8f9fc", color: "#475467", border: "1px solid #eaecf0", borderRadius: 999, padding: "1px 8px", fontSize: 12, fontWeight: 600, marginLeft: 8, whiteSpace: "nowrap" },
   cardTitle: { fontSize: 19, margin: 0 },
   meta: { color: "#475467", fontSize: 14, margin: 0 },
   cardActions: { display: "flex", gap: 10, flexWrap: "wrap", marginTop: 4 },

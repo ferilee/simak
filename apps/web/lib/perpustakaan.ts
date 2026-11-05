@@ -9,7 +9,9 @@ export type LibraryEntry = {
   id: number;
   title: string;
   subject: string | null;
+  teacher_id?: number;
   owner_name: string;
+  kontributor_total?: number;
   shared_at: string | null;
   sudah_disalin?: boolean;
   block_count?: number;
@@ -32,6 +34,44 @@ export function isSudahDisalin(entry: LibraryEntry): boolean {
 }
 
 export type LibraryKindFilter = "all" | "module" | "worksheet";
+
+// ---------------------------------------------------------------------------
+// Filter kontributor: ringkasan per guru penyumbang dari meta respons
+// katalog (dihitung API dari seluruh semesta tayang, bukan dari saringan
+// saat ini). Chip-nya menyaring daftar per guru; lencana pada kartu
+// menunjukkan total butir tayang pemilik kartu itu.
+// ---------------------------------------------------------------------------
+
+export type ContributorSummary = {
+  teacher_id: number;
+  name: string;
+  modul_count: number;
+  lkpd_count: number;
+  total: number;
+};
+
+/** Label chip kontributor: nama + total tayangnya dalam kurung. */
+export function contributorChipLabel(contributor: ContributorSummary): string {
+  return `${contributor.name} (${contributor.total})`;
+}
+
+/** Teks lencana jumlah dibagikan pada byline kartu katalog. */
+export function kontributorBadgeLabel(entry: LibraryEntry): string {
+  return `${entry.kontributor_total ?? 0} dibagikan`;
+}
+
+/**
+ * Saringan kontributor yang tetap sah sesudah daftar kontributor dimuat
+ * ulang: pilihan yang pemiliknya sudah tidak punya butir tayang (misalnya
+ * butir terakhirnya ditarik) gugur kembali ke "Semua kontributor" (null).
+ */
+export function resolveSelectedContributor(
+  selected: number | null,
+  contributors: readonly ContributorSummary[],
+): number | null {
+  if (selected === null) return null;
+  return contributors.some((contributor) => contributor.teacher_id === selected) ? selected : null;
+}
 
 export function libraryKindLabel(kind: LibraryEntry["kind"]): string {
   return kind === "module" ? "Materi" : "LKPD";

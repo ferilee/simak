@@ -6,8 +6,9 @@
 // copied (sudah_disalin). Such a card shows a DISABLED "✓ Sudah disalin"
 // button instead of the copy action, while Pratinjau stays enabled and
 // the not-yet-copied flow (confirm → copy → draft link) is untouched.
-// The predicate + label are tested behaviorally; the page wiring is
-// locked statically against the page source.
+// The predicate + label are tested behaviorally; the panel wiring is
+// locked statically against the panel source (components/LibraryPanel.tsx
+// — the library UI lives inside the guru shell now).
 import { readFileSync } from "node:fs";
 import { isSudahDisalin, SUDAH_DISALIN_LABEL } from "./perpustakaan.ts";
 
@@ -38,12 +39,12 @@ const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
 }
 
 // ---------------------------------------------------------------------------
-// Case 2 — Card wiring on the library page (static locks).
+// Case 2 — Card wiring on the library panel (static locks).
 // ---------------------------------------------------------------------------
 {
-  const page = read("../app/guru/perpustakaan/page.tsx");
+  const page = read("../components/LibraryPanel.tsx");
   check("page imports the predicate + label from the lib",
-    page.includes("isSudahDisalin") && page.includes("SUDAH_DISALIN_LABEL") && page.includes('from "../../../lib/perpustakaan"'));
+    page.includes("isSudahDisalin") && page.includes("SUDAH_DISALIN_LABEL") && page.includes('from "../lib/perpustakaan"'));
   check("copied card renders the disabled button with the label",
     page.includes("disabled style={styles.primaryButtonDisabled}") && page.includes("{SUDAH_DISALIN_LABEL}"));
   check("the predicate drives exactly one branch (the card copy button)",

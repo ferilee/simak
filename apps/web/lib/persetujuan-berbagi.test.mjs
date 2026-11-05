@@ -116,10 +116,12 @@ const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
 }
 
 // ---------------------------------------------------------------------------
-// Case 6 — Library page wiring: queue section is approver-only (static).
+// Case 6 — Library panel wiring: queue section is approver-only (static).
+// (The library UI lives in components/LibraryPanel.tsx, inside the guru
+// shell; the old route file only redirects.)
 // ---------------------------------------------------------------------------
 {
-  const page = read("../app/guru/perpustakaan/page.tsx");
+  const page = read("../components/LibraryPanel.tsx");
   check("page reads the viewer meta from the catalog response",
     page.includes("response.approver === true") && page.includes("response.pending_count"));
   check("page fetches the approvals queue", page.includes('"/library/approvals"'));

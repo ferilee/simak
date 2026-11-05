@@ -100,7 +100,7 @@ check(
 );
 check(
   "bilah tab hanya dirender pada Langkah 5",
-  page.includes('{guruStep === 4 ? (') && page.includes('<nav className="hasil-tabs" aria-label="Bagian pantau hasil">'),
+  page.includes('{langkahTampil && guruStep === 4 ? (') && page.includes('<nav className="hasil-tabs" aria-label="Bagian pantau hasil">'),
 );
 const tabOrder = ['{ key: "nilai"', '{ key: "rekap"', '{ key: "rentang"', '{ key: "impor"', '{ key: "integritas"']
   .map((needle) => page.indexOf(needle));
@@ -122,11 +122,11 @@ check(
 );
 check(
   "setiap seksi Langkah 5 terikat tabnya (integritas/rentang/impor 1x, rekap 3x, nilai 1x)",
-  count(page, 'data-active={guruStep === 4 && hasilTab === "integritas"}') === 1 &&
-    count(page, 'data-active={guruStep === 4 && hasilTab === "rentang"}') === 1 &&
-    count(page, 'data-active={guruStep === 4 && hasilTab === "impor"}') === 1 &&
-    count(page, 'data-active={guruStep === 4 && hasilTab === "rekap"}') === 3 &&
-    count(page, 'data-active={guruStep === 4 && hasilTab === "nilai"}') === 1,
+  count(page, 'data-active={langkahTampil && guruStep === 4 && hasilTab === "integritas"}') === 1 &&
+    count(page, 'data-active={langkahTampil && guruStep === 4 && hasilTab === "rentang"}') === 1 &&
+    count(page, 'data-active={langkahTampil && guruStep === 4 && hasilTab === "impor"}') === 1 &&
+    count(page, 'data-active={langkahTampil && guruStep === 4 && hasilTab === "rekap"}') === 3 &&
+    count(page, 'data-active={langkahTampil && guruStep === 4 && hasilTab === "nilai"}') === 1,
 );
 check(
   "tidak ada lagi seksi Langkah 5 tanpa syarat tab",

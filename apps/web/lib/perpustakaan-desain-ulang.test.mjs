@@ -7,7 +7,9 @@
 // The redesign is presentation-only: every handler, endpoint, and label
 // of the earlier phases must survive. The pure decisions (popular
 // picking, cover determinism, stats chips, sidebar bars) are tested
-// behaviorally; the page wiring is locked statically.
+// behaviorally; the panel wiring is locked statically. The UI lives in
+// components/LibraryPanel.tsx (inside the guru shell) since the
+// in-shell move; the old route file only redirects.
 import { readFileSync } from "node:fs";
 import {
   COVER_GRADIENTS,
@@ -126,11 +128,11 @@ const entry = (overrides) => ({
 }
 
 // ---------------------------------------------------------------------------
-// Case 4 — Page wiring (static locks): hero, shell, shelf, covers,
+// Case 4 — Panel wiring (static locks): hero, shell, shelf, covers,
 // sidebar — and every pre-existing handler/label intact.
 // ---------------------------------------------------------------------------
 {
-  const page = read("../app/guru/perpustakaan/page.tsx");
+  const page = read("../components/LibraryPanel.tsx");
   const css = read("../app/globals.css");
   const lib = read("./perpustakaan.ts");
 

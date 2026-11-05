@@ -1714,6 +1714,21 @@ a {
   background: var(--wizard-accent-ring);
 }
 
+/* Entri Perpustakaan Bersama kini tombol pengalih tampilan di cangkang
+   (bukan tautan halaman): samakan rupa tombol dengan tautan lamanya dan
+   tandai keadaan aktifnya selama panel perpustakaan tampil. */
+button.wizard-library-link {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wizard-library-link.is-active {
+  background: var(--wizard-accent-ring);
+  box-shadow: inset 0 0 0 1px var(--wizard-accent);
+}
+
 .wizard-library-link .wizard-library-icon {
   display: grid;
   place-items: center;

@@ -54,11 +54,13 @@ const CONTRIBUTORS = [
 }
 
 // ---------------------------------------------------------------------------
-// Case 2 — Page wiring (static locks): chips row, teacher_id fetch,
+// Case 2 — Panel wiring (static locks): chips row, teacher_id fetch,
 // graceful fallback, card badge, and the pre-existing behaviors intact.
+// (The library UI lives in components/LibraryPanel.tsx, inside the guru
+// shell; the old route file only redirects.)
 // ---------------------------------------------------------------------------
 {
-  const page = read("../app/guru/perpustakaan/page.tsx");
+  const page = read("../components/LibraryPanel.tsx");
   const lib = read("./perpustakaan.ts");
 
   check("lib types carry the contributor fields",

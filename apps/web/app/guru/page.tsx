@@ -48,6 +48,7 @@ import { useConfirm } from "../../components/ConfirmDialog";
 import { MathText } from "../../components/MathContent";
 import { markdownToHtml, htmlToMarkdown } from "../../components/markdown";
 import { RichTextEditor, sanitizeBlockHtml } from "../../components/RichTextEditor";
+import { LibraryPanel } from "../../components/LibraryPanel";
 
 type ModuleSummary = {
   id: number;
@@ -330,6 +331,11 @@ export default function GuruPage() {
   // diterapkan sekali pada muatan pertama, agar muat ulang data berikutnya
   // tidak merebut pilihan guru.
   const libraryDeepLinkRef = useRef(false);
+  // Draf salinan yang diminta dibuka dari panel Perpustakaan Bersama di
+  // dalam cangkang yang sama: penyalinan terjadi sesudah data ruang guru
+  // termuat, jadi permintaannya dicatat di sini lalu diterapkan oleh
+  // loadModules berikutnya dengan logika yang sama seperti tautan dalam.
+  const pendingCopiedDraftRef = useRef<{ kind: "module" | "worksheet"; id: number } | null>(null);
   const [blockType, setBlockType] = useState<"teks" | "sub_bab" | "video" | "lampiran">("teks");
   const [attachment, setAttachment] = useState<File | null>(null);
   const [moduleBlocks, setModuleBlocks] = useState<ModuleBlock[]>([]);
@@ -472,6 +478,15 @@ export default function GuruPage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [guruStep, setGuruStep] = useState(0);
+  // Tampilan bilah kanan cangkang: lima langkah wizard ATAU Perpustakaan
+  // Bersama. Berpindah ke perpustakaan tidak mengubah guruStep, jadi
+  // kembali ke langkah menampilkan keadaan terakhir langkah itu persis.
+  const [guruView, setGuruView] = useState<"langkah" | "perpustakaan">("langkah");
+  const langkahTampil = guruView === "langkah";
+  // Panel perpustakaan dipasang malas pada kunjungan pertama, lalu tidak
+  // pernah dilepas (disembunyikan lewat data-active seperti panel langkah)
+  // agar keadaan cari/saring/gulirnya utuh saat guru bolak-balik.
+  const [libraryMounted, setLibraryMounted] = useState(false);
   const [previewModule, setPreviewModule] = useState<ModuleSummary | null>(null);
   const [previewBlocks, setPreviewBlocks] = useState<ModuleBlock[] | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -779,6 +794,46 @@ export default function GuruPage() {
   // Rekap penugasan: pencarian teks pada judul dan nama kelas.
   const visibleRekapAssignments = filterAssignmentsByQuery(assignments, rekapQuery);
 
+  // Membuka satu draf (hasil salinan Perpustakaan Bersama) di langkahnya:
+  // modul di Langkah 1, LKPD di Langkah 2, hanya bila drafnya memang ada
+  // di daftar yang termuat. Dipakai bersama oleh tautan dalam
+  // ?modul=/?lkpd= dan callback panel perpustakaan, agar kedua jalan
+  // berperilaku persis sama.
+  function selectDraftFromLists(
+    kind: "module" | "worksheet",
+    id: number,
+    moduleList: ModuleSummary[],
+    worksheetList: WorksheetSummary[],
+  ): boolean {
+    if (kind === "module") {
+      if (!moduleList.some((module) => module.id === id)) return false;
+      setSelectedId(id);
+      setGuruStep(0);
+      return true;
+    }
+    if (!worksheetList.some((worksheet) => worksheet.id === id)) return false;
+    setSelectedWorksheetId(id);
+    setGuruStep(1);
+    return true;
+  }
+
+  // Perpustakaan Bersama dibuka sebagai tampilan bilah kanan cangkang —
+  // bukan halaman baru; panelnya dipasang pada kunjungan pertama ini.
+  function openLibraryView() {
+    setLibraryMounted(true);
+    setGuruView("perpustakaan");
+  }
+
+  // Callback panel Perpustakaan Bersama sesudah guru menyalin: catat
+  // drafnya, kembali ke tampilan langkah, lalu muat ulang daftar agar
+  // draf salinannya ada dan dibuka oleh loadModules (logika yang sama
+  // seperti tautan dalam ?modul=/?lkpd=).
+  function openCopiedDraft(kind: "module" | "worksheet", id: number) {
+    pendingCopiedDraftRef.current = { kind, id };
+    setGuruView("langkah");
+    void loadModules();
+  }
+
   async function loadModules() {
     try {
       const me = await apiRequest<MeResponse>("/auth/me");
@@ -800,16 +855,28 @@ export default function GuruPage() {
       if (!libraryDeepLinkRef.current) {
         libraryDeepLinkRef.current = true;
         const params = new URLSearchParams(window.location.search);
+        // Pengalihan dari rute lama /guru/perpustakaan tiba dengan
+        // ?tampilan=perpustakaan: buka tampilan perpustakaan di bilah
+        // kanan (panelnya sekalian dipasang).
+        if (params.get("tampilan") === "perpustakaan") {
+          setLibraryMounted(true);
+          setGuruView("perpustakaan");
+        }
         const moduleParam = Number(params.get("modul"));
-        if (Number.isInteger(moduleParam) && response.data.some((module) => module.id === moduleParam)) {
-          setSelectedId(moduleParam);
-          setGuruStep(0);
+        if (Number.isInteger(moduleParam)) {
+          selectDraftFromLists("module", moduleParam, response.data, worksheetResponse.data);
         }
         const worksheetParam = Number(params.get("lkpd"));
-        if (Number.isInteger(worksheetParam) && worksheetResponse.data.some((worksheet) => worksheet.id === worksheetParam)) {
-          setSelectedWorksheetId(worksheetParam);
-          setGuruStep(1);
+        if (Number.isInteger(worksheetParam)) {
+          selectDraftFromLists("worksheet", worksheetParam, response.data, worksheetResponse.data);
         }
+      }
+      // Draf salinan yang diminta dibuka dari panel perpustakaan di dalam
+      // cangkang: daftar baru saja dimuat ulang, jadi drafnya kini ada.
+      const pendingDraft = pendingCopiedDraftRef.current;
+      if (pendingDraft) {
+        pendingCopiedDraftRef.current = null;
+        selectDraftFromLists(pendingDraft.kind, pendingDraft.id, response.data, worksheetResponse.data);
       }
       setClasses(classResponse.data.filter((kelas) => !kelas.is_archived));
       setAssignments(assignmentResponse.data);
@@ -2588,9 +2655,9 @@ export default function GuruPage() {
               <button
                 key={step.title}
                 type="button"
-                className={`wizard-step ${guruStep === index ? "is-active" : ""} ${guruStepComplete[index] ? "is-complete" : ""}`}
-                onClick={() => setGuruStep(index)}
-                aria-current={guruStep === index ? "step" : undefined}
+                className={`wizard-step ${langkahTampil && guruStep === index ? "is-active" : ""} ${guruStepComplete[index] ? "is-complete" : ""}`}
+                onClick={() => { setGuruView("langkah"); setGuruStep(index); }}
+                aria-current={langkahTampil && guruStep === index ? "step" : undefined}
               >
                 <span className="wizard-step-number">{guruStepComplete[index] ? "✓" : index + 1}</span>
                 <span>
@@ -2603,7 +2670,12 @@ export default function GuruPage() {
               </button>
             ))}
           </nav>
-          <Link href="/guru/perpustakaan" className="wizard-library-link">
+          <button
+            type="button"
+            className={`wizard-library-link${guruView === "perpustakaan" ? " is-active" : ""}`}
+            onClick={openLibraryView}
+            aria-current={guruView === "perpustakaan" ? "page" : undefined}
+          >
             <span className="wizard-library-icon" aria-hidden="true">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" /></svg>
             </span>
@@ -2611,16 +2683,26 @@ export default function GuruPage() {
               <strong>Perpustakaan Bersama</strong>
               <small>Materi &amp; LKPD dari guru lain</small>
             </span>
-          </Link>
+          </button>
           <p className="wizard-side-note">Mulai dari materi, lanjutkan ke LKPD dan kelas, lalu pantau hasil belajar murid.</p>
         </aside>
 
         <section className="wizard-main" aria-label="Isi ruang guru">
           <div className="wizard-main-heading">
             <div>
-              <p className="eyebrow">Langkah {guruStep + 1} dari {guruSteps.length}</p>
-              <h2>{guruSteps[guruStep].title}</h2>
-              <p>{guruSteps[guruStep].description}.</p>
+              {guruView === "perpustakaan" ? (
+                <>
+                  <p className="eyebrow">Perpustakaan Bersama</p>
+                  <h2>Perpustakaan Bersama</h2>
+                  <p>Materi &amp; LKPD dari guru lain.</p>
+                </>
+              ) : (
+                <>
+                  <p className="eyebrow">Langkah {guruStep + 1} dari {guruSteps.length}</p>
+                  <h2>{guruSteps[guruStep].title}</h2>
+                  <p>{guruSteps[guruStep].description}.</p>
+                </>
+              )}
             </div>
             <div className="guru-heading-indicators">
               {integrityAlerts.length > 0 ? <span className="guru-integrity-badge">{integrityAlerts.length} perlu ditinjau</span> : null}
@@ -2629,7 +2711,7 @@ export default function GuruPage() {
           </div>
 
           <div className="guru-content">
-      <section className="wizard-step-panel module-overview" data-active={guruStep === 0}>
+      <section className="wizard-step-panel module-overview" data-active={langkahTampil && guruStep === 0}>
         <div className="module-section-heading">
           <div>
             <h2 style={styles.sectionTitle}>Materi saya</h2>
@@ -2737,7 +2819,7 @@ export default function GuruPage() {
         )}
       </section>
 
-      <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 2} style={styles.panel}>
+      <section className="wizard-step-panel compact-resource-section" data-active={langkahTampil && guruStep === 2} style={styles.panel}>
         <div className="module-section-heading">
           <div>
             <h2 style={styles.sectionTitle}>Kelas saya</h2>
@@ -2757,7 +2839,7 @@ export default function GuruPage() {
       </section>
 
       {selectedId ? (
-        <section id="panel-isi-materi" className="wizard-step-panel" data-active={guruStep === 0} style={styles.panel}>
+        <section id="panel-isi-materi" className="wizard-step-panel" data-active={langkahTampil && guruStep === 0} style={styles.panel}>
           {selectedModule ? (
             <div className="selected-resource-heading">
               <div>
@@ -2942,7 +3024,7 @@ export default function GuruPage() {
         </section>
       ) : null}
 
-      <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 1} style={styles.panel}>
+      <section className="wizard-step-panel compact-resource-section" data-active={langkahTampil && guruStep === 1} style={styles.panel}>
         <div className="module-section-heading">
           <div>
             <h2 style={styles.sectionTitle}>LKPD</h2>
@@ -3035,7 +3117,7 @@ export default function GuruPage() {
       </section>
 
       {selectedWorksheetId ? (
-        <section id="panel-soal-lkpd" className="wizard-step-panel selected-resource-panel" data-active={guruStep === 1} style={styles.panel}>
+        <section id="panel-soal-lkpd" className="wizard-step-panel selected-resource-panel" data-active={langkahTampil && guruStep === 1} style={styles.panel}>
           <div className="selected-resource-heading">
             <div>
               <p className="module-section-summary">LKPD terpilih</p>
@@ -3140,7 +3222,7 @@ export default function GuruPage() {
         </section>
       ) : null}
 
-      <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 3} style={styles.panel}>
+      <section className="wizard-step-panel compact-resource-section" data-active={langkahTampil && guruStep === 3} style={styles.panel}>
         <div className="module-section-heading">
           <div>
             <h2 style={styles.sectionTitle}>Penugasan ke kelas</h2>
@@ -3265,7 +3347,7 @@ export default function GuruPage() {
       </section>
 
       {selectedGroupAssignmentId ? (
-        <section className="wizard-step-panel" data-active={guruStep === 3} style={styles.panel}>
+        <section className="wizard-step-panel" data-active={langkahTampil && guruStep === 3} style={styles.panel}>
           <h2 style={styles.sectionTitle}>Kelompok penugasan</h2>
           {(() => {
             const panelAssignment = assignments.find((assignment) => assignment.id === selectedGroupAssignmentId);
@@ -3399,7 +3481,7 @@ export default function GuruPage() {
         </section>
       ) : null}
 
-      {guruStep === 4 ? (
+      {langkahTampil && guruStep === 4 ? (
         <nav className="hasil-tabs" aria-label="Bagian pantau hasil">
           {([
             { key: "nilai", label: "Nilai", badge: ungradedBadgeCount },
@@ -3422,7 +3504,7 @@ export default function GuruPage() {
         </nav>
       ) : null}
 
-      <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 4 && hasilTab === "integritas"} style={styles.panel}>
+      <section className="wizard-step-panel compact-resource-section" data-active={langkahTampil && guruStep === 4 && hasilTab === "integritas"} style={styles.panel}>
         <div className="module-section-heading">
           <div>
             <h2 style={styles.sectionTitle}>Indikasi integritas</h2>
@@ -3489,7 +3571,7 @@ export default function GuruPage() {
         )}
       </section>
 
-      <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 4 && hasilTab === "rentang"} style={styles.panel}>
+      <section className="wizard-step-panel compact-resource-section" data-active={langkahTampil && guruStep === 4 && hasilTab === "rentang"} style={styles.panel}>
         <div className="module-section-heading">
           <div>
             <h2 style={styles.sectionTitle}>Rekap berdasarkan rentang tanggal</h2>
@@ -3541,7 +3623,7 @@ export default function GuruPage() {
         ) : null}
       </section>
 
-      <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 4 && hasilTab === "impor"} style={styles.panel}>
+      <section className="wizard-step-panel compact-resource-section" data-active={langkahTampil && guruStep === 4 && hasilTab === "impor"} style={styles.panel}>
         <div className="module-section-heading">
           <div>
             <h2 style={styles.sectionTitle}>Impor nilai RUAS</h2>
@@ -3567,7 +3649,7 @@ export default function GuruPage() {
         {ruasImportResult?.unmatched.length ? <div style={styles.warningBox}>Baris yang perlu diperiksa: {ruasImportResult.unmatched.map((row) => `${row.identifier} (${row.match_status})`).join(", ")}</div> : null}
       </section>
 
-      <section className="wizard-step-panel compact-resource-section" data-active={guruStep === 4 && hasilTab === "rekap"} style={styles.panel}>
+      <section className="wizard-step-panel compact-resource-section" data-active={langkahTampil && guruStep === 4 && hasilTab === "rekap"} style={styles.panel}>
         <div className="module-section-heading">
           <div>
             <h2 style={styles.sectionTitle}>Rekap penugasan</h2>
@@ -3590,7 +3672,7 @@ export default function GuruPage() {
       </section>
 
       {selectedReportAssignmentId ? (
-        <section ref={sessionReportPanelRef} className="wizard-step-panel" data-active={guruStep === 4 && hasilTab === "rekap"} style={styles.panel}>
+        <section ref={sessionReportPanelRef} className="wizard-step-panel" data-active={langkahTampil && guruStep === 4 && hasilTab === "rekap"} style={styles.panel}>
           <h2 style={styles.sectionTitle}>Rekap sesi</h2>
           {sessionReportLoading ? <p style={styles.muted}>Memuat rekap sesi...</p> : null}
           {!sessionReportLoading && sessionReport ? (
@@ -3628,7 +3710,7 @@ export default function GuruPage() {
       ) : null}
 
       {selectedAssignmentId ? (
-        <section ref={exitTicketPanelRef} className="wizard-step-panel" data-active={guruStep === 4 && hasilTab === "rekap"} style={styles.panel}>
+        <section ref={exitTicketPanelRef} className="wizard-step-panel" data-active={langkahTampil && guruStep === 4 && hasilTab === "rekap"} style={styles.panel}>
           <h2 style={styles.sectionTitle}>Ringkasan exit ticket</h2>
           {assignmentSummaryLoading ? <p style={styles.muted}>Memuat jawaban exit ticket...</p> : null}
           {!assignmentSummaryLoading && assignmentSummary?.students.every((student) => !student.exit_ticket) ? <p style={styles.empty}>Belum ada murid yang mengirim exit ticket untuk penugasan ini.</p> : null}
@@ -3702,7 +3784,7 @@ export default function GuruPage() {
         </section>
       ) : null}
 
-        <section className="wizard-step-panel teacher-grading-section" data-active={guruStep === 4 && hasilTab === "nilai"} style={styles.panel}>
+        <section className="wizard-step-panel teacher-grading-section" data-active={langkahTampil && guruStep === 4 && hasilTab === "nilai"} style={styles.panel}>
           <h2 style={styles.sectionTitle}>Pengumpulan LKPD</h2>
           <div className="grading-sticky-controls">
           <div style={styles.moduleToolbar}>
@@ -3911,12 +3993,20 @@ export default function GuruPage() {
             </div>
           ) : null}
         </section>
+
+      {libraryMounted ? (
+        <section className="wizard-step-panel" data-active={guruView === "perpustakaan"} style={styles.panel} aria-label="Perpustakaan Bersama">
+          <LibraryPanel onOpenCopiedDraft={openCopiedDraft} />
+        </section>
+      ) : null}
           </div>
 
+          {langkahTampil ? (
           <footer className="wizard-footer">
             <button type="button" className="button button-secondary" onClick={() => setGuruStep((current) => Math.max(0, current - 1))} disabled={guruStep === 0}>← Sebelumnya</button>
             <button type="button" className="button" onClick={() => setGuruStep((current) => Math.min(guruSteps.length - 1, current + 1))} disabled={guruStep === guruSteps.length - 1}>Langkah berikutnya →</button>
           </footer>
+          ) : null}
         </section>
       </div>
 

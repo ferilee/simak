@@ -3,10 +3,12 @@
 //   bun lib/perpustakaan-bersama.test.mjs
 //
 // The pure display helpers (kind label, card meta, copy confirm text,
-// shared date, draft deep link) are tested behaviorally; the page wiring
-// (sidebar link, share toggles with their confirm copy, attribution lines,
-// shared block renderer reuse, library page surfaces and empty states) is
-// locked statically against the page sources.
+// shared date, draft deep link) are tested behaviorally; the wiring
+// (sidebar entry, share toggles with their confirm copy, attribution
+// lines, shared block renderer reuse, library panel surfaces and empty
+// states) is locked statically against the sources. The library UI now
+// lives in components/LibraryPanel.tsx (inside the guru shell); the old
+// route file only redirects — see perpustakaan-di-cangkang.test.mjs.
 import { readFileSync } from "node:fs";
 import {
   copiedDraftHref,
@@ -83,9 +85,10 @@ const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
 // ---------------------------------------------------------------------------
 {
   const guru = read("../app/guru/page.tsx");
-  check("sidebar links to the library", guru.includes('href="/guru/perpustakaan"'));
-  check("sidebar link is labelled Perpustakaan Bersama", guru.includes("Perpustakaan Bersama"));
-  check("sidebar link carries the library icon svg", guru.includes("wizard-library-link") && guru.includes("M4 19.5v-15"));
+  check("sidebar entry switches the shell view (button), it is NOT a page link anymore",
+    guru.includes("onClick={openLibraryView}") && !guru.includes('href="/guru/perpustakaan"'));
+  check("sidebar entry is labelled Perpustakaan Bersama", guru.includes("Perpustakaan Bersama"));
+  check("sidebar entry carries the library icon svg", guru.includes("wizard-library-link") && guru.includes("M4 19.5v-15"));
 
   check("module share toggle handler exists", guru.includes("async function toggleModuleShare(module: ModuleSummary)"));
   check("module share-on asks first (confirmDialog)", /toggleModuleShare[\s\S]{0,1200}confirmDialog\(/.test(guru));
@@ -113,10 +116,11 @@ const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
 }
 
 // ---------------------------------------------------------------------------
-// Case 3 — Library page wiring.
+// Case 3 — Library panel wiring (components/LibraryPanel.tsx; the UI moved
+// into the guru shell — the old route only redirects now).
 // ---------------------------------------------------------------------------
 {
-  const page = read("../app/guru/perpustakaan/page.tsx");
+  const page = read("../components/LibraryPanel.tsx");
   check("page fetches the catalog", page.includes("`/library${suffix}`"));
   check("page sends q + kind filters", page.includes('params.set("q"') && page.includes('params.set("kind"'));
   check("kind chips cover Semua/Materi/LKPD", page.includes('"Semua"') && page.includes('"Materi"') && page.includes('"LKPD"'));
@@ -131,13 +135,13 @@ const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
   check("success links to the copied draft", page.includes("Buka draf salinan") && page.includes("copiedDraftHref"));
   check("module preview fetches the library module preview", page.includes("`/library/modules/${entry.id}`"));
   check("worksheet preview fetches the library worksheet preview", page.includes("`/library/worksheets/${entry.id}`"));
-  check("preview reuses the shared block renderer", page.includes("ModuleBlockPreview") && page.includes('from "../../../components/ModuleBlockPreview"'));
+  check("preview reuses the shared block renderer", page.includes("ModuleBlockPreview") && page.includes('from "./ModuleBlockPreview"'));
   check("page does NOT fork a video embed renderer", !page.includes("youtube-nocookie"));
   check("worksheet preview shows the teacher-only box", page.includes("Khusus guru") && page.includes("Kunci/Rubrik:"));
   check("worksheet preview shows rubric_max + points", page.includes("item.rubric_max") && page.includes("item.points"));
   check("worksheet preview marks the PG key option", page.includes('(kunci)'));
   check("preview has a back link to the list", page.includes("Kembali ke perpustakaan"));
-  check("page links back to the guru room", page.includes('href="/guru"'));
+  check("component drops the standalone back-to-guru link (the shell sidebar is always visible)", !page.includes('href="/guru"'));
   check("page is guru-gated client-side too", page.includes('me.user.role !== "guru"'));
 }
 

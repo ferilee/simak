@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { eq, and, asc, sql } from "drizzle-orm";
+import { eq, and, asc, inArray, sql } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { db, schema } from "@simak/db";
@@ -12,12 +12,13 @@ import {
 } from "@simak/shared";
 import { requireRole } from "../middleware/auth";
 import { nextShareState } from "../lib/library";
+import { moduleDeleteGuard } from "../lib/deletion";
 
 // Modul materi + bloknya (Tahap 1). Isi content_json wajib lolos skema Zod
 // moduleBlockContentSchema dari @simak/shared sebelum disimpan.
 export const moduleRoutes = new Hono();
 
-const { modules, moduleBlocks, activityLogs, worksheets } = schema;
+const { modules, moduleBlocks, activityLogs, assignments, worksheetAttempts, worksheets } = schema;
 
 type ModuleViewerStats = {
   viewer_count: number;
@@ -159,6 +160,58 @@ moduleRoutes.patch("/:id/share", requireRole("guru"), zValidator("json", shareMo
     ok: true,
     data: { ...serializeModule(updated!), shared_worksheet_count: Number(sharedCount?.count ?? 0) },
   });
+});
+
+// Hapus permanen modul beserta seluruh isinya. Penjaganya di
+// lib/deletion.ts: ditolak 409 bila ada penugasan yang menunjuk modul
+// ini ATAU salah satu LKPD-nya, atau bila ada murid yang sudah
+// mengerjakan LKPD apa pun di dalam modul ini. Objek penyimpanan
+// (sampul, lampiran blok) TIDAK ikut dihapus — salinan Perpustakaan
+// Bersama merujuk kunci yang sama, jadi berkas fisiknya harus bertahan.
+// Baris activity_logs yang menunjuk modul ini menjadi NULL lewat
+// onDelete "set null" pada skema; jejak aktivitas murid tidak hilang.
+moduleRoutes.delete("/:id", requireRole("guru"), async (c) => {
+  const user = c.get("user")!;
+  const moduleId = Number(c.req.param("id"));
+  if (!Number.isInteger(moduleId) || moduleId <= 0) return c.json({ ok: false, message: "ID modul tidak valid." }, 400);
+  const module = await ownedModule(user.userId, moduleId);
+  if (!module) return c.json({ ok: false, message: "Modul tidak ditemukan." }, 404);
+
+  const attachedWorksheets = await db.select({ id: worksheets.id }).from(worksheets).where(eq(worksheets.moduleId, moduleId));
+  const worksheetIds = attachedWorksheets.map((row) => row.id);
+  const [moduleAssignmentRefs] = await db
+    .select({ count: sql<number>`count(${assignments.id})` })
+    .from(assignments)
+    .where(eq(assignments.moduleId, moduleId));
+  const [worksheetAssignmentRefs] = worksheetIds.length
+    ? await db
+        .select({ count: sql<number>`count(${assignments.id})` })
+        .from(assignments)
+        .where(inArray(assignments.worksheetId, worksheetIds))
+    : [{ count: 0 }];
+  const [attempts] = worksheetIds.length
+    ? await db
+        .select({ count: sql<number>`count(${worksheetAttempts.id})` })
+        .from(worksheetAttempts)
+        .where(inArray(worksheetAttempts.worksheetId, worksheetIds))
+    : [{ count: 0 }];
+  const guard = moduleDeleteGuard({
+    assignmentRefs: Number(moduleAssignmentRefs?.count ?? 0) + Number(worksheetAssignmentRefs?.count ?? 0),
+    attemptCount: Number(attempts?.count ?? 0),
+  });
+  if (!guard.ok) return c.json({ ok: false, message: guard.message }, guard.status);
+
+  await db.transaction(async (tx) => {
+    // FK worksheets.module_id tidak mempunyai cascade, jadi LKPD modul
+    // ini dihapus lebih dulu (butir-butirnya terhapus lewat cascade
+    // worksheet_items.worksheet_id); blok modul terhapus lewat cascade
+    // module_blocks.module_id saat baris modulnya dihapus.
+    if (worksheetIds.length > 0) {
+      await tx.delete(worksheets).where(inArray(worksheets.id, worksheetIds));
+    }
+    await tx.delete(modules).where(eq(modules.id, moduleId));
+  });
+  return c.json({ ok: true, data: { id: moduleId } });
 });
 
 moduleRoutes.get("/:id/blocks", requireRole("guru"), async (c) => {

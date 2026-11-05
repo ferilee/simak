@@ -14,6 +14,7 @@ import {
 } from "@simak/shared";
 import { requireRole } from "../middleware/auth";
 import { nextShareState } from "../lib/library";
+import { worksheetDeleteGuard } from "../lib/deletion";
 import { loadTeacherClassMemberships, resolveStudentClass } from "../lib/student-class";
 import { loadAttemptMemberScores, loadContributionSummary, resolveEffectiveMemberScore } from "../lib/groups";
 import { computeGradingProgress, countGradedByAttempt, gradingStatusAfterItemSave } from "../lib/grading-progress";
@@ -146,6 +147,39 @@ worksheetRoutes.patch("/:id/share", requireRole("guru"), zValidator("json", shar
   await db.update(worksheets).set({ isShared: state.isShared, sharedAt: state.sharedAt }).where(eq(worksheets.id, worksheetId));
   const [updated] = await db.select().from(worksheets).where(eq(worksheets.id, worksheetId)).limit(1);
   return c.json({ ok: true, data: serializeWorksheet(updated!) });
+});
+
+// Hapus permanen LKPD beserta butir-butirnya. Penjaganya di
+// lib/deletion.ts: ditolak 409 bila LKPD ini masih dipakai penugasan
+// atau sudah pernah dikerjakan murid (attempt status apa pun). Butir
+// terhapus lewat cascade worksheet_items.worksheet_id. Objek
+// penyimpanan lampiran TIDAK ikut dihapus — salinan Perpustakaan
+// Bersama merujuk kunci yang sama, jadi berkas fisiknya harus bertahan.
+worksheetRoutes.delete("/:id", requireRole("guru"), async (c) => {
+  const user = c.get("user")!;
+  const worksheetId = Number(c.req.param("id"));
+  if (!Number.isInteger(worksheetId) || worksheetId <= 0) return c.json({ ok: false, message: "ID LKPD tidak valid." }, 400);
+  const worksheet = await ownedWorksheet(user.userId, worksheetId);
+  if (!worksheet) return c.json({ ok: false, message: "LKPD tidak ditemukan." }, 404);
+
+  const [assignmentRefs] = await db
+    .select({ count: sql<number>`count(${assignments.id})` })
+    .from(assignments)
+    .where(eq(assignments.worksheetId, worksheetId));
+  const [attempts] = await db
+    .select({ count: sql<number>`count(${worksheetAttempts.id})` })
+    .from(worksheetAttempts)
+    .where(eq(worksheetAttempts.worksheetId, worksheetId));
+  const guard = worksheetDeleteGuard({
+    assignmentRefs: Number(assignmentRefs?.count ?? 0),
+    attemptCount: Number(attempts?.count ?? 0),
+  });
+  if (!guard.ok) return c.json({ ok: false, message: guard.message }, guard.status);
+
+  await db.transaction(async (tx) => {
+    await tx.delete(worksheets).where(eq(worksheets.id, worksheetId));
+  });
+  return c.json({ ok: true, data: { id: worksheetId } });
 });
 
 worksheetRoutes.get("/:id/attempts", requireRole("guru"), async (c) => {

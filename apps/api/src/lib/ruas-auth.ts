@@ -26,7 +26,7 @@ function normalizeRole(role: unknown): Role | null {
   return null;
 }
 
-function normalizeIdentity(input: {
+export function normalizeIdentity(input: {
   username: string;
   role: unknown;
   ruasUserId?: unknown;
@@ -35,10 +35,18 @@ function normalizeIdentity(input: {
   const role = normalizeRole(input.role);
   if (!role) return null;
 
+  // Pengenal dari sumber autentikasi pernah tiba berawalan spasi
+  // (' raditya_rpl'): string yang berbeda itu lolos dari batas unik dan
+  // melahirkan profil duplikat (profil hantu) untuk orang yang sama.
+  // Rapikan pengenal selalu di titik masuk ini, sebelum dipakai di mana pun.
+  const username = input.username.trim();
+  const ruasUserId = String(input.ruasUserId ?? input.username).trim();
+  if (!username || !ruasUserId) return null;
+
   return {
-    ruasUserId: String(input.ruasUserId ?? input.username),
-    username: input.username,
-    name: String(input.name ?? input.username),
+    ruasUserId,
+    username,
+    name: String(input.name ?? username),
     role,
     isActive: true as const,
   } satisfies RuasIdentity;

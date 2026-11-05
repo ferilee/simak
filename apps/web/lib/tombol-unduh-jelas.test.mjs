@@ -77,8 +77,10 @@ check(
   page.includes('secondaryButton: { border: "1px solid #d0d5dd", borderRadius: 8, background: "white", padding: "9px 12px" }'),
 );
 check(
+  // Paket ikon-tombol-guru menyisipkan rentang ikon ✕ di depan label Batal;
+  // pemakaian styles.secondaryButton-nya tidak berubah.
   "styles.secondaryButton tetap dipakai tombol lain (mis. Batal)",
-  count(page, "style={styles.secondaryButton}>Batal</button>") >= 3,
+  count(page, 'style={styles.secondaryButton}><span className="action-icon" aria-hidden="true">✕</span>Batal</button>') >= 3,
 );
 
 // CSS: base pill, green CSV, red PDF, darker hovers.

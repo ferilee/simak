@@ -98,8 +98,10 @@ const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
   check("worksheet share PATCHes the share endpoint", guru.includes("`/worksheets/${worksheet.id}/share`"));
   check("module share PATCHes the share endpoint", guru.includes("`/modules/${module.id}/share`"));
 
-  check("share button shows Dibagikan when on / Bagikan when off (module)", guru.includes('{moduleShareOn ? "Dibagikan" : "Bagikan"}'));
-  check("share button shows Dibagikan when on / Bagikan when off (worksheet)", guru.includes('{worksheetShareOn ? "Dibagikan" : "Bagikan"}'));
+  // Paket ikon-tombol-guru: saklar kini membungkus label dengan rentang ikon
+  // (✓ saat Dibagikan, 🔗 saat Bagikan); teks labelnya tidak berubah.
+  check("share button shows Dibagikan when on / Bagikan when off (module)", guru.includes('{moduleShareOn ? <><span className="action-icon" aria-hidden="true">✓</span>Dibagikan</> : <><span className="action-icon" aria-hidden="true">🔗</span>Bagikan</>}'));
+  check("share button shows Dibagikan when on / Bagikan when off (worksheet)", guru.includes('{worksheetShareOn ? <><span className="action-icon" aria-hidden="true">✓</span>Dibagikan</> : <><span className="action-icon" aria-hidden="true">🔗</span>Bagikan</>}'));
   check("share button exposes pressed state", guru.includes("aria-pressed={moduleShareOn}") && guru.includes("aria-pressed={worksheetShareOn}"));
   check("share toggle derives from share_status (menunggu tampil menyala)", guru.includes("shareToggleOn(module.share_status, module.is_shared)") && guru.includes("shareToggleOn(worksheet.share_status, worksheet.is_shared)"));
   check("shared state styling hook exists", guru.includes('"is-shared"'));

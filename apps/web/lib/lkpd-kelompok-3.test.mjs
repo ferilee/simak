@@ -40,7 +40,8 @@ check("palet mengikuti konvensi yang ada (amber terkumpul, hijau dinilai)", glob
 
 console.log("Kasus C: guru — Salin daftar kelompok");
 check("mengimpor penata teks dari lib", guru.includes('import { groupsCopyText } from "../../lib/kelompok-copy";'));
-check("tombol Salin daftar tersedia", guru.includes('"Salin daftar"'));
+// Paket ikon-tombol-guru menambahkan rentang ikon 📋 di depan label ini.
+check("tombol Salin daftar tersedia", guru.includes('aria-hidden="true">📋</span>Salin daftar'));
 check("label berhasil Tersalin ✓", guru.includes("Tersalin ✓"));
 check("tombol hanya tampil bila kelas punya kelompok", guru.includes("kelas.groups.length > 0 ? (") && guru.includes("copyClassGroupsList("));
 check("penyalinan memakai Clipboard API + cadangan execCommand", guru.includes("navigator.clipboard.writeText") && guru.includes('document.execCommand("copy")'));

@@ -1657,6 +1657,20 @@ a {
   display: none;
 }
 
+/* Ikon pendamping label pada tombol aksi lain di ruang guru dan panel
+   perpustakaan: beri jarak kecil dari labelnya. Bar aksi isi (aturan di
+   atas dan blok @media di bawah) serta tombol fleksibel yang sudah punya
+   gap sendiri tidak ikut aturan jarak ini. */
+.action-icon {
+  margin-right: 6px;
+}
+
+.content-row-actions .action-icon,
+.row-action-button .action-icon,
+.download-button .action-icon {
+  margin-right: 0;
+}
+
 /* Aksi Hapus diberi nuansa bahaya lembut di semua viewport. */
 .module-row-action.is-shared {
   border-color: #067647;

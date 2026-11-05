@@ -606,10 +606,10 @@ export default function GuruPage() {
         </button>
         <span className={`module-status module-status-${module.status}`}>{module.status}</span>
         <button type="button" onClick={() => void openPreview(module)} className="module-row-action">
-          Pratinjau
+          <span className="action-icon" aria-hidden="true">👁</span>Pratinjau
         </button>
         <button type="button" onClick={() => void changeStatus(module)} className="module-row-action">
-          {module.status === "terbit" ? "Arsipkan" : "Terbitkan"}
+          {module.status === "terbit" ? <><span className="action-icon" aria-hidden="true">📦</span>Arsipkan</> : <><span className="action-icon" aria-hidden="true">🚀</span>Terbitkan</>}
         </button>
         <button
           type="button"
@@ -622,13 +622,13 @@ export default function GuruPage() {
               ? "Sedang dibagikan ke Perpustakaan Bersama — klik untuk berhenti membagikan"
               : "Bagikan ke Perpustakaan Bersama"}
         >
-          {moduleShareOn ? "Dibagikan" : "Bagikan"}
+          {moduleShareOn ? <><span className="action-icon" aria-hidden="true">✓</span>Dibagikan</> : <><span className="action-icon" aria-hidden="true">🔗</span>Bagikan</>}
         </button>
         {moduleShareBadge ? (
           <span className={`share-status-badge is-${moduleShareBadge.tone}`}>{moduleShareBadge.label}</span>
         ) : null}
         <button type="button" onClick={() => void deleteModule(module)} className="module-row-action is-danger">
-          Hapus
+          <span className="action-icon" aria-hidden="true">🗑</span>Hapus
         </button>
         {moduleShareBadge?.hint ? (
           <p className="module-share-hint" style={{ gridColumn: "1 / -1" }}>{moduleShareBadge.hint}</p>
@@ -717,10 +717,10 @@ export default function GuruPage() {
         </button>
         <span className={`module-status module-status-${worksheet.status}`}>{worksheet.status}</span>
         <button type="button" onClick={() => void openWorksheetPreview(worksheet)} className="module-row-action">
-          Pratinjau
+          <span className="action-icon" aria-hidden="true">👁</span>Pratinjau
         </button>
         <button type="button" onClick={() => void changeWorksheetStatus(worksheet)} className="module-row-action">
-          {worksheet.status === "terbit" ? "Arsipkan" : "Terbitkan"}
+          {worksheet.status === "terbit" ? <><span className="action-icon" aria-hidden="true">📦</span>Arsipkan</> : <><span className="action-icon" aria-hidden="true">🚀</span>Terbitkan</>}
         </button>
         <button
           type="button"
@@ -733,13 +733,13 @@ export default function GuruPage() {
               ? "Sedang dibagikan ke Perpustakaan Bersama — klik untuk berhenti membagikan"
               : "Bagikan ke Perpustakaan Bersama"}
         >
-          {worksheetShareOn ? "Dibagikan" : "Bagikan"}
+          {worksheetShareOn ? <><span className="action-icon" aria-hidden="true">✓</span>Dibagikan</> : <><span className="action-icon" aria-hidden="true">🔗</span>Bagikan</>}
         </button>
         {worksheetShareBadge ? (
           <span className={`share-status-badge is-${worksheetShareBadge.tone}`}>{worksheetShareBadge.label}</span>
         ) : null}
         <button type="button" onClick={() => void deleteWorksheet(worksheet)} className="module-row-action is-danger">
-          Hapus
+          <span className="action-icon" aria-hidden="true">🗑</span>Hapus
         </button>
         {worksheetShareBadge?.hint ? (
           <p className="module-share-hint" style={{ gridColumn: "1 / -1" }}>{worksheetShareBadge.hint}</p>
@@ -2782,7 +2782,7 @@ export default function GuruPage() {
               onPick={pickNewCover}
               onClear={() => setNewCover(null)}
             />
-            <button type="submit" style={styles.primaryButton}>Buat draf</button>
+            <button type="submit" style={styles.primaryButton}><span className="action-icon" aria-hidden="true">+</span>Buat draf</button>
           </form>
         ) : null}
 
@@ -2832,7 +2832,7 @@ export default function GuruPage() {
             <input required value={className} onChange={(event) => setClassName(event.target.value)} placeholder="Nama kelas, misalnya XI DPIB" style={styles.input} />
             <input required value={classSubject} onChange={(event) => setClassSubject(event.target.value)} placeholder="Mata pelajaran" style={styles.input} />
             <input required value={classAcademicYear} onChange={(event) => setClassAcademicYear(event.target.value)} placeholder="Tahun ajaran, misalnya 2026/2027" style={styles.input} />
-            <button type="submit" style={styles.primaryButton}>Buat kelas</button>
+            <button type="submit" style={styles.primaryButton}><span className="action-icon" aria-hidden="true">+</span>Buat kelas</button>
           </form>
         </details>
         {classes.length > 0 ? <div className="module-list">{classes.map((kelas) => <article key={kelas.id} className="resource-row"><div className="module-row-main"><strong>{kelas.name}</strong><span>{kelas.subject} · {kelas.academic_year}</span><span>Kode gabung: <strong>{kelas.join_code}</strong></span></div><span className="module-status module-status-terbit">aktif</span></article>)}</div> : <p style={styles.empty}>Belum ada kelas. Buat kelas untuk dapat dipilih sebagai tujuan penugasan.</p>}
@@ -2850,7 +2850,7 @@ export default function GuruPage() {
                 ) : null}
               </div>
               {!editingModuleMeta ? (
-                <button type="button" className="module-row-action" onClick={startEditModuleMeta}>Edit modul</button>
+                <button type="button" className="module-row-action" onClick={startEditModuleMeta}><span className="action-icon" aria-hidden="true">✎</span>Edit modul</button>
               ) : null}
             </div>
           ) : null}
@@ -2874,8 +2874,8 @@ export default function GuruPage() {
                   setEditCoverKey(null);
                 }}
               />
-              <button type="submit" style={styles.primaryButton}>Simpan data modul</button>
-              <button type="button" onClick={cancelEditModuleMeta} style={styles.secondaryButton}>Batal</button>
+              <button type="submit" style={styles.primaryButton}><span className="action-icon" aria-hidden="true">💾</span>Simpan data modul</button>
+              <button type="button" onClick={cancelEditModuleMeta} style={styles.secondaryButton}><span className="action-icon" aria-hidden="true">✕</span>Batal</button>
             </form>
           ) : null}
           <h2 style={styles.sectionTitle}>{editingBlock ? "Edit isi materi" : "Tambah isi materi"}</h2>
@@ -2994,10 +2994,11 @@ export default function GuruPage() {
               </>
             ) : null}
             <button type="submit" style={styles.primaryButton}>
+              {editingBlock ? <span className="action-icon" aria-hidden="true">💾</span> : blockType === "lampiran" ? <span className="action-icon" aria-hidden="true">📥</span> : <span className="action-icon" aria-hidden="true">+</span>}
               {editingBlock ? "Simpan perubahan" : blockType === "teks" ? "Tambahkan blok" : blockType === "sub_bab" ? "Tambahkan sub-bab" : blockType === "video" ? "Tambahkan video" : "Unggah lampiran"}
             </button>
             {editingBlock ? (
-              <button type="button" onClick={cancelEditBlock} style={styles.secondaryButton}>Batal</button>
+              <button type="button" onClick={cancelEditBlock} style={styles.secondaryButton}><span className="action-icon" aria-hidden="true">✕</span>Batal</button>
             ) : null}
           </form>
           <h3 style={styles.contentListTitle}>Isi materi saat ini</h3>
@@ -3036,7 +3037,7 @@ export default function GuruPage() {
           <form onSubmit={createWorksheet} style={styles.form}>
             <input required value={worksheetTitle} onChange={(event) => setWorksheetTitle(event.target.value)} placeholder="Judul LKPD" style={styles.input} />
             <textarea value={worksheetInstructions} onChange={(event) => setWorksheetInstructions(event.target.value)} placeholder="Petunjuk pengerjaan" rows={3} style={styles.textarea} />
-            <button type="submit" style={styles.primaryButton}>Buat LKPD dari modul terpilih</button>
+            <button type="submit" style={styles.primaryButton}><span className="action-icon" aria-hidden="true">+</span>Buat LKPD dari modul terpilih</button>
           </form>
         </details>
         {worksheets.length > 0 ? (
@@ -3127,15 +3128,15 @@ export default function GuruPage() {
               ) : null}
             </div>
             {!editingWorksheetMeta ? (
-              <button type="button" className="module-row-action" onClick={startEditWorksheetMeta}>Edit LKPD</button>
+              <button type="button" className="module-row-action" onClick={startEditWorksheetMeta}><span className="action-icon" aria-hidden="true">✎</span>Edit LKPD</button>
             ) : null}
           </div>
           {editingWorksheetMeta ? (
             <form onSubmit={saveWorksheetMeta} style={styles.form}>
               <input required value={editWorksheetTitle} onChange={(event) => setEditWorksheetTitle(event.target.value)} placeholder="Judul LKPD" style={styles.input} />
               <textarea value={editWorksheetInstructions} onChange={(event) => setEditWorksheetInstructions(event.target.value)} placeholder="Petunjuk pengerjaan" rows={3} style={styles.textarea} />
-              <button type="submit" style={styles.primaryButton}>Simpan data LKPD</button>
-              <button type="button" onClick={() => setEditingWorksheetMeta(false)} style={styles.secondaryButton}>Batal</button>
+              <button type="submit" style={styles.primaryButton}><span className="action-icon" aria-hidden="true">💾</span>Simpan data LKPD</button>
+              <button type="button" onClick={() => setEditingWorksheetMeta(false)} style={styles.secondaryButton}><span className="action-icon" aria-hidden="true">✕</span>Batal</button>
             </form>
           ) : null}
           {editingItem ? (
@@ -3193,9 +3194,9 @@ export default function GuruPage() {
             ) : null}
             <textarea value={itemExplanation} onChange={(event) => setItemExplanation(event.target.value)} placeholder="Pembahasan (opsional, tampil untuk murid setelah mengumpulkan)" rows={3} style={styles.textarea} />
             <input type="number" min={0} max={1000} value={itemPoints} onChange={(event) => setItemPoints(event.target.value)} placeholder={itemType === "refleksi" ? "Poin (refleksi biasanya 0)" : "Poin"} style={styles.input} />
-            <button type="submit" style={styles.primaryButton}>{editingItem ? "Simpan perubahan" : "Tambahkan soal"}</button>
+            <button type="submit" style={styles.primaryButton}>{editingItem ? <><span className="action-icon" aria-hidden="true">💾</span>Simpan perubahan</> : <><span className="action-icon" aria-hidden="true">+</span>Tambahkan soal</>}</button>
             {editingItem ? (
-              <button type="button" onClick={cancelEditItem} style={styles.secondaryButton}>Batal</button>
+              <button type="button" onClick={cancelEditItem} style={styles.secondaryButton}><span className="action-icon" aria-hidden="true">✕</span>Batal</button>
             ) : null}
           </form>
           <h3 style={styles.contentListTitle}>Soal saat ini</h3>
@@ -3320,8 +3321,8 @@ export default function GuruPage() {
             <label style={styles.label}>Batas pengumpulan<input type="datetime-local" value={assignmentDueAt} onChange={(event) => setAssignmentDueAt(event.target.value)} style={styles.input} /></label>
             <input type="url" value={assignmentRuasUrl} onChange={(event) => setAssignmentRuasUrl(event.target.value)} placeholder="Tautan kuis RUAS (opsional)" style={styles.input} />
             {editingAssignment?.status === "terbit" ? <p style={styles.message}>Modul, LKPD, dan kelas tujuan terkunci bila sudah ada murid yang mengerjakan. Mode pengerjaan dan ukuran kelompok juga terkunci bila sudah ada murid atau kelompok yang mengerjakan.</p> : null}
-            <button type="submit" style={styles.primaryButton}>{editingAssignment ? "Simpan perubahan" : "Buat draf penugasan"}</button>
-            {editingAssignment ? <button type="button" onClick={exitAssignmentEdit} style={styles.secondaryButton}>Batal</button> : null}
+            <button type="submit" style={styles.primaryButton}>{editingAssignment ? <><span className="action-icon" aria-hidden="true">💾</span>Simpan perubahan</> : <><span className="action-icon" aria-hidden="true">+</span>Buat draf penugasan</>}</button>
+            {editingAssignment ? <button type="button" onClick={exitAssignmentEdit} style={styles.secondaryButton}><span className="action-icon" aria-hidden="true">✕</span>Batal</button> : null}
           </form>
         </details>
         {assignments.length > 0 ? (
@@ -3343,7 +3344,7 @@ export default function GuruPage() {
         ) : null}
         {assignments.length === 0 ? <p style={styles.empty}>Belum ada penugasan.</p> : visibleAssignments.length === 0 ? (
           <p style={styles.empty}>{assignmentClassFilter !== "semua" ? "Tidak ada penugasan yang cocok dengan saringan kelas dan status saat ini." : `Tidak ada penugasan berstatus ${activeAssignmentFilterLabel}.`}</p>
-        ) : <div className="module-list">{visibleAssignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.target_type === "siswa" ? `${assignment.students.length} siswa tertentu` : assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}{assignment.work_mode === "kelompok" ? <> · <span className="group-mode-badge">👥 Kelompok · {assignment.group_size ?? 4} orang</span></> : null}{assignment.target_type === "siswa" ? <> · <span className="group-mode-badge">Siswa tertentu</span></> : null}</span></div><div className="resource-row-actions">{assignment.work_mode === "kelompok" ? <button type="button" onClick={() => toggleGroupsPanel(assignment)} className={`row-action-button is-outline${selectedGroupAssignmentId === assignment.id ? " is-active" : ""}`} aria-pressed={selectedGroupAssignmentId === assignment.id}>Kelompok</button> : null}{assignment.status !== "ditutup" ? <button type="button" onClick={() => startEditAssignment(assignment)} className="row-action-button is-outline"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>Edit</button> : null}<button type="button" onClick={() => void changeAssignmentStatus(assignment)} className={assignment.status === "terbit" ? "row-action-button is-outline" : "row-action-button is-primary"}>{assignment.status === "terbit" ? <><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>Tutup</> : "Terbitkan"}</button>{assignment.status === "terbit" ? <a href={`https://wa.me/?text=${encodeURIComponent(buildWhatsAppShareMessage(assignment, typeof window !== "undefined" ? window.location.origin : ""))}`} target="_blank" rel="noreferrer" className="row-action-button is-whatsapp"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.6L3 21l1.9-5.6A8.5 8.5 0 1 1 21 11.5Z" /></svg>Bagikan WA</a> : null}</div></article>)}</div>}
+        ) : <div className="module-list">{visibleAssignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.target_type === "siswa" ? `${assignment.students.length} siswa tertentu` : assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}{assignment.work_mode === "kelompok" ? <> · <span className="group-mode-badge">👥 Kelompok · {assignment.group_size ?? 4} orang</span></> : null}{assignment.target_type === "siswa" ? <> · <span className="group-mode-badge">Siswa tertentu</span></> : null}</span></div><div className="resource-row-actions">{assignment.work_mode === "kelompok" ? <button type="button" onClick={() => toggleGroupsPanel(assignment)} className={`row-action-button is-outline${selectedGroupAssignmentId === assignment.id ? " is-active" : ""}`} aria-pressed={selectedGroupAssignmentId === assignment.id}><span className="action-icon" aria-hidden="true">👥</span>Kelompok</button> : null}{assignment.status !== "ditutup" ? <button type="button" onClick={() => startEditAssignment(assignment)} className="row-action-button is-outline"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>Edit</button> : null}<button type="button" onClick={() => void changeAssignmentStatus(assignment)} className={assignment.status === "terbit" ? "row-action-button is-outline" : "row-action-button is-primary"}>{assignment.status === "terbit" ? <><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>Tutup</> : <><span className="action-icon" aria-hidden="true">🚀</span>Terbitkan</>}</button>{assignment.status === "terbit" ? <a href={`https://wa.me/?text=${encodeURIComponent(buildWhatsAppShareMessage(assignment, typeof window !== "undefined" ? window.location.origin : ""))}`} target="_blank" rel="noreferrer" className="row-action-button is-whatsapp"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.6L3 21l1.9-5.6A8.5 8.5 0 1 1 21 11.5Z" /></svg>Bagikan WA</a> : null}</div></article>)}</div>}
       </section>
 
       {selectedGroupAssignmentId ? (
@@ -3368,15 +3369,15 @@ export default function GuruPage() {
                             className="copy-list-button"
                             onClick={() => void copyClassGroupsList(assignments.find((assignment) => assignment.id === selectedGroupAssignmentId)?.title ?? "", kelas)}
                           >
-                            {copiedGroupClassId === kelas.class_id ? "Tersalin ✓" : "Salin daftar"}
+                            {copiedGroupClassId === kelas.class_id ? <><span className="action-icon" aria-hidden="true">📋</span>Tersalin ✓</> : <><span className="action-icon" aria-hidden="true">📋</span>Salin daftar</>}
                           </button>
                         ) : null}
                         {kelas.groups.length === 0 ? (
-                          <button type="button" disabled={assignmentGroupsLoading} onClick={() => void generateAssignmentGroups(selectedGroupAssignmentId)} style={styles.secondaryButton}>Bentuk kelompok</button>
+                          <button type="button" disabled={assignmentGroupsLoading} onClick={() => void generateAssignmentGroups(selectedGroupAssignmentId)} style={styles.secondaryButton}><span className="action-icon" aria-hidden="true">👥</span>Bentuk kelompok</button>
                         ) : kelas.shuffle_locked ? (
                           <span style={styles.muted}>Semua kelompok sudah terkunci dan tidak ada murid yang belum berkelompok.</span>
                         ) : (
-                          <button type="button" disabled={assignmentGroupsLoading} onClick={() => void shuffleAssignmentClassGroups(selectedGroupAssignmentId, kelas.class_id, kelas.class_name)} style={styles.secondaryButton}>Acak ulang</button>
+                          <button type="button" disabled={assignmentGroupsLoading} onClick={() => void shuffleAssignmentClassGroups(selectedGroupAssignmentId, kelas.class_id, kelas.class_name)} style={styles.secondaryButton}><span className="action-icon" aria-hidden="true">🎲</span>Acak ulang</button>
                         )}
                       </div>
                     </div>
@@ -3400,7 +3401,7 @@ export default function GuruPage() {
                           onClick={() => void copyAssignmentGroups(selectedGroupAssignmentId, kelas.class_id, kelas.class_name, groupCopySelection[kelas.class_id] ?? kelas.copy_sources[0]?.assignment_id, kelas.groups.length > 0)}
                           style={styles.secondaryButton}
                         >
-                          Salin kelompok
+                          <span className="action-icon" aria-hidden="true">📋</span>Salin kelompok
                         </button>
                       </div>
                     ) : null}
@@ -3466,7 +3467,7 @@ export default function GuruPage() {
                               }}
                               style={styles.secondaryButton}
                             >
-                              Tambah
+                              <span className="action-icon" aria-hidden="true">+</span>Tambah
                             </button>
                           </div>
                         ))}
@@ -3585,7 +3586,7 @@ export default function GuruPage() {
               <label style={styles.label}>Dari<input type="date" value={rangeFrom} onChange={(event) => setRangeFrom(event.target.value)} style={styles.input} /></label>
               <label style={styles.label}>Sampai<input type="date" value={rangeTo} onChange={(event) => setRangeTo(event.target.value)} style={styles.input} /></label>
             </div>
-            <button type="submit" style={styles.primaryButton}>Lihat rekap rentang</button>
+            <button type="submit" style={styles.primaryButton}><span className="action-icon" aria-hidden="true">→</span>Lihat rekap rentang</button>
           </form>
         </details>
         {rangeReportLoading ? <p style={styles.muted}>Memuat rekap rentang...</p> : null}
@@ -3642,7 +3643,7 @@ export default function GuruPage() {
             </label>
             <input type="file" accept=".csv,text/csv" onChange={(event) => { const file = event.target.files?.[0]; if (file) void file.text().then(setRuasImportText); }} style={styles.input} />
             <textarea required value={ruasImportText} onChange={(event) => setRuasImportText(event.target.value)} placeholder="NIS,nilai,nama\n12345,85,Siti" rows={6} style={styles.textarea} />
-            <button type="submit" disabled={ruasImportLoading} style={styles.primaryButton}>{ruasImportLoading ? "Mengimpor..." : "Impor nilai RUAS"}</button>
+            <button type="submit" disabled={ruasImportLoading} style={styles.primaryButton}>{ruasImportLoading ? <><span className="action-icon" aria-hidden="true">📥</span>Mengimpor...</> : <><span className="action-icon" aria-hidden="true">📥</span>Impor nilai RUAS</>}</button>
           </form>
         </details>
         {ruasImportResult ? <p style={styles.muted}>Baris: {ruasImportResult.total} · cocok: {ruasImportResult.cocok} · tidak ditemukan: {ruasImportResult.tidak_ditemukan} · duplikat: {ruasImportResult.duplikat}</p> : null}
@@ -3901,7 +3902,7 @@ export default function GuruPage() {
                           onClick={() => { if (item.attachment_key) void openAnswerPhoto(item.attachment_key); }}
                           style={styles.secondaryButton}
                         >
-                          Lihat foto jawaban
+                          <span className="action-icon" aria-hidden="true">👁</span>Lihat foto jawaban
                         </button>
                       ) : null}
                       {attemptDetail.attempt.is_group && item.last_editor_name ? (
@@ -3944,7 +3945,7 @@ export default function GuruPage() {
                     rows={3}
                     style={styles.textarea}
                   />
-                  <button type="button" onClick={() => void saveGrades()} style={styles.primaryButton}>Simpan penilaian</button>
+                  <button type="button" onClick={() => void saveGrades()} style={styles.primaryButton}><span className="action-icon" aria-hidden="true">💾</span>Simpan penilaian</button>
                   {attemptDetail.attempt.is_group && attemptDetail.attempt.members && attemptDetail.attempt.members.length > 0 ? (
                     <div style={{ display: "grid", gap: 10, borderTop: "1px solid #eaecf0", paddingTop: 14 }}>
                       <strong>Kontribusi & nilai anggota</strong>
@@ -3978,10 +3979,10 @@ export default function GuruPage() {
                                 void saveMemberScore(member.id, value);
                               }}
                             >
-                              Sesuaikan
+                              <span className="action-icon" aria-hidden="true">📝</span>Sesuaikan
                             </button>
                             {member.member_score !== null && member.member_score !== undefined ? (
-                              <button type="button" style={styles.secondaryButton} onClick={() => void saveMemberScore(member.id, null)}>Kembalikan ke nilai kelompok</button>
+                              <button type="button" style={styles.secondaryButton} onClick={() => void saveMemberScore(member.id, null)}><span className="action-icon" aria-hidden="true">↩</span>Kembalikan ke nilai kelompok</button>
                             ) : null}
                           </div>
                         </div>
@@ -4189,7 +4190,7 @@ function CoverField({
       {preview}
       {canClear ? (
         <div>
-          <button type="button" onClick={onClear} style={styles.secondaryButton}>Hapus sampul</button>
+          <button type="button" onClick={onClear} style={styles.secondaryButton}><span className="action-icon" aria-hidden="true">🗑</span>Hapus sampul</button>
         </div>
       ) : null}
     </div>

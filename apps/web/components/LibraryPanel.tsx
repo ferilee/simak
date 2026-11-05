@@ -404,7 +404,7 @@ export function LibraryPanel({ onOpenCopiedDraft }: LibraryPanelProps) {
                         disabled={previewLoading}
                         style={styles.secondaryButton}
                       >
-                        Pratinjau
+                        <span className="action-icon" aria-hidden="true">👁</span>Pratinjau
                       </button>
                       <button
                         type="button"
@@ -412,7 +412,7 @@ export function LibraryPanel({ onOpenCopiedDraft }: LibraryPanelProps) {
                         disabled={decidingKey === `${entry.kind}:${entry.id}`}
                         style={styles.primaryButton}
                       >
-                        Setujui
+                        <span className="action-icon" aria-hidden="true">✓</span>Setujui
                       </button>
                       <button
                         type="button"
@@ -420,7 +420,7 @@ export function LibraryPanel({ onOpenCopiedDraft }: LibraryPanelProps) {
                         disabled={decidingKey === `${entry.kind}:${entry.id}`}
                         style={styles.dangerButton}
                       >
-                        Tolak
+                        <span className="action-icon" aria-hidden="true">✕</span>Tolak
                       </button>
                     </div>
                   </article>
@@ -683,7 +683,7 @@ function LibraryCard({
         ) : null}
         <div style={{ ...styles.cardActions, ...styles.cardActionsPush }}>
           <button type="button" onClick={() => onPreview(entry)} disabled={previewLoading} style={styles.secondaryButton}>
-            Pratinjau
+            <span className="action-icon" aria-hidden="true">👁</span>Pratinjau
           </button>
           {isSudahDisalin(entry) ? (
             <button type="button" disabled style={styles.primaryButtonDisabled}>
@@ -696,7 +696,7 @@ function LibraryCard({
               disabled={copyingId === `${entry.kind}:${entry.id}`}
               style={styles.primaryButton}
             >
-              {copyingId === `${entry.kind}:${entry.id}` ? "Menyalin..." : "Salin ke punya saya"}
+              {copyingId === `${entry.kind}:${entry.id}` ? <><span className="action-icon" aria-hidden="true">📋</span>Menyalin...</> : <><span className="action-icon" aria-hidden="true">📋</span>Salin ke punya saya</>}
             </button>
           )}
           {isApprover ? (
@@ -706,7 +706,7 @@ function LibraryCard({
               disabled={decidingKey === `${entry.kind}:${entry.id}`}
               style={styles.tarikButton}
             >
-              Tarik
+              <span className="action-icon" aria-hidden="true">⬇</span>Tarik
             </button>
           ) : null}
         </div>
@@ -753,7 +753,7 @@ function PreviewView({
         {data.description ? <p style={styles.muted}><MathText text={data.description} /></p> : null}
         <div style={styles.cardActions}>
           <button type="button" onClick={() => onCopy(entry)} disabled={copyingId === `module:${data.id}`} style={styles.primaryButton}>
-            {copyingId === `module:${data.id}` ? "Menyalin..." : "Salin ke punya saya"}
+            {copyingId === `module:${data.id}` ? <><span className="action-icon" aria-hidden="true">📋</span>Menyalin...</> : <><span className="action-icon" aria-hidden="true">📋</span>Salin ke punya saya</>}
           </button>
         </div>
         {data.cover_key ? <LibraryCoverImage moduleId={data.id} coverKey={data.cover_key} /> : null}
@@ -807,7 +807,7 @@ function PreviewView({
       {data.instructions ? <p style={styles.muted}><MathText text={data.instructions} /></p> : null}
       <div style={styles.cardActions}>
         <button type="button" onClick={() => onCopy(entry)} disabled={copyingId === `worksheet:${data.id}`} style={styles.primaryButton}>
-          {copyingId === `worksheet:${data.id}` ? "Menyalin..." : "Salin ke punya saya"}
+          {copyingId === `worksheet:${data.id}` ? <><span className="action-icon" aria-hidden="true">📋</span>Menyalin...</> : <><span className="action-icon" aria-hidden="true">📋</span>Salin ke punya saya</>}
         </button>
       </div>
       <div style={styles.list}>

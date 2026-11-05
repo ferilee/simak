@@ -104,7 +104,9 @@ console.log("Case 6: panel Kelompok — susunan desktop + tombol Salin daftar (s
   check("CSS group-card satu kolom tersedia", css.includes(".group-card {") && css.includes(".group-card-header {") && css.includes(".group-card-members {"));
   check("tombol Salin daftar memakai gaya tombol aktif khusus", guru.includes('className="copy-list-button"'));
   check("CSS copy-list-button mengikuti token utama + hover", css.includes(".copy-list-button {") && css.includes("background: #175cd3;") && css.includes(".copy-list-button:hover"));
-  check("teks tombol tetap Salin daftar / Tersalin ✓", guru.includes('"Salin daftar"') && guru.includes('"Tersalin ✓"'));
+  // Paket ikon-tombol-guru menambahkan rentang ikon 📋 di depan kedua label;
+  // teks labelnya sendiri tetap sama.
+  check("teks tombol tetap Salin daftar / Tersalin ✓", guru.includes('📋</span>Salin daftar</>') && guru.includes('📋</span>Tersalin ✓</>'));
 }
 
 // ---------------------------------------------------------------------------

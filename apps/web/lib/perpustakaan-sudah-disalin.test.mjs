@@ -57,7 +57,8 @@ const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
     // prop onCopy, yang dihalaman dihubungkan ke copyEntry yang sama.
     page.includes("onClick={() => onCopy(entry)}")
     && page.includes("onCopy={(entry) => void copyEntry(entry)}")
-    && page.includes('"Salin ke punya saya"'));
+    // Paket ikon-tombol-guru menambahkan rentang ikon 📋 di depan label ini.
+    && page.includes('📋</span>Salin ke punya saya</>'));
   check("copy flow still confirms via the shared confirm text", page.includes("confirmDialog(copyConfirmText(entry)"));
   check("Pratinjau button is untouched by the copied state",
     page.includes("onClick={() => void openPreview(entry)}") && page.includes("styles.secondaryButton"));

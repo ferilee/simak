@@ -37,12 +37,27 @@ function count(haystack, needle) {
 console.log("Baris aksi rapi — tes statis sumber:");
 
 // Markup: both lists (blocks + worksheet items) get the four icon spans.
-for (const [glyph, name] of [["↑", "Naik"], ["↓", "Turun"], ["✎", "Edit"], ["🗑", "Hapus"]]) {
+// Panah Naik/Turun hanya dipakai kedua daftar ini, jadi hitungan mentahnya
+// tetap 2x. Ikon Edit/Hapus kini juga dipakai tombol lain di luar bar aksi
+// isi (paket ikon-tombol-guru: Edit modul/LKPD, Hapus kartu, Hapus sampul),
+// jadi untuk kedua glif itu hitungannya dilingkupkan ke tombol editor
+// blok + butir yang memang dilindungi suite ini — maksud aslinya utuh.
+for (const [glyph, name] of [["↑", "Naik"], ["↓", "Turun"]]) {
   check(
     `ikon ${name} (${glyph}) muncul 2x (daftar blok + daftar soal)`,
     count(page, `<span className="action-icon" aria-hidden="true">${glyph}</span>${name}`) === 2,
   );
 }
+check(
+  "ikon Edit (✎) tetap terpasang di tombol editor blok + butir",
+  count(page, 'onClick={() => startEditBlock(block)}><span className="action-icon" aria-hidden="true">✎</span>Edit</button>') === 1 &&
+    count(page, 'onClick={() => startEditItem(item)}><span className="action-icon" aria-hidden="true">✎</span>Edit</button>') === 1,
+);
+check(
+  "ikon Hapus (🗑) tetap terpasang di tombol editor blok + butir",
+  count(page, 'onClick={() => void deleteBlock(block)}><span className="action-icon" aria-hidden="true">🗑</span>Hapus</button>') === 1 &&
+    count(page, 'onClick={() => void deleteItem(item)}><span className="action-icon" aria-hidden="true">🗑</span>Hapus</button>') === 1,
+);
 // Dulu pemeriksaan ini menghitung SEMUA pemakaian kelas is-danger
 // (=== 2) karena hanya tombol editor yang memakainya. Fitur hapus
 // permanen materi/LKPD memakai ulang kelas bahaya yang sama pada kartu
@@ -53,9 +68,13 @@ check(
   count(page, 'className="module-row-action is-danger" onClick={() => void deleteBlock(block)}') === 1 &&
     count(page, 'className="module-row-action is-danger" onClick={() => void deleteItem(item)}') === 1,
 );
+// Dulu pemeriksaan ini menuntut pemakaian .module-row-action lain TIDAK
+// diberi ikon. Paket ikon-tombol-guru sengaja memperluas ikon ke semua
+// tombol aksi ruang guru, jadi tuntutan itu dibalik: Edit modul kini ikut
+// memakai ikon ✎ yang sama dengan tombol Edit di bar aksi isi.
 check(
-  "pemakaian .module-row-action lain tidak diberi ikon (mis. Edit modul)",
-  page.includes('className="module-row-action" onClick={startEditModuleMeta}>Edit modul</button>'),
+  "Edit modul kini memakai ikon ✎ yang sama (paket ikon-tombol-guru)",
+  page.includes('className="module-row-action" onClick={startEditModuleMeta}><span className="action-icon" aria-hidden="true">✎</span>Edit modul</button>'),
 );
 check(
   "handler tidak berubah (moveBlock/moveItem tetap terpasang)",

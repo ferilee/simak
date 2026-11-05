@@ -40,8 +40,10 @@ const worksheetDeleteSegment = page.slice(worksheetDeleteStart, page.indexOf("\n
     page.includes('onClick={() => void deleteModule(module)} className="module-row-action is-danger"'));
   check("worksheet card: Hapus button wired to deleteWorksheet with the danger style",
     page.includes('onClick={() => void deleteWorksheet(worksheet)} className="module-row-action is-danger"'));
+  // Paket ikon-tombol-guru menambahkan rentang ikon 🗑 di depan label;
+  // teks labelnya sendiri tetap persis 'Hapus'.
   check("both cards label the action exactly 'Hapus'",
-    (page.match(/className="module-row-action is-danger">\s*Hapus\s*<\/button>/g) ?? []).length === 2);
+    (page.match(/className="module-row-action is-danger">\s*<span className="action-icon" aria-hidden="true">🗑<\/span>Hapus\s*<\/button>/g) ?? []).length === 2);
 
   const css = read("../app/globals.css");
   check("globals.css carries the soft danger style for row actions",

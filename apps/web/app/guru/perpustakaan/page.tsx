@@ -8,8 +8,10 @@ import {
   copiedDraftHref,
   copyConfirmText,
   formatSharedDate,
+  isSudahDisalin,
   libraryEntryMeta,
   libraryKindLabel,
+  SUDAH_DISALIN_LABEL,
   type LibraryEntry,
   type LibraryKindFilter,
 } from "../../../lib/perpustakaan";
@@ -270,14 +272,20 @@ export default function PerpustakaanPage() {
                     <button type="button" onClick={() => void openPreview(entry)} disabled={previewLoading} style={styles.secondaryButton}>
                       Pratinjau
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => void copyEntry(entry)}
-                      disabled={copyingId === `${entry.kind}:${entry.id}`}
-                      style={styles.primaryButton}
-                    >
-                      {copyingId === `${entry.kind}:${entry.id}` ? "Menyalin..." : "Salin ke punya saya"}
-                    </button>
+                    {isSudahDisalin(entry) ? (
+                      <button type="button" disabled style={styles.primaryButtonDisabled}>
+                        {SUDAH_DISALIN_LABEL}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => void copyEntry(entry)}
+                        disabled={copyingId === `${entry.kind}:${entry.id}`}
+                        style={styles.primaryButton}
+                      >
+                        {copyingId === `${entry.kind}:${entry.id}` ? "Menyalin..." : "Salin ke punya saya"}
+                      </button>
+                    )}
                   </div>
                 </article>
               ))}
@@ -494,6 +502,7 @@ const styles: Record<string, CSSProperties> = {
   meta: { color: "#475467", fontSize: 14, margin: 0 },
   cardActions: { display: "flex", gap: 10, flexWrap: "wrap", marginTop: 4 },
   primaryButton: { border: 0, borderRadius: 8, background: "#175cd3", color: "white", padding: "11px 14px", fontWeight: 700, cursor: "pointer", font: "inherit" },
+  primaryButtonDisabled: { border: 0, borderRadius: 8, background: "#eaecf0", color: "#98a2b3", padding: "11px 14px", fontWeight: 700, cursor: "not-allowed", font: "inherit" },
   secondaryButton: { border: "1px solid #d0d5dd", borderRadius: 8, background: "white", padding: "11px 14px", fontWeight: 600, cursor: "pointer", font: "inherit" },
   previewPanel: { display: "grid", gap: 12, marginTop: 24 },
   previewTitle: { fontSize: 24, margin: 0 },

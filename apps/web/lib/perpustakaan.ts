@@ -11,11 +11,25 @@ export type LibraryEntry = {
   subject: string | null;
   owner_name: string;
   shared_at: string | null;
+  sudah_disalin?: boolean;
   block_count?: number;
   shared_worksheet_count?: number;
   item_count?: number;
   total_points?: number;
 };
+
+/** Label tombol salin pada kartu yang sudah pernah disalin guru ini. */
+export const SUDAH_DISALIN_LABEL = "✓ Sudah disalin";
+
+/**
+ * Apakah guru yang sedang masuk sudah mempunyai salinan butir katalog ini
+ * (penanda dari API, dihitung dari copied_from_id salinan miliknya).
+ * Kartu seperti itu menampilkan tombol salin nonaktif — server pun menolak
+ * penyalinan kedua, jadi tampilannya bukan sekadar kosmetik.
+ */
+export function isSudahDisalin(entry: LibraryEntry): boolean {
+  return entry.sudah_disalin === true;
+}
 
 export type LibraryKindFilter = "all" | "module" | "worksheet";
 

@@ -596,6 +596,9 @@ export default function GuruPage() {
         >
           {module.is_shared ? "Dibagikan" : "Bagikan"}
         </button>
+        <button type="button" onClick={() => void deleteModule(module)} className="module-row-action is-danger">
+          Hapus
+        </button>
         {!module.is_shared && separatelySharedWorksheets > 0 ? (
           <p className="module-share-hint" style={{ gridColumn: "1 / -1" }}>LKPD pada modul ini masih dibagikan terpisah.</p>
         ) : null}
@@ -689,6 +692,9 @@ export default function GuruPage() {
           title={worksheet.is_shared ? "Sedang dibagikan ke Perpustakaan Bersama — klik untuk berhenti membagikan" : "Bagikan ke Perpustakaan Bersama"}
         >
           {worksheet.is_shared ? "Dibagikan" : "Bagikan"}
+        </button>
+        <button type="button" onClick={() => void deleteWorksheet(worksheet)} className="module-row-action is-danger">
+          Hapus
         </button>
       </article>
     );
@@ -1244,6 +1250,21 @@ export default function GuruPage() {
       await loadModules();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Status modul belum dapat diubah.");
+    }
+  }
+
+  // Hapus permanen modul: server menjaganya (masih dipakai penugasan
+  // atau sudah dikerjakan murid → 409) dan pesan penolakannya tampil
+  // apa adanya lewat setMessage, sama seperti mutasi lain di halaman ini.
+  async function deleteModule(module: ModuleSummary) {
+    if (!(await confirmDialog(`Hapus materi "${module.title}" secara permanen? Seluruh blok dan LKPD di dalamnya ikut terhapus. Tindakan ini tidak dapat dibatalkan.`, { confirmLabel: "Hapus" }))) return;
+    try {
+      await apiRequest(`/modules/${module.id}`, { method: "DELETE" });
+      setMessage("Materi dihapus permanen.");
+      if (selectedId === module.id) setSelectedId(null);
+      await loadModules();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Materi belum dapat dihapus.");
     }
   }
 
@@ -1845,6 +1866,19 @@ export default function GuruPage() {
       await loadModules();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Status LKPD belum dapat diubah.");
+    }
+  }
+
+  // Hapus permanen LKPD: penjaga dan pola pesannya sama seperti modul.
+  async function deleteWorksheet(worksheet: WorksheetSummary) {
+    if (!(await confirmDialog(`Hapus LKPD "${worksheet.title}" secara permanen? Seluruh butir soalnya ikut terhapus. Tindakan ini tidak dapat dibatalkan.`, { confirmLabel: "Hapus" }))) return;
+    try {
+      await apiRequest(`/worksheets/${worksheet.id}`, { method: "DELETE" });
+      setMessage("LKPD dihapus permanen.");
+      if (selectedWorksheetId === worksheet.id) setSelectedWorksheetId(null);
+      await loadModules();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "LKPD belum dapat dihapus.");
     }
   }
 

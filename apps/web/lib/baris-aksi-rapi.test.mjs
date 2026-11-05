@@ -43,9 +43,15 @@ for (const [glyph, name] of [["↑", "Naik"], ["↓", "Turun"], ["✎", "Edit"],
     count(page, `<span className="action-icon" aria-hidden="true">${glyph}</span>${name}`) === 2,
   );
 }
+// Dulu pemeriksaan ini menghitung SEMUA pemakaian kelas is-danger
+// (=== 2) karena hanya tombol editor yang memakainya. Fitur hapus
+// permanen materi/LKPD memakai ulang kelas bahaya yang sama pada kartu
+// Langkah 1/2, jadi hitungannya dilingkupkan ke dua tombol editor yang
+// memang dilindungi suite ini (blok + butir) — maksud aslinya utuh.
 check(
   "tombol Hapus memakai kelas is-danger di kedua daftar",
-  count(page, 'className="module-row-action is-danger"') === 2,
+  count(page, 'className="module-row-action is-danger" onClick={() => void deleteBlock(block)}') === 1 &&
+    count(page, 'className="module-row-action is-danger" onClick={() => void deleteItem(item)}') === 1,
 );
 check(
   "pemakaian .module-row-action lain tidak diberi ikon (mis. Edit modul)",

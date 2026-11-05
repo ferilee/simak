@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { apiBase, apiRequest } from "../../lib/api";
 import { prepareImageForUpload } from "../../lib/prepare-image";
 import { buildWhatsAppShareMessage } from "../../lib/wa-share";
+import { shareStatusBadge, shareToggleOn, type ShareStatus } from "../../lib/perpustakaan";
 import { groupsCopyText } from "../../lib/kelompok-copy";
 import {
   activeQuickScoreChip,
@@ -58,6 +59,8 @@ type ModuleSummary = {
   version: number;
   is_shared: boolean;
   shared_at: string | null;
+  share_status: ShareStatus;
+  share_requested_at: string | null;
   copied_from_id: number | null;
   copied_from_teacher_name: string | null;
   viewer_count: number;
@@ -83,6 +86,8 @@ type WorksheetSummary = {
   status: "draf" | "terbit" | "arsip";
   is_shared: boolean;
   shared_at: string | null;
+  share_status: ShareStatus;
+  share_requested_at: string | null;
   copied_from_id: number | null;
   copied_from_teacher_name: string | null;
   started_count: number;
@@ -566,6 +571,10 @@ export default function GuruPage() {
 
   function renderModuleRow(module: ModuleSummary, dimmed = false) {
     const separatelySharedWorksheets = worksheets.filter((worksheet) => worksheet.module_id === module.id && worksheet.is_shared).length;
+    // Saklar Bagikan mengikuti share_status: pengajuan 'menunggu' tampil
+    // menyala (mematikannya membatalkan pengajuan) walau belum tayang.
+    const moduleShareOn = shareToggleOn(module.share_status, module.is_shared);
+    const moduleShareBadge = shareStatusBadge(module.share_status);
     return (
       <article
         key={module.id}
@@ -590,15 +599,25 @@ export default function GuruPage() {
         <button
           type="button"
           onClick={() => void toggleModuleShare(module)}
-          className={`module-row-action ${module.is_shared ? "is-shared" : ""}`}
-          aria-pressed={module.is_shared}
-          title={module.is_shared ? "Sedang dibagikan ke Perpustakaan Bersama — klik untuk berhenti membagikan" : "Bagikan ke Perpustakaan Bersama"}
+          className={`module-row-action ${moduleShareOn ? "is-shared" : ""}`}
+          aria-pressed={moduleShareOn}
+          title={module.share_status === "menunggu"
+            ? "Menunggu persetujuan Perpustakaan Bersama — klik untuk membatalkan pengajuan"
+            : moduleShareOn
+              ? "Sedang dibagikan ke Perpustakaan Bersama — klik untuk berhenti membagikan"
+              : "Bagikan ke Perpustakaan Bersama"}
         >
-          {module.is_shared ? "Dibagikan" : "Bagikan"}
+          {moduleShareOn ? "Dibagikan" : "Bagikan"}
         </button>
+        {moduleShareBadge ? (
+          <span className={`share-status-badge is-${moduleShareBadge.tone}`}>{moduleShareBadge.label}</span>
+        ) : null}
         <button type="button" onClick={() => void deleteModule(module)} className="module-row-action is-danger">
           Hapus
         </button>
+        {moduleShareBadge?.hint ? (
+          <p className="module-share-hint" style={{ gridColumn: "1 / -1" }}>{moduleShareBadge.hint}</p>
+        ) : null}
         {!module.is_shared && separatelySharedWorksheets > 0 ? (
           <p className="module-share-hint" style={{ gridColumn: "1 / -1" }}>LKPD pada modul ini masih dibagikan terpisah.</p>
         ) : null}
@@ -670,6 +689,10 @@ export default function GuruPage() {
   }
 
   function renderWorksheetRow(worksheet: WorksheetSummary, dimmed = false) {
+    // Sama seperti modul: saklar mengikuti share_status, dan pengajuan
+    // yang menunggu/ditolak mendapat lencana di samping saklarnya.
+    const worksheetShareOn = shareToggleOn(worksheet.share_status, worksheet.is_shared);
+    const worksheetShareBadge = shareStatusBadge(worksheet.share_status);
     return (
       <article key={worksheet.id} className={`module-row ${dimmed ? "module-row-archived" : ""} ${selectedWorksheetId === worksheet.id ? "is-selected" : ""}`}>
         <button type="button" onClick={() => setSelectedWorksheetId(worksheet.id)} className="module-row-main">
@@ -687,15 +710,25 @@ export default function GuruPage() {
         <button
           type="button"
           onClick={() => void toggleWorksheetShare(worksheet)}
-          className={`module-row-action ${worksheet.is_shared ? "is-shared" : ""}`}
-          aria-pressed={worksheet.is_shared}
-          title={worksheet.is_shared ? "Sedang dibagikan ke Perpustakaan Bersama — klik untuk berhenti membagikan" : "Bagikan ke Perpustakaan Bersama"}
+          className={`module-row-action ${worksheetShareOn ? "is-shared" : ""}`}
+          aria-pressed={worksheetShareOn}
+          title={worksheet.share_status === "menunggu"
+            ? "Menunggu persetujuan Perpustakaan Bersama — klik untuk membatalkan pengajuan"
+            : worksheetShareOn
+              ? "Sedang dibagikan ke Perpustakaan Bersama — klik untuk berhenti membagikan"
+              : "Bagikan ke Perpustakaan Bersama"}
         >
-          {worksheet.is_shared ? "Dibagikan" : "Bagikan"}
+          {worksheetShareOn ? "Dibagikan" : "Bagikan"}
         </button>
+        {worksheetShareBadge ? (
+          <span className={`share-status-badge is-${worksheetShareBadge.tone}`}>{worksheetShareBadge.label}</span>
+        ) : null}
         <button type="button" onClick={() => void deleteWorksheet(worksheet)} className="module-row-action is-danger">
           Hapus
         </button>
+        {worksheetShareBadge?.hint ? (
+          <p className="module-share-hint" style={{ gridColumn: "1 / -1" }}>{worksheetShareBadge.hint}</p>
+        ) : null}
       </article>
     );
   }
@@ -1807,7 +1840,8 @@ export default function GuruPage() {
   // ikut dibagikan — tidak ada pilihan sebagian pada Fase 1); mematikan
   // langsung tanpa dialog, dan tidak menyentuh saklar LKPD yang menempel.
   async function toggleModuleShare(module: ModuleSummary) {
-    if (!module.is_shared) {
+    const shareOn = shareToggleOn(module.share_status, module.is_shared);
+    if (!shareOn) {
       const attachedCount = worksheets.filter((worksheet) => worksheet.module_id === module.id).length;
       const text = attachedCount > 0
         ? `Bagikan modul ini ke Perpustakaan Bersama? ${attachedCount} LKPD pada modul ini ikut dibagikan.`
@@ -1817,14 +1851,16 @@ export default function GuruPage() {
     try {
       const response = await apiRequest<{ ok: true; data: ModuleSummary & { shared_worksheet_count: number } }>(
         `/modules/${module.id}/share`,
-        { method: "PATCH", body: JSON.stringify({ shared: !module.is_shared, include_worksheets: true }) },
+        { method: "PATCH", body: JSON.stringify({ shared: !shareOn, include_worksheets: true }) },
       );
       setMessage(
-        module.is_shared
+        shareOn
           ? "Modul tidak lagi dibagikan. LKPD pada modul ini mempertahankan keadaan baginya masing-masing."
-          : response.data.shared_worksheet_count > 0
-            ? `Modul dibagikan ke Perpustakaan Bersama — ${response.data.shared_worksheet_count} LKPD ikut dibagikan.`
-            : "Modul dibagikan ke Perpustakaan Bersama.",
+          : response.data.share_status === "menunggu"
+            ? "Pengajuan bagikan modul dikirim — menunggu persetujuan penyetuju Perpustakaan Bersama."
+            : response.data.shared_worksheet_count > 0
+              ? `Modul dibagikan ke Perpustakaan Bersama — ${response.data.shared_worksheet_count} LKPD ikut dibagikan.`
+              : "Modul dibagikan ke Perpustakaan Bersama.",
       );
       await loadModules();
     } catch (error) {
@@ -1835,12 +1871,19 @@ export default function GuruPage() {
   // Saklar Perpustakaan Bersama pada kartu LKPD: langsung, tanpa dialog —
   // saklar ini berdiri sendiri dan tidak mengikuti modul induknya.
   async function toggleWorksheetShare(worksheet: WorksheetSummary) {
+    const shareOn = shareToggleOn(worksheet.share_status, worksheet.is_shared);
     try {
-      await apiRequest(`/worksheets/${worksheet.id}/share`, {
+      const response = await apiRequest<{ ok: true; data: WorksheetSummary }>(`/worksheets/${worksheet.id}/share`, {
         method: "PATCH",
-        body: JSON.stringify({ shared: !worksheet.is_shared }),
+        body: JSON.stringify({ shared: !shareOn }),
       });
-      setMessage(worksheet.is_shared ? "LKPD tidak lagi dibagikan." : "LKPD dibagikan ke Perpustakaan Bersama.");
+      setMessage(
+        shareOn
+          ? "LKPD tidak lagi dibagikan."
+          : response.data.share_status === "menunggu"
+            ? "Pengajuan bagikan LKPD dikirim — menunggu persetujuan penyetuju Perpustakaan Bersama."
+            : "LKPD dibagikan ke Perpustakaan Bersama.",
+      );
       await loadModules();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Keadaan bagikan LKPD belum dapat diubah.");

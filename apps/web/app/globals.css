@@ -1674,6 +1674,28 @@ a {
   font-size: 12px;
 }
 
+/* Lencana status pengajuan berbagi di samping saklar Bagikan (antrean
+   persetujuan Perpustakaan Bersama): kuning untuk menunggu keputusan
+   penyetuju, merah lembut untuk pengajuan yang ditolak. */
+.share-status-badge {
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  align-self: center;
+}
+
+.share-status-badge.is-amber {
+  background: #fffaeb;
+  color: #b54708;
+}
+
+.share-status-badge.is-red {
+  background: #fef3f2;
+  color: #b42318;
+}
+
 .wizard-library-link {
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr);

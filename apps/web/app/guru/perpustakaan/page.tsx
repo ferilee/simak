@@ -5,13 +5,21 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, type CSSProperties } from "react";
 import { apiRequest } from "../../../lib/api";
 import {
+  approvalDecisionPath,
+  approvalEntryMeta,
+  approvalKindLabel,
+  approvalTarikPath,
+  approvalToLibraryEntry,
   copiedDraftHref,
   copyConfirmText,
+  formatRequestedDate,
   formatSharedDate,
   isSudahDisalin,
   libraryEntryMeta,
   libraryKindLabel,
+  tarikConfirmText,
   SUDAH_DISALIN_LABEL,
+  type ApprovalEntry,
   type LibraryEntry,
   type LibraryKindFilter,
 } from "../../../lib/perpustakaan";
@@ -27,7 +35,8 @@ import { useConfirm } from "../../../components/ConfirmDialog";
 // sebagai Draf miliknya sendiri. Materi sendiri tidak pernah tampil di
 // sini; API menegakkan itu, halaman hanya merender.
 
-type LibraryResponse = { ok: true; data: LibraryEntry[] };
+type LibraryResponse = { ok: true; data: LibraryEntry[]; approver?: boolean; pending_count?: number };
+type ApprovalsResponse = { ok: true; data: ApprovalEntry[] };
 type MeResponse = { ok: true; user: { role: "guru" | "murid" } };
 
 type LibraryModulePreview = {
@@ -100,6 +109,15 @@ export default function PerpustakaanPage() {
   const [copyingId, setCopyingId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [copiedLink, setCopiedLink] = useState<{ href: string; title: string } | null>(null);
+  // Keadaan khusus penyetuju (dari meta respons katalog): antrean pengajuan
+  // berbagi guru lain yang menunggu keputusannya. Guru lain tidak pernah
+  // menerima approver=true, jadi seluruh bagian ini tidak tampil untuknya.
+  const [isApprover, setIsApprover] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [approvals, setApprovals] = useState<ApprovalEntry[] | null>(null);
+  const [decidingKey, setDecidingKey] = useState<string | null>(null);
+  const [listVersion, setListVersion] = useState(0);
+  const [queueVersion, setQueueVersion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -131,7 +149,11 @@ export default function PerpustakaanPage() {
         if (kind !== "all") params.set("kind", kind);
         const suffix = params.toString() ? `?${params.toString()}` : "";
         const response = await apiRequest<LibraryResponse>(`/library${suffix}`);
-        if (!cancelled) setEntries(response.data);
+        if (!cancelled) {
+          setEntries(response.data);
+          setIsApprover(response.approver === true);
+          setPendingCount(response.pending_count ?? 0);
+        }
       } catch (error) {
         if (!cancelled) setLoadError(error instanceof Error ? error.message : "Katalog belum dapat dimuat.");
       }
@@ -139,7 +161,23 @@ export default function PerpustakaanPage() {
     return () => {
       cancelled = true;
     };
-  }, [query, kind, forbidden]);
+  }, [query, kind, forbidden, listVersion]);
+
+  useEffect(() => {
+    if (forbidden || !isApprover) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await apiRequest<ApprovalsResponse>("/library/approvals");
+        if (!cancelled) setApprovals(response.data);
+      } catch {
+        if (!cancelled) setApprovals([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [forbidden, isApprover, queueVersion, listVersion]);
 
   async function openPreview(entry: LibraryEntry) {
     setPreviewLoading(true);
@@ -191,6 +229,45 @@ export default function PerpustakaanPage() {
     }
   }
 
+  async function decideApproval(entry: ApprovalEntry, decision: "setujui" | "tolak") {
+    const decideKey = `${entry.kind}:${entry.id}`;
+    setDecidingKey(decideKey);
+    try {
+      await apiRequest(approvalDecisionPath(entry), {
+        method: "POST",
+        body: JSON.stringify({ decision }),
+      });
+      setMessage(
+        decision === "setujui"
+          ? `“${entry.title}” disetujui dan kini tayang di Perpustakaan Bersama.`
+          : `Pengajuan “${entry.title}” ditolak.`,
+      );
+      // Antrean dan katalog sama-sama dimuat ulang: butir yang disetujui
+      // hilang dari antrean dan mulai tampil di katalog.
+      setQueueVersion((version) => version + 1);
+      setListVersion((version) => version + 1);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Keputusan belum dapat disimpan.");
+    } finally {
+      setDecidingKey(null);
+    }
+  }
+
+  async function tarikEntry(entry: LibraryEntry) {
+    if (!(await confirmDialog(tarikConfirmText(), { confirmLabel: "Tarik" }))) return;
+    const tarikKey = `${entry.kind}:${entry.id}`;
+    setDecidingKey(tarikKey);
+    try {
+      await apiRequest(approvalTarikPath(entry), { method: "POST" });
+      setMessage(`“${entry.title}” ditarik dari Perpustakaan Bersama.`);
+      setListVersion((version) => version + 1);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Penarikan belum dapat dilakukan.");
+    } finally {
+      setDecidingKey(null);
+    }
+  }
+
   const filtersActive = query.trim() !== "" || kind !== "all";
 
   return (
@@ -221,6 +298,57 @@ export default function PerpustakaanPage() {
         />
       ) : (
         <>
+          {isApprover && approvals !== null && approvals.length > 0 ? (
+            <section style={styles.approvalSection}>
+              <h2 style={styles.sectionTitle}>Menunggu persetujuan ({pendingCount || approvals.length})</h2>
+              <p style={styles.muted}>
+                Pengajuan berbagi dari guru lain. Pratinjau isinya terlebih dahulu, lalu putuskan.
+              </p>
+              <div style={styles.list}>
+                {approvals.map((entry) => (
+                  <article key={`antrean-${entry.kind}:${entry.id}`} style={styles.card}>
+                    <div style={styles.cardHeader}>
+                      <span style={styles.kindChip}>{approvalKindLabel(entry.kind)}</span>
+                      {entry.subject ? <span style={styles.subjectChip}>{entry.subject}</span> : null}
+                    </div>
+                    <h3 style={styles.cardTitle}><MathText text={entry.title} /></h3>
+                    <p style={styles.meta}>oleh {entry.teacher_name}</p>
+                    <p style={styles.meta}>{approvalEntryMeta(entry)}</p>
+                    {formatRequestedDate(entry.share_requested_at) ? (
+                      <p style={styles.meta}>Diajukan {formatRequestedDate(entry.share_requested_at)}</p>
+                    ) : null}
+                    <div style={styles.cardActions}>
+                      <button
+                        type="button"
+                        onClick={() => void openPreview(approvalToLibraryEntry(entry))}
+                        disabled={previewLoading}
+                        style={styles.secondaryButton}
+                      >
+                        Pratinjau
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void decideApproval(entry, "setujui")}
+                        disabled={decidingKey === `${entry.kind}:${entry.id}`}
+                        style={styles.primaryButton}
+                      >
+                        Setujui
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void decideApproval(entry, "tolak")}
+                        disabled={decidingKey === `${entry.kind}:${entry.id}`}
+                        style={styles.dangerButton}
+                      >
+                        Tolak
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
           <div style={styles.toolbar}>
             <input
               type="search"
@@ -286,6 +414,16 @@ export default function PerpustakaanPage() {
                         {copyingId === `${entry.kind}:${entry.id}` ? "Menyalin..." : "Salin ke punya saya"}
                       </button>
                     )}
+                    {isApprover ? (
+                      <button
+                        type="button"
+                        onClick={() => void tarikEntry(entry)}
+                        disabled={decidingKey === `${entry.kind}:${entry.id}`}
+                        style={styles.tarikButton}
+                      >
+                        Tarik
+                      </button>
+                    ) : null}
                   </div>
                 </article>
               ))}
@@ -504,6 +642,9 @@ const styles: Record<string, CSSProperties> = {
   primaryButton: { border: 0, borderRadius: 8, background: "#175cd3", color: "white", padding: "11px 14px", fontWeight: 700, cursor: "pointer", font: "inherit" },
   primaryButtonDisabled: { border: 0, borderRadius: 8, background: "#eaecf0", color: "#98a2b3", padding: "11px 14px", fontWeight: 700, cursor: "not-allowed", font: "inherit" },
   secondaryButton: { border: "1px solid #d0d5dd", borderRadius: 8, background: "white", padding: "11px 14px", fontWeight: 600, cursor: "pointer", font: "inherit" },
+  dangerButton: { border: "1px solid #fecdca", borderRadius: 8, background: "#fef3f2", color: "#b42318", padding: "11px 14px", fontWeight: 700, cursor: "pointer", font: "inherit" },
+  tarikButton: { border: 0, borderRadius: 8, background: "transparent", color: "#b42318", padding: "11px 6px", fontWeight: 600, cursor: "pointer", font: "inherit" },
+  approvalSection: { display: "grid", gap: 4, marginTop: 24, border: "1px solid #fedf89", background: "#fffaeb", borderRadius: 12, padding: 16 },
   previewPanel: { display: "grid", gap: 12, marginTop: 24 },
   previewTitle: { fontSize: 24, margin: 0 },
   sectionTitle: { fontSize: 18, margin: "12px 0 0" },

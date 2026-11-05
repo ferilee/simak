@@ -75,3 +75,96 @@ export function formatSharedDate(sharedAt: string | null): string {
 export function copiedDraftHref(kind: LibraryEntry["kind"], newId: number): string {
   return kind === "module" ? `/guru?modul=${newId}` : `/guru?lkpd=${newId}`;
 }
+
+// ---------------------------------------------------------------------------
+// Antrean persetujuan berbagi (Fase 2): status pengajuan berbagi milik
+// sendiri di kartu guru, dan antrean keputusan di halaman perpustakaan
+// untuk penyetuju. share_status dari API adalah sumber kebenarannya;
+// is_shared hanya cadangan untuk data lama (keduanya sejalan menurut
+// invarian API: is_shared tepat bila share_status = 'dibagikan').
+// ---------------------------------------------------------------------------
+
+export type ShareStatus = "pribadi" | "menunggu" | "dibagikan" | "ditolak";
+
+/**
+ * Keadaan tampil saklar Bagikan: menyala untuk 'menunggu' dan 'dibagikan'
+ * (pengajuan yang sedang menunggu pun saklarnya menyala — mematikannya
+ * membatalkan pengajuan), mati untuk 'pribadi' dan 'ditolak'.
+ */
+export function shareToggleOn(shareStatus: ShareStatus | null | undefined, isShared: boolean): boolean {
+  if (shareStatus) return shareStatus === "menunggu" || shareStatus === "dibagikan";
+  return isShared;
+}
+
+export type ShareStatusBadge = { label: string; tone: "amber" | "red"; hint: string | null };
+
+/** Lencana status pengajuan di samping saklar Bagikan; null = tanpa
+ *  lencana (keadaan 'pribadi'/'dibagikan' tampil seperti Fase 1). */
+export function shareStatusBadge(shareStatus: ShareStatus | null | undefined): ShareStatusBadge | null {
+  if (shareStatus === "menunggu") return { label: "Menunggu persetujuan", tone: "amber", hint: null };
+  if (shareStatus === "ditolak") {
+    return { label: "Ditolak", tone: "red", hint: "Ajukan lagi dengan menyalakan Bagikan setelah diperbaiki." };
+  }
+  return null;
+}
+
+export type ApprovalEntry = {
+  kind: "modul" | "lkpd";
+  id: number;
+  title: string;
+  teacher_name: string;
+  share_requested_at: string | null;
+  subject: string | null;
+  block_count?: number;
+  pending_worksheet_count?: number;
+  item_count?: number;
+};
+
+/** Label jenis pada kartu antrean (istilah API antrean: modul/lkpd). */
+export function approvalKindLabel(kind: ApprovalEntry["kind"]): string {
+  return kind === "modul" ? "Materi" : "LKPD";
+}
+
+/** Baris meta kartu antrean: isi pengajuan dalam satu baris. */
+export function approvalEntryMeta(entry: ApprovalEntry): string {
+  if (entry.kind === "modul") {
+    const pending = entry.pending_worksheet_count ?? 0;
+    return pending > 0
+      ? `${entry.block_count ?? 0} blok · ${pending} LKPD ikut menunggu`
+      : `${entry.block_count ?? 0} blok · tanpa LKPD yang menunggu`;
+  }
+  return `${entry.item_count ?? 0} soal`;
+}
+
+/** Tanggal pengajuan diajukan, format Indonesia; kosong bila tak dikenal. */
+export function formatRequestedDate(requestedAt: string | null): string {
+  return formatSharedDate(requestedAt);
+}
+
+/** Ubah butir antrean menjadi butir katalog agar pratinjau halaman yang
+ *  sama dapat dipakai (pratinjau penyetuju menembus gerbang API khusus). */
+export function approvalToLibraryEntry(entry: ApprovalEntry): LibraryEntry {
+  return {
+    kind: entry.kind === "modul" ? "module" : "worksheet",
+    id: entry.id,
+    title: entry.title,
+    subject: entry.subject,
+    owner_name: entry.teacher_name,
+    shared_at: null,
+  };
+}
+
+/** Jalur API keputusan penyetuju untuk satu butir antrean. */
+export function approvalDecisionPath(entry: ApprovalEntry): string {
+  return entry.kind === "modul" ? `/library/approvals/modules/${entry.id}` : `/library/approvals/worksheets/${entry.id}`;
+}
+
+/** Jalur API penarikan butir yang sedang tayang oleh penyetuju. */
+export function approvalTarikPath(entry: LibraryEntry): string {
+  return entry.kind === "module" ? `/library/approvals/modules/${entry.id}/tarik` : `/library/approvals/worksheets/${entry.id}/tarik`;
+}
+
+/** Teks konfirmasi penarikan oleh penyetuju (persis yang disetujui). */
+export function tarikConfirmText(): string {
+  return "Tarik materi ini dari Perpustakaan Bersama? Salinan yang sudah dibuat guru lain tidak terpengaruh.";
+}

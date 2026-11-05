@@ -54,6 +54,33 @@ export function copyGuard(
 }
 
 /**
+ * Gerbang penyalinan ulang: guru yang SUDAH mempunyai salinan dari sumber
+ * ini (baris miliknya dengan copied_from_id = id sumber, dalam keadaan
+ * apa pun — draf/terbit/arsip) tidak boleh menyalinnya lagi. Berjalan
+ * SESUDAH copyGuard agar pesan "milik sendiri"/404 tetap didahulukan.
+ */
+export function alreadyCopiedGuard(alreadyCopied: boolean, message: string): CopyGuardResult {
+  if (alreadyCopied) {
+    return { ok: false, status: 400, message };
+  }
+  return { ok: true };
+}
+
+/**
+ * Himpunan id sumber yang sudah disalin oleh seorang guru, dibangun dari
+ * baris-baris salinan MILIKNYA (route menyaring teacher_id = peminta).
+ * Hanya copied_from_id yang dibaca: keadaan salinan (draf/terbit/arsip)
+ * tidak memengaruhi — salinan yang masih ada selalu dihitung.
+ */
+export function copiedSourceIdSet(rows: readonly { copiedFromId: number | null }[]): Set<number> {
+  const ids = new Set<number>();
+  for (const row of rows) {
+    if (row.copiedFromId !== null) ids.add(row.copiedFromId);
+  }
+  return ids;
+}
+
+/**
  * Gerbang pratinjau katalog: sama seperti penyalinan, pratinjau hanya untuk
  * materi yang dibagikan MILIK GURU LAIN. Milik sendiri pun 404 dari katalog
  * (katalog menurut definisi hanya memuat guru lain; pemilik mempratinjau
@@ -78,6 +105,7 @@ export type LibraryModuleRow = {
   sharedAt: Date | null;
   blockCount: number;
   sharedWorksheetCount: number;
+  sudahDisalin: boolean;
 };
 
 export type LibraryWorksheetRow = {
@@ -88,6 +116,7 @@ export type LibraryWorksheetRow = {
   sharedAt: Date | null;
   itemCount: number;
   totalPoints: number;
+  sudahDisalin: boolean;
 };
 
 export type LibraryEntry = {
@@ -97,6 +126,7 @@ export type LibraryEntry = {
   subject: string | null;
   owner_name: string;
   shared_at: Date | null;
+  sudah_disalin: boolean;
   block_count?: number;
   shared_worksheet_count?: number;
   item_count?: number;
@@ -111,6 +141,7 @@ export function buildLibraryModuleEntry(row: LibraryModuleRow): LibraryEntry {
     subject: row.subject,
     owner_name: row.ownerName,
     shared_at: row.sharedAt,
+    sudah_disalin: row.sudahDisalin,
     block_count: row.blockCount,
     shared_worksheet_count: row.sharedWorksheetCount,
   };
@@ -124,6 +155,7 @@ export function buildLibraryWorksheetEntry(row: LibraryWorksheetRow): LibraryEnt
     subject: row.subject,
     owner_name: row.ownerName,
     shared_at: row.sharedAt,
+    sudah_disalin: row.sudahDisalin,
     item_count: row.itemCount,
     total_points: row.totalPoints,
   };

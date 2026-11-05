@@ -3,8 +3,10 @@ import { and, asc, desc, eq, inArray, like, ne, or, sql } from "drizzle-orm";
 import { db, schema } from "@simak/db";
 import { requireRole } from "../middleware/auth";
 import {
+  alreadyCopiedGuard,
   buildLibraryModuleEntry,
   buildLibraryWorksheetEntry,
+  copiedSourceIdSet,
   copyGuard,
   mergeLibraryEntries,
   moduleBlockCopyValues,
@@ -71,7 +73,15 @@ libraryRoutes.get("/", requireRole("guru"), async (c) => {
     const ids = rows.map((row) => row.id);
     const blockCounts = new Map<number, number>();
     const sharedWorksheetCounts = new Map<number, number>();
+    const copiedModuleIds = new Set<number>();
     if (ids.length > 0) {
+      // Satu query untuk semua id di halaman ini: salinan MILIK peminta
+      // (keadaan apa pun) yang copied_from_id-nya menunjuk ke katalog ini.
+      const copyRows = await db
+        .select({ copiedFromId: modules.copiedFromId })
+        .from(modules)
+        .where(and(eq(modules.teacherId, user.userId), inArray(modules.copiedFromId, ids)));
+      for (const id of copiedSourceIdSet(copyRows)) copiedModuleIds.add(id);
       const blockRows = await db
         .select({ moduleId: moduleBlocks.moduleId, count: sql<number>`count(${moduleBlocks.id})` })
         .from(moduleBlocks)
@@ -97,6 +107,7 @@ libraryRoutes.get("/", requireRole("guru"), async (c) => {
           sharedAt: row.sharedAt,
           blockCount: blockCounts.get(row.id) ?? 0,
           sharedWorksheetCount: sharedWorksheetCounts.get(row.id) ?? 0,
+          sudahDisalin: copiedModuleIds.has(row.id),
         }),
       );
     }
@@ -125,7 +136,13 @@ libraryRoutes.get("/", requireRole("guru"), async (c) => {
       .orderBy(desc(worksheets.sharedAt));
     const ids = rows.map((row) => row.id);
     const itemStats = new Map<number, { count: number; points: number }>();
+    const copiedWorksheetIds = new Set<number>();
     if (ids.length > 0) {
+      const copyRows = await db
+        .select({ copiedFromId: worksheets.copiedFromId })
+        .from(worksheets)
+        .where(and(eq(worksheets.teacherId, user.userId), inArray(worksheets.copiedFromId, ids)));
+      for (const id of copiedSourceIdSet(copyRows)) copiedWorksheetIds.add(id);
       const statRows = await db
         .select({
           worksheetId: worksheetItems.worksheetId,
@@ -148,6 +165,7 @@ libraryRoutes.get("/", requireRole("guru"), async (c) => {
           sharedAt: row.sharedAt,
           itemCount: stats.count,
           totalPoints: stats.points,
+          sudahDisalin: copiedWorksheetIds.has(row.id),
         }),
       );
     }
@@ -286,6 +304,13 @@ libraryRoutes.post("/modules/:id/copy", requireRole("guru"), async (c) => {
   const [source] = await db.select().from(modules).where(eq(modules.id, moduleId)).limit(1);
   const guard = copyGuard(source, user.userId, MODULE_NOT_FOUND);
   if (!guard.ok) return c.json({ ok: false, message: guard.message }, guard.status);
+  const [existingModuleCopy] = await db
+    .select({ id: modules.id })
+    .from(modules)
+    .where(and(eq(modules.teacherId, user.userId), eq(modules.copiedFromId, moduleId)))
+    .limit(1);
+  const duplicate = alreadyCopiedGuard(Boolean(existingModuleCopy), "Modul ini sudah pernah Anda salin.");
+  if (!duplicate.ok) return c.json({ ok: false, message: duplicate.message }, duplicate.status);
   const sourceOwnerName = await ownerName(source!.teacherId);
 
   const blocks = await db
@@ -349,6 +374,13 @@ libraryRoutes.post("/worksheets/:id/copy", requireRole("guru"), async (c) => {
   const [source] = await db.select().from(worksheets).where(eq(worksheets.id, worksheetId)).limit(1);
   const guard = copyGuard(source, user.userId, WORKSHEET_NOT_FOUND);
   if (!guard.ok) return c.json({ ok: false, message: guard.message }, guard.status);
+  const [existingWorksheetCopy] = await db
+    .select({ id: worksheets.id })
+    .from(worksheets)
+    .where(and(eq(worksheets.teacherId, user.userId), eq(worksheets.copiedFromId, worksheetId)))
+    .limit(1);
+  const duplicate = alreadyCopiedGuard(Boolean(existingWorksheetCopy), "LKPD ini sudah pernah Anda salin.");
+  if (!duplicate.ok) return c.json({ ok: false, message: duplicate.message }, duplicate.status);
   const sourceOwnerName = await ownerName(source!.teacherId);
   const items = await db
     .select()

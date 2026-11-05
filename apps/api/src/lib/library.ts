@@ -351,7 +351,9 @@ export type LibraryModuleRow = {
   id: number;
   title: string;
   subject: string;
+  teacherId: number;
   ownerName: string;
+  kontributorTotal: number;
   sharedAt: Date | null;
   blockCount: number;
   sharedWorksheetCount: number;
@@ -362,7 +364,9 @@ export type LibraryWorksheetRow = {
   id: number;
   title: string;
   subject: string | null;
+  teacherId: number;
   ownerName: string;
+  kontributorTotal: number;
   sharedAt: Date | null;
   itemCount: number;
   totalPoints: number;
@@ -374,7 +378,9 @@ export type LibraryEntry = {
   id: number;
   title: string;
   subject: string | null;
+  teacher_id: number;
   owner_name: string;
+  kontributor_total: number;
   shared_at: Date | null;
   sudah_disalin: boolean;
   block_count?: number;
@@ -389,7 +395,9 @@ export function buildLibraryModuleEntry(row: LibraryModuleRow): LibraryEntry {
     id: row.id,
     title: row.title,
     subject: row.subject,
+    teacher_id: row.teacherId,
     owner_name: row.ownerName,
+    kontributor_total: row.kontributorTotal,
     shared_at: row.sharedAt,
     sudah_disalin: row.sudahDisalin,
     block_count: row.blockCount,
@@ -403,7 +411,9 @@ export function buildLibraryWorksheetEntry(row: LibraryWorksheetRow): LibraryEnt
     id: row.id,
     title: row.title,
     subject: row.subject,
+    teacher_id: row.teacherId,
     owner_name: row.ownerName,
+    kontributor_total: row.kontributorTotal,
     shared_at: row.sharedAt,
     sudah_disalin: row.sudahDisalin,
     item_count: row.itemCount,
@@ -422,6 +432,79 @@ function sharedAtMillis(entry: LibraryEntry): number {
  */
 export function mergeLibraryEntries(moduleEntries: LibraryEntry[], worksheetEntries: LibraryEntry[]): LibraryEntry[] {
   return [...moduleEntries, ...worksheetEntries].sort((a, b) => sharedAtMillis(b) - sharedAtMillis(a));
+}
+
+// ---------------------------------------------------------------------------
+// Filter kontributor + lencana jumlah dibagikan: katalog dapat disaring
+// per guru penyumbang, dan setiap kartu menampilkan berapa banyak materi
+// guru itu yang SEDANG tayang. Semesta hitungnya sama persis dengan
+// semesta katalog (is_shared = true milik guru LAIN dari penampil), dan
+// ringkasannya dihitung dari seluruh semesta — bukan dari hasil saringan
+// saat ini — agar chip kontributor tidak berubah-ubah saat menyaring.
+// Butir 'menunggu'/'ditolak'/pribadi tidak pernah terhitung: menurut
+// invarian berbagi, is_shared hanya menyala untuk yang 'dibagikan'.
+// ---------------------------------------------------------------------------
+
+export type ContributorSummary = {
+  teacher_id: number;
+  name: string;
+  modul_count: number;
+  lkpd_count: number;
+  total: number;
+};
+
+/**
+ * Gabungkan hitungan modul dan LKPD yang tayang per guru menjadi
+ * ringkasan kontributor. Baris hitungan nol (dan guru tanpa butir tayang
+ * sama sekali) tidak muncul. Urutan: total terbanyak dulu, seri dipecah
+ * menurut nama menaik (locale "id").
+ */
+export function buildContributorSummaries(
+  moduleCounts: readonly { teacherId: number; count: number }[],
+  worksheetCounts: readonly { teacherId: number; count: number }[],
+  namesById: ReadonlyMap<number, string>,
+): ContributorSummary[] {
+  const byTeacher = new Map<number, { modul: number; lkpd: number }>();
+  for (const row of moduleCounts) {
+    if (row.count <= 0) continue;
+    const existing = byTeacher.get(row.teacherId) ?? { modul: 0, lkpd: 0 };
+    existing.modul = row.count;
+    byTeacher.set(row.teacherId, existing);
+  }
+  for (const row of worksheetCounts) {
+    if (row.count <= 0) continue;
+    const existing = byTeacher.get(row.teacherId) ?? { modul: 0, lkpd: 0 };
+    existing.lkpd = row.count;
+    byTeacher.set(row.teacherId, existing);
+  }
+  const summaries: ContributorSummary[] = [];
+  for (const [teacherId, counts] of byTeacher) {
+    const total = counts.modul + counts.lkpd;
+    if (total <= 0) continue;
+    summaries.push({
+      teacher_id: teacherId,
+      name: namesById.get(teacherId) ?? "Guru",
+      modul_count: counts.modul,
+      lkpd_count: counts.lkpd,
+      total,
+    });
+  }
+  summaries.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, "id"));
+  return summaries;
+}
+
+/**
+ * Parse parameter teacher_id pada katalog: tidak dikirim → tanpa saringan
+ * (teacherId null); dikirim tapi bukan bilangan bulat positif → tidak sah
+ * (route menjawab 400 "Kontributor tidak valid.").
+ */
+export function parseContributorParam(
+  raw: string | undefined,
+): { valid: true; teacherId: number | null } | { valid: false } {
+  if (raw === undefined) return { valid: true, teacherId: null };
+  const id = Number(raw);
+  if (!Number.isInteger(id) || id <= 0) return { valid: false };
+  return { valid: true, teacherId: id };
 }
 
 /**

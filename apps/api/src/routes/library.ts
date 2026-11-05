@@ -9,6 +9,7 @@ import {
   alreadyCopiedGuard,
   approvalsGuard,
   buildApprovalQueueEntry,
+  buildContributorSummaries,
   buildLibraryModuleEntry,
   buildLibraryWorksheetEntry,
   copiedSourceIdSet,
@@ -19,6 +20,7 @@ import {
   mergeLibraryEntries,
   moduleBlockCopyValues,
   moduleCopyValues,
+  parseContributorParam,
   planApprovalCarryIds,
   planModuleCopyWorksheets,
   previewGuard,
@@ -59,8 +61,49 @@ libraryRoutes.get("/", requireRole("guru"), async (c) => {
   if (kindParam !== "all" && kindParam !== "module" && kindParam !== "worksheet") {
     return c.json({ ok: false, message: "Jenis katalog tidak valid." }, 400);
   }
+  const contributor = parseContributorParam(c.req.query("teacher_id"));
+  if (!contributor.valid) {
+    return c.json({ ok: false, message: "Kontributor tidak valid." }, 400);
+  }
+  const contributorId = contributor.teacherId;
   const q = (c.req.query("q") ?? "").trim();
   const pattern = q ? `%${q}%` : null;
+
+  // Ringkasan kontributor: dihitung dari SELURUH semesta katalog (butir
+  // tayang milik guru lain) dan TIDAK mengikuti saringan q/kind/teacher_id
+  // saat ini, agar chip kontributor di halaman tetap stabil saat menyaring.
+  // is_shared adalah saringannya: menurut invarian berbagi hanya butir
+  // 'dibagikan' yang menyala, jadi pengajuan 'menunggu' tidak terhitung.
+  const contributorModuleCounts = await db
+    .select({ teacherId: modules.teacherId, count: sql<number>`count(${modules.id})` })
+    .from(modules)
+    .where(and(eq(modules.isShared, true), ne(modules.teacherId, user.userId)))
+    .groupBy(modules.teacherId);
+  const contributorWorksheetCounts = await db
+    .select({ teacherId: worksheets.teacherId, count: sql<number>`count(${worksheets.id})` })
+    .from(worksheets)
+    .where(and(eq(worksheets.isShared, true), ne(worksheets.teacherId, user.userId)))
+    .groupBy(worksheets.teacherId);
+  const contributorIds = [
+    ...new Set([
+      ...contributorModuleCounts.map((row) => row.teacherId),
+      ...contributorWorksheetCounts.map((row) => row.teacherId),
+    ]),
+  ];
+  const contributorNames = new Map<number, string>();
+  if (contributorIds.length > 0) {
+    const nameRows = await db
+      .select({ id: users.id, name: users.name })
+      .from(users)
+      .where(inArray(users.id, contributorIds));
+    for (const row of nameRows) contributorNames.set(row.id, row.name);
+  }
+  const contributors = buildContributorSummaries(
+    contributorModuleCounts.map((row) => ({ teacherId: row.teacherId, count: Number(row.count) })),
+    contributorWorksheetCounts.map((row) => ({ teacherId: row.teacherId, count: Number(row.count) })),
+    contributorNames,
+  );
+  const kontributorTotals = new Map(contributors.map((summary) => [summary.teacher_id, summary.total]));
 
   const moduleEntries = [];
   if (kindParam === "all" || kindParam === "module") {
@@ -69,6 +112,7 @@ libraryRoutes.get("/", requireRole("guru"), async (c) => {
         id: modules.id,
         title: modules.title,
         subject: modules.subject,
+        teacherId: modules.teacherId,
         ownerName: users.name,
         sharedAt: modules.sharedAt,
       })
@@ -78,6 +122,7 @@ libraryRoutes.get("/", requireRole("guru"), async (c) => {
         and(
           eq(modules.isShared, true),
           ne(modules.teacherId, user.userId),
+          ...(contributorId !== null ? [eq(modules.teacherId, contributorId)] : []),
           ...(pattern ? [or(like(modules.title, pattern), like(modules.subject, pattern))] : []),
         ),
       )
@@ -115,7 +160,9 @@ libraryRoutes.get("/", requireRole("guru"), async (c) => {
           id: row.id,
           title: row.title,
           subject: row.subject,
+          teacherId: row.teacherId,
           ownerName: row.ownerName,
+          kontributorTotal: kontributorTotals.get(row.teacherId) ?? 0,
           sharedAt: row.sharedAt,
           blockCount: blockCounts.get(row.id) ?? 0,
           sharedWorksheetCount: sharedWorksheetCounts.get(row.id) ?? 0,
@@ -132,6 +179,7 @@ libraryRoutes.get("/", requireRole("guru"), async (c) => {
         id: worksheets.id,
         title: worksheets.title,
         subject: modules.subject,
+        teacherId: worksheets.teacherId,
         ownerName: users.name,
         sharedAt: worksheets.sharedAt,
       })
@@ -142,6 +190,7 @@ libraryRoutes.get("/", requireRole("guru"), async (c) => {
         and(
           eq(worksheets.isShared, true),
           ne(worksheets.teacherId, user.userId),
+          ...(contributorId !== null ? [eq(worksheets.teacherId, contributorId)] : []),
           ...(pattern ? [like(worksheets.title, pattern)] : []),
         ),
       )
@@ -173,7 +222,9 @@ libraryRoutes.get("/", requireRole("guru"), async (c) => {
           id: row.id,
           title: row.title,
           subject: row.subject,
+          teacherId: row.teacherId,
           ownerName: row.ownerName,
+          kontributorTotal: kontributorTotals.get(row.teacherId) ?? 0,
           sharedAt: row.sharedAt,
           itemCount: stats.count,
           totalPoints: stats.points,
@@ -201,7 +252,13 @@ libraryRoutes.get("/", requireRole("guru"), async (c) => {
     pendingCount = Number(modulePending?.count ?? 0) + Number(worksheetPending?.count ?? 0);
   }
 
-  return c.json({ ok: true, data: mergeLibraryEntries(moduleEntries, worksheetEntries), approver, pending_count: pendingCount });
+  return c.json({
+    ok: true,
+    data: mergeLibraryEntries(moduleEntries, worksheetEntries),
+    approver,
+    pending_count: pendingCount,
+    contributors,
+  });
 });
 
 libraryRoutes.get("/modules/:id", requireRole("guru"), async (c) => {

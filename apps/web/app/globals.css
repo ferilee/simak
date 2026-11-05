@@ -3463,6 +3463,29 @@ button.wizard-library-link {
    (konten + panel samping), kisi kartu sampul, dan rak Populer geser.
    Kelas-kelas ini ada di stylesheet karena gaya sebaris halaman tidak
    dapat menyatakan media query; perilaku halamannya tidak berubah. */
+
+/* Tata letak panel menanggapi LEBAR PANEL, bukan lebar jendela. Sejak
+   panel tinggal di bilah kanan cangkang guru, aturan @media viewport lama
+   (3 kolom @900px, 4 kolom @1400px) memaksa kolom-kolom sempit ke ruang
+   panel yang jauh lebih kecil — kartu terjepit ±90px di layar lebar.
+   Akar panel (.library-root) kini menjadi container, dan ambang @container
+   di bawah dikalibrasi agar kartu tidak pernah lebih sempit dari ±230px
+   (celah kisi 16px, celah cangkang 24px, sisipan 300px):
+   - akar <500px: kisi 1 kolom, cangkang bertumpuk (konten lalu sisipan).
+   - akar 500–879px: kisi 2 kolom (±242px per kartu pada 500px).
+   - akar 880–1179px: kisi 3 kolom, cangkang masih bertumpuk sehingga kisi
+     selebar akar (±282px per kartu pada 880px).
+   - akar ≥1180px: cangkang dua kolom; kolom konten ±856px, kisi tetap
+     3 kolom (±274px per kartu).
+   - akar ≥1400px: kisi 4 kolom di kolom konten ±1076px (±257px per kartu).
+   Urutan aturan disengaja: pada lebar yang sama, aturan yang lebih
+   terakhir menang, jadi 4 kolom hanya aktif bersama cangkang dua kolom.
+   Peramban tanpa container query berhenti di tata letak dasar (kisi
+   1 kolom, cangkang bertumpuk) — lapang, hanya kurang padat. */
+.library-root {
+  container-type: inline-size;
+}
+
 .library-shell {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -3471,26 +3494,32 @@ button.wizard-library-link {
   margin-top: 24px;
 }
 
-@media (min-width: 1024px) {
-  .library-shell {
-    grid-template-columns: minmax(0, 1fr) 300px;
-  }
-}
-
 .library-card-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   margin-top: 16px;
 }
 
-@media (min-width: 900px) {
+@container (min-width: 500px) {
+  .library-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 880px) {
   .library-card-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
-@media (min-width: 1400px) {
+@container (min-width: 1180px) {
+  .library-shell {
+    grid-template-columns: minmax(0, 1fr) 300px;
+  }
+}
+
+@container (min-width: 1400px) {
   .library-card-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }

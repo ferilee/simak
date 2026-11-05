@@ -139,8 +139,11 @@ const css = read("../app/globals.css");
 // Case 6 — Embedded chrome: no standalone page furniture in the panel.
 // ---------------------------------------------------------------------------
 {
-  check("panel root is a plain div inside the shell panel, not a page <main>",
-    panel.includes("  return (\n    <div>\n      <section style={styles.hero}>") && !panel.includes("<main"));
+  // Akar panel kini membawa kelas container tata letak (library-root,
+  // lihat tata-letak-perpustakaan-panel); tetap div di dalam panel
+  // cangkang, bukan <main> halaman mandiri.
+  check("panel root is the library-root div inside the shell panel, not a page <main>",
+    panel.includes("  return (\n    <div className=\"library-root\">\n      <section style={styles.hero}>") && !panel.includes("<main"));
   check("standalone back-to-guru link is gone from the panel",
     !panel.includes("← Ruang guru") && !panel.includes('href="/guru"') && !panel.includes("styles.container"));
   check("in-library back buttons (preview → list) survive",

@@ -328,7 +328,7 @@ export function LibraryPanel({ onOpenCopiedDraft }: LibraryPanelProps) {
   const topTotal = contributors[0]?.total ?? 0;
 
   return (
-    <div>
+    <div className="library-root">
       <section style={styles.hero}>
         <div style={styles.heroText}>
           <p style={styles.heroEyebrow}>SIMAK · PERPUSTAKAAN BERSAMA</p>
@@ -991,8 +991,10 @@ const styles: Record<string, CSSProperties> = {
   bookBody: { padding: "14px 16px 16px", display: "flex", flexDirection: "column", gap: 8, flex: 1, minWidth: 0 },
   cardActionsPush: { marginTop: "auto", paddingTop: 4 },
   shelfCard: {
-    flex: "0 0 150px",
-    width: 150,
+    // Basis tetap 230px dan tidak menyusut (flex "0 0 …"): kartu rak tidak
+    // pernah terjepit; raknya sendiri bergeser mendatar bila sempit.
+    flex: "0 0 230px",
+    width: 230,
     border: "1px solid #eaecf0",
     borderRadius: 12,
     overflow: "hidden",

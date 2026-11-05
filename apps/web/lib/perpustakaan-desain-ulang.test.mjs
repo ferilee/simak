@@ -150,10 +150,13 @@ const entry = (overrides) => ({
     page.includes("setStats(response.stats ?? null)") && page.includes("libraryStatsChips(stats)")
     && page.includes("stats?: LibraryStats"));
 
+  // Sejak panel pindah ke bilah kanan cangkang guru, cangkang dua kolom
+  // diatur container query pada lebar akar panel (@container 1180px),
+  // bukan lagi @media viewport 1024px — lihat tata-letak-perpustakaan-panel.
   check("two-column shell wraps content + sidebar",
     page.includes('className="library-shell"') && page.includes("styles.sidebar")
     && css.includes(".library-shell") && css.includes("minmax(0, 1fr) 300px")
-    && css.includes("@media (min-width: 1024px)"));
+    && css.includes("@container (min-width: 1180px)"));
   check("card grid is a responsive stylesheet grid",
     page.includes('className="library-card-grid"') && css.includes(".library-card-grid")
     && css.includes("repeat(2, minmax(0, 1fr))") && css.includes("repeat(3, minmax(0, 1fr))")

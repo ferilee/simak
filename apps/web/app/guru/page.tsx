@@ -47,6 +47,7 @@ import { ModuleBlockPreview } from "../../components/ModuleBlockPreview";
 import { useConfirm } from "../../components/ConfirmDialog";
 import { Modal } from "../../components/Modal";
 import { closeDecision, sameIdList } from "../../lib/modal";
+import { neighborIndex, nextUngradedIndex, progressLabel } from "../../lib/lembar-nilai";
 import { MathText } from "../../components/MathContent";
 import { markdownToHtml, htmlToMarkdown } from "../../components/markdown";
 import { RichTextEditor, sanitizeBlockHtml } from "../../components/RichTextEditor";
@@ -466,6 +467,13 @@ export default function GuruPage() {
   const gradingPickRef = useRef(false);
   const [selectedAttemptId, setSelectedAttemptId] = useState<number | null>(null);
   const [attemptDetail, setAttemptDetail] = useState<WorksheetAttemptDetail | null>(null);
+  // Lembar Nilai: rincian penilaian kini membuka sebagai lembar (modal)
+  // di atas daftar pengumpulan, bukan lagi mengalir di bawah daftar.
+  // Bendera terbuka terpisah dari selectedAttemptId karena pilihan
+  // attempt terisi otomatis oleh pemuatan daftar (attempt pertama) —
+  // lembar hanya membuka atas tindakan guru yang nyata (klik kartu,
+  // atau perpindahan dari dalam lembar), tidak pernah muncul sendiri.
+  const [gradingSheetOpen, setGradingSheetOpen] = useState(false);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<number | null>(null);
   const [assignmentSummary, setAssignmentSummary] = useState<AssignmentGradingSummary | null>(null);
   const [assignmentSummaryLoading, setAssignmentSummaryLoading] = useState(false);
@@ -810,6 +818,42 @@ export default function GuruPage() {
   // Lencana tab "Nilai": antrean belum dinilai dari data gabungan yang
   // sudah termuat (nol/ kosong berarti lencana tidak ditampilkan).
   const ungradedBadgeCount = allAttempts.filter(isUngradedAttempt).length;
+  // Lembar Nilai menavigasi daftar tampil yang sama persis dengan yang
+  // dirender panel (sudah disaring + diurutkan); untuk helper murni di
+  // lib/lembar-nilai daftar itu diabstraksi menjadi { id, graded },
+  // dengan "graded" berarti BUKAN antrean nilai lagi (sudah dinilai
+  // atau masih draf) — kebalikan isUngradedAttempt, predikat yang sama
+  // dengan hitungan "Belum dinilai" panel di atas.
+  const gradingSheetEntries = visibleGradingAttempts.map((attempt) => ({ id: attempt.id, graded: !isUngradedAttempt(attempt) }));
+  const gradingSheetProgress = selectedAttemptId === null ? null : progressLabel(gradingSheetEntries, selectedAttemptId);
+  const gradingPrevIndex = selectedAttemptId === null ? null : neighborIndex(gradingSheetEntries, selectedAttemptId, "prev");
+  const gradingNextIndex = selectedAttemptId === null ? null : neighborIndex(gradingSheetEntries, selectedAttemptId, "next");
+  const gradingSheetEntry = visibleGradingAttempts.find((attempt) => attempt.id === selectedAttemptId) ?? null;
+  const gradingSheetTitle = attemptDetail?.attempt.student_name ?? gradingSheetEntry?.student_name ?? "Penilaian";
+  const gradingSheetSubtitle = gradingSheetEntry?.worksheet_title
+    ?? (selectedWorksheetId ? worksheets.find((worksheet) => worksheet.id === selectedWorksheetId)?.title : undefined);
+  // Penanda kotor penilaian untuk penjaga tutup lembar: draf skor/catatan
+  // per butir yang belum sama dengan potret tersimpan di savedGradeRef
+  // (autosave menggeser potret itu setiap komitmen berhasil, jadi yang
+  // tertinggal memang belum tersimpan), komentar umum yang berubah dari
+  // rincian yang dimuat, dan draf nilai khusus anggota yang belum
+  // dijalankan tombol "Sesuaikan"-nya.
+  const gradingItemDirty = attemptDetail ? attemptDetail.items.some((item) => {
+    const saved = savedGradeRef.current[item.id];
+    const scoreText = (scoreDrafts[item.id] ?? "").trim();
+    const draftScore = scoreText === "" ? null : Number(scoreText);
+    const draftNote = noteDrafts[item.id] ?? "";
+    if (!saved) return draftScore !== null || draftNote !== "";
+    return draftScore !== saved.score || draftNote !== saved.note;
+  }) : false;
+  const gradingMemberDirty = attemptDetail?.attempt.members ? attemptDetail.attempt.members.some((member) => {
+    const draft = (memberScoreDrafts[member.id] ?? "").trim();
+    const savedText = member.member_score === null || member.member_score === undefined ? "" : String(member.member_score);
+    if (draft === savedText) return false;
+    return draft === "" || savedText === "" || Number(draft) !== Number(savedText);
+  }) : false;
+  const gradingDirty = attemptDetail !== null
+    && (gradingItemDirty || gradingMemberDirty || teacherComment !== (attemptDetail.attempt.teacher_comment ?? ""));
   // Indikasi integritas: semua saringan di klien; urutan tampil ditegakkan
   // di sini (risiko terberat dulu), bukan mengikuti urutan API.
   const integrityAssignmentOptions = distinctIntegrityAssignments(integrityAlerts);
@@ -2206,8 +2250,15 @@ export default function GuruPage() {
     }
   }
 
-  async function saveGrades() {
-    if (!selectedWorksheetId || !selectedAttemptId || !attemptDetail) return;
+  // Inti simpan menyeluruh penilaian: validasi draf + satu PATCH ke
+  // endpoint attempt, TANPA kelanjutan antreannya. Mengembalikan true
+  // hanya bila nilai benar-benar tersimpan di server; pesan galat dan
+  // muatan kirimannya persis jalur lama. saveGrades menambahkan
+  // lompatan antrean lama di atas inti ini, sedangkan navigasi Lembar
+  // Nilai memakai intinya langsung lalu menentukan sendiri tujuannya
+  // (tetangga daftar / antrean berikutnya) sesudah simpan berhasil.
+  async function saveGradesCore(): Promise<boolean> {
+    if (!selectedWorksheetId || !selectedAttemptId || !attemptDetail) return false;
     const savedWorksheetId = selectedWorksheetId;
     const savedAttemptId = selectedAttemptId;
     const answers = attemptDetail.items
@@ -2219,20 +2270,30 @@ export default function GuruPage() {
       }));
     if (answers.some((answer) => !Number.isFinite(answer.score) || answer.score < 0)) {
       setMessage("Nilai harus berupa angka nol atau lebih.");
-      return;
+      return false;
     }
     if (answers.some((answer) => answer.score > (attemptDetail.items.find((item) => item.id === answer.itemId)?.points ?? 0))) {
       setMessage("Nilai tidak boleh melebihi poin soal.");
-      return;
+      return false;
     }
     try {
       await apiRequest(`/worksheets/${savedWorksheetId}/attempts/${savedAttemptId}`, {
         method: "PATCH",
         body: JSON.stringify({ answers, teacherComment: teacherComment.trim() || undefined }),
       });
-      await advanceAfterGrading(savedWorksheetId, savedAttemptId);
+      return true;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Penilaian belum dapat disimpan.");
+      return false;
+    }
+  }
+
+  async function saveGrades() {
+    if (!selectedWorksheetId || !selectedAttemptId || !attemptDetail) return;
+    const savedWorksheetId = selectedWorksheetId;
+    const savedAttemptId = selectedAttemptId;
+    if (await saveGradesCore()) {
+      await advanceAfterGrading(savedWorksheetId, savedAttemptId);
     }
   }
 
@@ -2345,6 +2406,78 @@ export default function GuruPage() {
       delete next[itemId];
       return next;
     });
+  }
+
+  // --- Lembar Nilai: buka, tutup, dan berpindah antar pengumpulan ---
+  // Membuka satu pengumpulan meniru persis klik manual pada daftar
+  // (pada mode gabungan LKPD sumber ikut beralih lewat gradingPickRef
+  // agar rincian + penyimpanan memakai endpoint per-LKPD yang benar);
+  // dipakai bersama oleh kartu daftar dan navigasi di dalam lembar.
+  function openGradingAttempt(attempt: (WorksheetAttemptSummary & { worksheet_id?: number; worksheet_title?: string })) {
+    if (gradingCombined && attempt.worksheet_id && attempt.worksheet_id !== selectedWorksheetId) {
+      gradingPickRef.current = true;
+      setSelectedWorksheetId(attempt.worksheet_id);
+    }
+    setSelectedAttemptId(attempt.id);
+  }
+
+  // Menutup lembar mengosongkan pilihan + rincian; daftar di belakangnya
+  // tidak berubah sama sekali (posisi gulir halaman tidak pernah
+  // berpindah). Membuka lagi memuat rincian segar dari server lewat
+  // efek pemuat rincian yang sudah ada, jadi draf yang dibuang memang
+  // hilang — itulah semantik "buang" pada penjaga tutupnya.
+  function closeGradingSheet() {
+    setGradingSheetOpen(false);
+    setSelectedAttemptId(null);
+    setAttemptDetail(null);
+  }
+
+  // Perpindahan di dalam lembar menyimpan dulu lewat inti simpan yang
+  // sama bila ada suntingan belum tersimpan; simpan yang gagal
+  // (validasi/API) membatalkan perpindahan dan pesannya tampil lewat
+  // jalur pesan yang sudah ada.
+  async function navigateGradingSheet(targetIndex: number | null) {
+    if (targetIndex === null) return;
+    const target = visibleGradingAttempts[targetIndex];
+    if (!target) return;
+    if (gradingDirty && !(await saveGradesCore())) return;
+    // Target di luar lipatan tampilan: perluas daftar sampai ikut
+    // terlihat, memakai mekanisme tampil-bertahap panel yang sama
+    // seperti lompat otomatis penilaian.
+    if (targetIndex >= gradingRevealedCount) {
+      setGradingRevealedCount(revealedCountForIndex(targetIndex));
+    }
+    openGradingAttempt(target);
+  }
+
+  // "Simpan & Berikutnya": simpan pengumpulan ini (bila ada suntingan),
+  // segarkan kedua sumber daftar seperti lompatan antrean lama, lalu
+  // buka pengumpulan berikutnya yang masih antre nilai SESUDAH posisi
+  // pengumpulan ini pada urutan tampil terbaru. Bila tidak ada lagi,
+  // lembar ditutup dan guru diberi tahu lewat toast pesan halaman.
+  async function saveAndNextUngradedGrading() {
+    if (!selectedWorksheetId || !selectedAttemptId || !attemptDetail) return;
+    const worksheetId = selectedWorksheetId;
+    const currentId = selectedAttemptId;
+    if (gradingDirty && !(await saveGradesCore())) return;
+    const freshAttempts = await loadAttempts(worksheetId);
+    const freshAllAttempts = gradingCombined ? await loadAllAttempts() : null;
+    const freshSource: (WorksheetAttemptSummary & { worksheet_id?: number; worksheet_title?: string })[] = gradingCombined
+      ? (freshAllAttempts ?? allAttempts)
+      : (freshAttempts ?? attempts);
+    const freshDisplay = sortGradingAttempts(filterGradingAttemptsByClass(freshSource, gradingClassFilterActive))
+      .filter((attempt) => matchesGradingStatusFilter(attempt, gradingStatusFilter));
+    const freshEntries = freshDisplay.map((attempt) => ({ id: attempt.id, graded: !isUngradedAttempt(attempt) }));
+    const targetIndex = nextUngradedIndex(freshEntries, currentId);
+    if (targetIndex < 0) {
+      closeGradingSheet();
+      setMessage("Semua pengumpulan pada daftar ini sudah dinilai.");
+      return;
+    }
+    if (targetIndex >= gradingRevealedCount) {
+      setGradingRevealedCount(revealedCountForIndex(targetIndex));
+    }
+    openGradingAttempt(freshDisplay[targetIndex]);
   }
 
   // Beralih jenis sasaran mengosongkan daftar milik jenis sebelumnya, agar
@@ -2714,6 +2847,147 @@ export default function GuruPage() {
       || !sameIdList(assignmentClassIds, assignmentBase.classIds)
       || !sameIdList(assignmentStudentIds, assignmentBase.studentIds)
     : false;
+
+  // Rincian penilaian pengumpulan adalah SATU elemen yang kini
+  // tinggal di Lembar Nilai (modal) di atas daftar pengumpulan —
+  // titik pasangnya berpindah dari aliran halaman ke lembar, isi dan
+  // pengikatan keadaannya persis seperti sebelumnya. Tanpa rincian
+  // termuat ia tidak dirender.
+  function renderAttemptReview() {
+    if (!attemptDetail) return null;
+    return (
+      <div className="teacher-attempt-review" style={styles.review}>
+        <h3 style={styles.reviewTitle}>{attemptDetail.attempt.student_name}</h3>
+        {attemptDetail.attempt.is_group ? (
+          <p style={styles.muted}>👥 Pengumpulan kelompok · status {attemptDetail.attempt.status}{attemptDetail.attempt.members && attemptDetail.attempt.members.length > 0 ? <> · Anggota: {attemptDetail.attempt.members.map((member) => member.name).join(", ")}</> : null}</p>
+        ) : (
+          <p style={styles.muted}>{attemptDetail.attempt.username} · status {attemptDetail.attempt.status}</p>
+        )}
+        {gradingProgressText ? (
+          <p style={styles.muted}>{gradingProgressText} · nilai tampil ke murid sesudah semua butir selesai dinilai</p>
+        ) : null}
+        {runningTotalDraft ? (
+          <p style={styles.muted}>Total sementara: {formatScoreValue(runningTotalDraft.current)} dari {formatScoreValue(runningTotalDraft.max)}</p>
+        ) : null}
+        {attemptDetail.items.map((item, index) => (
+          <article key={item.id} className="teacher-answer-card" style={styles.answerCard}>
+            <strong>{index + 1}. <MathText text={item.prompt} /></strong>
+            <p style={styles.answerText}><MathText text={item.answer_text || "Tidak ada jawaban."} /></p>
+            {item.attachment_key ? (
+              <button
+                type="button"
+                onClick={() => { if (item.attachment_key) void openAnswerPhoto(item.attachment_key); }}
+                style={styles.secondaryButton}
+              >
+                <span className="action-icon" aria-hidden="true">👁</span>Lihat foto jawaban
+              </button>
+            ) : null}
+            {attemptDetail.attempt.is_group && item.last_editor_name ? (
+              <small style={styles.muted}>Diubah terakhir oleh {item.last_editor_name}{item.answer_updated_at ? ` · ${formatDate(item.answer_updated_at)}` : ""}</small>
+            ) : null}
+            <small style={styles.muted}>Kunci: <MathText text={item.answer_key || "Tidak ada kunci otomatis."} /> · Maksimal {item.points} poin</small>
+            <div style={styles.scoreRow}>
+              <input
+                type="number"
+                min={0}
+                max={item.points}
+                step="0.01"
+                value={scoreDrafts[item.id] ?? ""}
+                onChange={(event) => { setScoreDrafts((current) => ({ ...current, [item.id]: event.target.value })); markItemGradeDirty(item.id); }}
+                onBlur={() => void commitGradeItem(item, scoreDrafts[item.id] ?? "", noteDrafts[item.id] ?? "")}
+                placeholder="Nilai soal"
+                style={{ ...styles.input, ...styles.scoreInput }}
+              />
+              <button type="button" style={activeQuickScoreChip(scoreDrafts[item.id]?.trim() ? Number(scoreDrafts[item.id]) : null, item.points) === "zero" ? styles.scoreChipZeroActive : styles.scoreChip} onClick={() => { const value = quickScoreDrafts(item.points).zero; setScoreDrafts((current) => ({ ...current, [item.id]: value })); void commitGradeItem(item, value, noteDrafts[item.id] ?? ""); }}>0</button>
+              <button type="button" style={activeQuickScoreChip(scoreDrafts[item.id]?.trim() ? Number(scoreDrafts[item.id]) : null, item.points) === "half" ? styles.scoreChipHalfActive : styles.scoreChip} onClick={() => { const value = quickScoreDrafts(item.points).half; setScoreDrafts((current) => ({ ...current, [item.id]: value })); void commitGradeItem(item, value, noteDrafts[item.id] ?? ""); }}>½</button>
+              <button type="button" style={activeQuickScoreChip(scoreDrafts[item.id]?.trim() ? Number(scoreDrafts[item.id]) : null, item.points) === "full" ? styles.scoreChipFullActive : styles.scoreChip} onClick={() => { const value = quickScoreDrafts(item.points).full; setScoreDrafts((current) => ({ ...current, [item.id]: value })); void commitGradeItem(item, value, noteDrafts[item.id] ?? ""); }}>Penuh</button>
+            </div>
+            {itemSaveStates[item.id] === "saving" ? <small style={styles.muted}>Menyimpan nilai…</small> : null}
+            {itemSaveStates[item.id] === "saved" ? <small style={styles.savedMark}>Tersimpan ✓</small> : null}
+            {itemSaveStates[item.id] === "error" ? <small style={styles.errorMark}>Nilai butir ini belum tersimpan — periksa koneksi lalu ubah kembali nilainya, atau pakai tombol Simpan penilaian.</small> : null}
+            <textarea
+              value={noteDrafts[item.id] ?? ""}
+              onChange={(event) => { setNoteDrafts((current) => ({ ...current, [item.id]: event.target.value })); markItemGradeDirty(item.id); }}
+              onBlur={() => void commitGradeItem(item, scoreDrafts[item.id] ?? "", noteDrafts[item.id] ?? "")}
+              placeholder="Catatan untuk murid (opsional)"
+              rows={2}
+              style={styles.textarea}
+            />
+          </article>
+        ))}
+        <textarea
+          value={teacherComment}
+          onChange={(event) => setTeacherComment(event.target.value)}
+          placeholder="Komentar umum untuk murid (opsional)"
+          rows={3}
+          style={styles.textarea}
+        />
+        <button type="button" onClick={() => void saveGrades()} style={styles.primaryButton}><span className="action-icon" aria-hidden="true">💾</span>Simpan penilaian</button>
+        {attemptDetail.attempt.is_group && attemptDetail.attempt.members && attemptDetail.attempt.members.length > 0 ? (
+          <div style={{ display: "grid", gap: 10, borderTop: "1px solid #eaecf0", paddingTop: 14 }}>
+            <strong>Kontribusi & nilai anggota</strong>
+            <p style={styles.muted}>Kontribusi adalah rata-rata penilaian antarteman — hanya informasi untuk pertimbangan guru dan tidak diterapkan otomatis ke nilai. Nilai akhir anggota mengikuti nilai kelompok, kecuali guru menyesuaikannya di sini.</p>
+            {attemptDetail.attempt.members.map((member) => (
+              <div key={member.id} style={{ display: "grid", gap: 6, border: "1px solid #eaecf0", borderRadius: 10, padding: 12 }}>
+                <strong>{member.name}</strong>
+                <span style={styles.muted}>{member.contribution_average !== null && member.contribution_average !== undefined ? `Kontribusi: ${formatScoreValue(member.contribution_average)} dari ${member.contribution_raters ?? 0} penilai` : "Kontribusi: belum dinilai teman"}</span>
+                <span style={styles.muted}>Nilai akhir: {member.effective_score === null || member.effective_score === undefined ? "—" : formatScoreValue(member.effective_score)}{member.member_score !== null && member.member_score !== undefined ? " (disesuaikan guru)" : ""}</span>
+                <div style={styles.scoreRow}>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={memberScoreDrafts[member.id] ?? ""}
+                    onChange={(event) => setMemberScoreDrafts((current) => ({ ...current, [member.id]: event.target.value }))}
+                    placeholder="Nilai khusus anggota"
+                    aria-label={`Nilai khusus untuk ${member.name}`}
+                    style={{ ...styles.input, ...styles.scoreInput }}
+                  />
+                  <button
+                    type="button"
+                    style={styles.secondaryButton}
+                    onClick={() => {
+                      const raw = (memberScoreDrafts[member.id] ?? "").trim();
+                      const value = Number(raw);
+                      if (raw === "" || !Number.isFinite(value) || value < 0) {
+                        setMessage("Isi nilai khusus berupa angka nol atau lebih terlebih dahulu.");
+                        return;
+                      }
+                      void saveMemberScore(member.id, value);
+                    }}
+                  >
+                    <span className="action-icon" aria-hidden="true">📝</span>Sesuaikan
+                  </button>
+                  {member.member_score !== null && member.member_score !== undefined ? (
+                    <button type="button" style={styles.secondaryButton} onClick={() => void saveMemberScore(member.id, null)}><span className="action-icon" aria-hidden="true">↩</span>Kembalikan ke nilai kelompok</button>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  // Bilah aksi lengket Lembar Nilai: perpindahan antar pengumpulan
+  // mengikuti urutan tampil daftar panel; "Simpan penilaian" memakai
+  // jalur simpan lama apa adanya; "Simpan & Berikutnya" adalah aksi
+  // utama antrean (simpan lalu lompat ke antrean berikutnya).
+  function renderGradingSheetFooter() {
+    return (
+      <>
+        <div style={styles.actionRow}>
+          <button type="button" style={styles.secondaryButton} disabled={gradingPrevIndex === null} onClick={() => void navigateGradingSheet(gradingPrevIndex)}>‹ Sebelumnya</button>
+          <button type="button" style={styles.secondaryButton} disabled={gradingNextIndex === null} onClick={() => void navigateGradingSheet(gradingNextIndex)}>Berikutnya ›</button>
+        </div>
+        <div style={styles.actionRow}>
+          <button type="button" style={styles.secondaryButton} onClick={() => void saveGrades()}>Simpan penilaian</button>
+          <button type="button" style={styles.primaryButton} onClick={() => void saveAndNextUngradedGrading()}>Simpan &amp; Berikutnya ›</button>
+        </div>
+      </>
+    );
+  }
 
   // Formulir penugasan adalah SATU elemen untuk dua tempat: di panel
   // lipat Langkah 4 saat membuat baru, dan di modal saat mengedit
@@ -3933,18 +4207,14 @@ export default function GuruPage() {
             <p style={styles.empty}>{gradingCombined ? "Belum ada pengumpulan dari LKPD mana pun." : "Belum ada murid yang mengumpulkan LKPD ini."}</p>
           ) : null}
           {gradingAttempts.length > 0 ? (
-            <div className="teacher-attempt-layout">
-              <div className="teacher-attempt-list" style={styles.list}>
+            <div className="teacher-attempt-list" style={styles.list}>
                 {visibleGradingAttempts.slice(0, gradingRevealedCount).map((attempt) => (
                   <button
                     key={attempt.id}
                     type="button"
                     onClick={() => {
-                      if (gradingCombined && attempt.worksheet_id && attempt.worksheet_id !== selectedWorksheetId) {
-                        gradingPickRef.current = true;
-                        setSelectedWorksheetId(attempt.worksheet_id);
-                      }
-                      setSelectedAttemptId(attempt.id);
+                      openGradingAttempt(attempt);
+                      setGradingSheetOpen(true);
                     }}
                     style={{ ...styles.attempt, borderColor: selectedAttemptId === attempt.id ? "#175cd3" : "#eaecf0" }}
                   >
@@ -3971,120 +4241,6 @@ export default function GuruPage() {
                   </>
                 ) : null}
               </div>
-              {attemptDetail ? (
-                <div className="teacher-attempt-review" style={styles.review}>
-                  <h3 style={styles.reviewTitle}>{attemptDetail.attempt.student_name}</h3>
-                  {attemptDetail.attempt.is_group ? (
-                    <p style={styles.muted}>👥 Pengumpulan kelompok · status {attemptDetail.attempt.status}{attemptDetail.attempt.members && attemptDetail.attempt.members.length > 0 ? <> · Anggota: {attemptDetail.attempt.members.map((member) => member.name).join(", ")}</> : null}</p>
-                  ) : (
-                    <p style={styles.muted}>{attemptDetail.attempt.username} · status {attemptDetail.attempt.status}</p>
-                  )}
-                  {gradingProgressText ? (
-                    <p style={styles.muted}>{gradingProgressText} · nilai tampil ke murid sesudah semua butir selesai dinilai</p>
-                  ) : null}
-                  {runningTotalDraft ? (
-                    <p style={styles.muted}>Total sementara: {formatScoreValue(runningTotalDraft.current)} dari {formatScoreValue(runningTotalDraft.max)}</p>
-                  ) : null}
-                  {attemptDetail.items.map((item, index) => (
-                    <article key={item.id} className="teacher-answer-card" style={styles.answerCard}>
-                      <strong>{index + 1}. <MathText text={item.prompt} /></strong>
-                      <p style={styles.answerText}><MathText text={item.answer_text || "Tidak ada jawaban."} /></p>
-                      {item.attachment_key ? (
-                        <button
-                          type="button"
-                          onClick={() => { if (item.attachment_key) void openAnswerPhoto(item.attachment_key); }}
-                          style={styles.secondaryButton}
-                        >
-                          <span className="action-icon" aria-hidden="true">👁</span>Lihat foto jawaban
-                        </button>
-                      ) : null}
-                      {attemptDetail.attempt.is_group && item.last_editor_name ? (
-                        <small style={styles.muted}>Diubah terakhir oleh {item.last_editor_name}{item.answer_updated_at ? ` · ${formatDate(item.answer_updated_at)}` : ""}</small>
-                      ) : null}
-                      <small style={styles.muted}>Kunci: <MathText text={item.answer_key || "Tidak ada kunci otomatis."} /> · Maksimal {item.points} poin</small>
-                      <div style={styles.scoreRow}>
-                        <input
-                          type="number"
-                          min={0}
-                          max={item.points}
-                          step="0.01"
-                          value={scoreDrafts[item.id] ?? ""}
-                          onChange={(event) => { setScoreDrafts((current) => ({ ...current, [item.id]: event.target.value })); markItemGradeDirty(item.id); }}
-                          onBlur={() => void commitGradeItem(item, scoreDrafts[item.id] ?? "", noteDrafts[item.id] ?? "")}
-                          placeholder="Nilai soal"
-                          style={{ ...styles.input, ...styles.scoreInput }}
-                        />
-                        <button type="button" style={activeQuickScoreChip(scoreDrafts[item.id]?.trim() ? Number(scoreDrafts[item.id]) : null, item.points) === "zero" ? styles.scoreChipZeroActive : styles.scoreChip} onClick={() => { const value = quickScoreDrafts(item.points).zero; setScoreDrafts((current) => ({ ...current, [item.id]: value })); void commitGradeItem(item, value, noteDrafts[item.id] ?? ""); }}>0</button>
-                        <button type="button" style={activeQuickScoreChip(scoreDrafts[item.id]?.trim() ? Number(scoreDrafts[item.id]) : null, item.points) === "half" ? styles.scoreChipHalfActive : styles.scoreChip} onClick={() => { const value = quickScoreDrafts(item.points).half; setScoreDrafts((current) => ({ ...current, [item.id]: value })); void commitGradeItem(item, value, noteDrafts[item.id] ?? ""); }}>½</button>
-                        <button type="button" style={activeQuickScoreChip(scoreDrafts[item.id]?.trim() ? Number(scoreDrafts[item.id]) : null, item.points) === "full" ? styles.scoreChipFullActive : styles.scoreChip} onClick={() => { const value = quickScoreDrafts(item.points).full; setScoreDrafts((current) => ({ ...current, [item.id]: value })); void commitGradeItem(item, value, noteDrafts[item.id] ?? ""); }}>Penuh</button>
-                      </div>
-                      {itemSaveStates[item.id] === "saving" ? <small style={styles.muted}>Menyimpan nilai…</small> : null}
-                      {itemSaveStates[item.id] === "saved" ? <small style={styles.savedMark}>Tersimpan ✓</small> : null}
-                      {itemSaveStates[item.id] === "error" ? <small style={styles.errorMark}>Nilai butir ini belum tersimpan — periksa koneksi lalu ubah kembali nilainya, atau pakai tombol Simpan penilaian.</small> : null}
-                      <textarea
-                        value={noteDrafts[item.id] ?? ""}
-                        onChange={(event) => { setNoteDrafts((current) => ({ ...current, [item.id]: event.target.value })); markItemGradeDirty(item.id); }}
-                        onBlur={() => void commitGradeItem(item, scoreDrafts[item.id] ?? "", noteDrafts[item.id] ?? "")}
-                        placeholder="Catatan untuk murid (opsional)"
-                        rows={2}
-                        style={styles.textarea}
-                      />
-                    </article>
-                  ))}
-                  <textarea
-                    value={teacherComment}
-                    onChange={(event) => setTeacherComment(event.target.value)}
-                    placeholder="Komentar umum untuk murid (opsional)"
-                    rows={3}
-                    style={styles.textarea}
-                  />
-                  <button type="button" onClick={() => void saveGrades()} style={styles.primaryButton}><span className="action-icon" aria-hidden="true">💾</span>Simpan penilaian</button>
-                  {attemptDetail.attempt.is_group && attemptDetail.attempt.members && attemptDetail.attempt.members.length > 0 ? (
-                    <div style={{ display: "grid", gap: 10, borderTop: "1px solid #eaecf0", paddingTop: 14 }}>
-                      <strong>Kontribusi & nilai anggota</strong>
-                      <p style={styles.muted}>Kontribusi adalah rata-rata penilaian antarteman — hanya informasi untuk pertimbangan guru dan tidak diterapkan otomatis ke nilai. Nilai akhir anggota mengikuti nilai kelompok, kecuali guru menyesuaikannya di sini.</p>
-                      {attemptDetail.attempt.members.map((member) => (
-                        <div key={member.id} style={{ display: "grid", gap: 6, border: "1px solid #eaecf0", borderRadius: 10, padding: 12 }}>
-                          <strong>{member.name}</strong>
-                          <span style={styles.muted}>{member.contribution_average !== null && member.contribution_average !== undefined ? `Kontribusi: ${formatScoreValue(member.contribution_average)} dari ${member.contribution_raters ?? 0} penilai` : "Kontribusi: belum dinilai teman"}</span>
-                          <span style={styles.muted}>Nilai akhir: {member.effective_score === null || member.effective_score === undefined ? "—" : formatScoreValue(member.effective_score)}{member.member_score !== null && member.member_score !== undefined ? " (disesuaikan guru)" : ""}</span>
-                          <div style={styles.scoreRow}>
-                            <input
-                              type="number"
-                              min={0}
-                              step="0.01"
-                              value={memberScoreDrafts[member.id] ?? ""}
-                              onChange={(event) => setMemberScoreDrafts((current) => ({ ...current, [member.id]: event.target.value }))}
-                              placeholder="Nilai khusus anggota"
-                              aria-label={`Nilai khusus untuk ${member.name}`}
-                              style={{ ...styles.input, ...styles.scoreInput }}
-                            />
-                            <button
-                              type="button"
-                              style={styles.secondaryButton}
-                              onClick={() => {
-                                const raw = (memberScoreDrafts[member.id] ?? "").trim();
-                                const value = Number(raw);
-                                if (raw === "" || !Number.isFinite(value) || value < 0) {
-                                  setMessage("Isi nilai khusus berupa angka nol atau lebih terlebih dahulu.");
-                                  return;
-                                }
-                                void saveMemberScore(member.id, value);
-                              }}
-                            >
-                              <span className="action-icon" aria-hidden="true">📝</span>Sesuaikan
-                            </button>
-                            {member.member_score !== null && member.member_score !== undefined ? (
-                              <button type="button" style={styles.secondaryButton} onClick={() => void saveMemberScore(member.id, null)}><span className="action-icon" aria-hidden="true">↩</span>Kembalikan ke nilai kelompok</button>
-                            ) : null}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
           ) : null}
         </section>
 
@@ -4265,6 +4421,24 @@ export default function GuruPage() {
           <button type="submit" style={styles.primaryButton}><span className="action-icon" aria-hidden="true">💾</span>Simpan data LKPD</button>
           <button type="button" onClick={cancelEditWorksheetMeta} style={styles.secondaryButton}><span className="action-icon" aria-hidden="true">✕</span>Batal</button>
         </form>
+      </Modal>
+
+      {/* Lembar Nilai: rincian penilaian pengumpulan yang sama, kini
+          dipasang di modal lebar di atas daftar (satu-satunya rumahnya).
+          Kepalanya memuat identitas pengumpulan + nama LKPD dan baris
+          kemajuan antrean; dasarnya bilah navigasi lengket. Tutupnya
+          dijaga penjaga yang sama dengan modal formulir Tahap 1:
+          suntingan penilaian yang belum tersimpan ditanya dulu. */}
+      <Modal
+        open={gradingSheetOpen}
+        title={gradingSheetTitle}
+        subtitle={gradingSheetSubtitle}
+        wide
+        footer={renderGradingSheetFooter()}
+        onClose={() => void requestEditModalClose(gradingDirty, closeGradingSheet)}
+      >
+        {gradingSheetProgress ? <p style={styles.muted}>{gradingSheetProgress}</p> : null}
+        {attemptDetail ? renderAttemptReview() : <p style={styles.muted}>Memuat rincian pengumpulan…</p>}
       </Modal>
     </main>
   );

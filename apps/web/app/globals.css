@@ -1319,6 +1319,34 @@ a {
   overflow-y: auto;
 }
 
+/* Baris kecil di bawah judul modal (prop subtitle) — dipakai Lembar
+   Nilai untuk nama LKPD di bawah nama pengumpulan. */
+.modal-subtitle {
+  margin: 2px 0 0;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+/* Varian lebar (prop wide, atribut data-wide): panel penilaian memuat
+   kartu jawaban per soal, jadi di desktop ia lebih lebar dari panel
+   formulir. Pada lembar layar penuh ≤720px lebarnya tetap 100%. */
+.modal-panel[data-wide="true"] {
+  width: min(920px, 96vw);
+}
+
+/* Bilah aksi lengket di dasar panel (prop footer): anak lentur terakhir
+   panel, jadi selalu terlihat sementara badan modal digulir. */
+.modal-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 22px;
+  border-top: 1px solid #eaecf0;
+}
+
 @media (max-width: 720px) {
   .modal-overlay {
     padding: 0;
@@ -1329,6 +1357,10 @@ a {
     height: 100dvh;
     max-height: none;
     border-radius: 0;
+  }
+
+  .modal-panel[data-wide="true"] {
+    width: 100%;
   }
 }
 

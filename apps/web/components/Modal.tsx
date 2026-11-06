@@ -18,15 +18,29 @@ import { useEffect, useRef, type ReactNode } from "react";
 // sama, dan pemakai memutuskan apakah tutup langsung atau bertanya dulu
 // (lihat closeDecision di lib/modal.ts). Modal sendiri hanya tahu cara
 // tampil dan cara meminta ditutup.
+//
+// Prop opsional (dipakai Lembar Nilai; ketiga modal formulir Tahap 1
+// tidak memakainya sehingga tampilannya tidak berubah):
+// - subtitle: baris kecil di bawah judul pada kepala modal.
+// - wide: panel lebih lebar di desktop (atribut data-wide; batas
+//   lebarnya di globals.css, lembar layar penuh ≤720px tidak berubah).
+// - footer: bilah aksi lengket di dasar panel, di luar badan yang
+//   bisa digulir, selalu terlihat selama modal terbuka.
 export function Modal({
   open,
   title,
+  subtitle,
   onClose,
+  wide,
+  footer,
   children,
 }: {
   open: boolean;
   title: string;
+  subtitle?: ReactNode;
   onClose: () => void;
+  wide?: boolean;
+  footer?: ReactNode;
   children: ReactNode;
 }) {
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -56,6 +70,7 @@ export function Modal({
     <div className="modal-overlay" onClick={onClose}>
       <div
         className="modal-panel"
+        data-wide={wide ? true : undefined}
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -64,12 +79,16 @@ export function Modal({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="modal-header">
-          <h2 className="modal-title">{title}</h2>
+          <div>
+            <h2 className="modal-title">{title}</h2>
+            {subtitle ? <p className="modal-subtitle">{subtitle}</p> : null}
+          </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Tutup dialog">
             ×
           </button>
         </div>
         <div className="modal-body">{children}</div>
+        {footer ? <div className="modal-footer">{footer}</div> : null}
       </div>
     </div>
   );

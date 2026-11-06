@@ -45,6 +45,8 @@ import { submissionStatusLabel } from "../lib/labels";
 import { Toast } from "../../components/Toast";
 import { ModuleBlockPreview } from "../../components/ModuleBlockPreview";
 import { useConfirm } from "../../components/ConfirmDialog";
+import { Modal } from "../../components/Modal";
+import { closeDecision, sameIdList } from "../../lib/modal";
 import { MathText } from "../../components/MathContent";
 import { markdownToHtml, htmlToMarkdown } from "../../components/markdown";
 import { RichTextEditor, sanitizeBlockHtml } from "../../components/RichTextEditor";
@@ -418,6 +420,31 @@ export default function GuruPage() {
     targetType: "kelas" | "siswa";
     studentIds: number[];
   } | null>(null);
+  // Garis dasar (baseline) ketiga formulir edit saat dibuka di modal
+  // (Tahap 1): ditangkap utuh saat edit dibuka, lalu penanda kotor
+  // membandingkan kolom formulir saat ini dengannya dan penjaga tutup
+  // modal (requestEditModalClose) memakainya untuk memutuskan perlu
+  // tidaknya konfirmasi buang perubahan. Dibersihkan saat edit berakhir.
+  const moduleMetaBaseline = useRef<{ title: string; subject: string; description: string; coverKey: string | null } | null>(null);
+  const worksheetMetaBaseline = useRef<{ title: string; instructions: string } | null>(null);
+  const assignmentEditBaseline = useRef<{
+    selectedId: number | null;
+    selectedWorksheetId: number | null;
+    title: string;
+    instructions: string;
+    opensAt: string;
+    dueAt: string;
+    ruasUrl: string;
+    workMode: "individu" | "kelompok";
+    groupSize: string;
+    classIds: number[];
+    targetType: "kelas" | "siswa";
+    studentIds: number[];
+  } | null>(null);
+  // Penjaga tutup modal tidak boleh menumpuk: selama satu konfirmasi
+  // buang perubahan belum dijawab, permintaan tutup lain (mis. Esc yang
+  // sama) diabaikan agar dialognya tidak antre dua kali.
+  const editCloseConfirmRef = useRef(false);
   const assignmentFormRef = useRef<HTMLDetailsElement | null>(null);
   const sessionReportPanelRef = useRef<HTMLElement | null>(null);
   const exitTicketPanelRef = useRef<HTMLElement | null>(null);
@@ -1251,6 +1278,12 @@ export default function GuruPage() {
 
   function startEditModuleMeta() {
     if (!selectedModule) return;
+    moduleMetaBaseline.current = {
+      title: selectedModule.title,
+      subject: selectedModule.subject,
+      description: selectedModule.description ?? "",
+      coverKey: selectedModule.cover_key,
+    };
     setEditModuleTitle(selectedModule.title);
     setEditModuleSubject(selectedModule.subject);
     setEditModuleDescription(selectedModule.description ?? "");
@@ -1260,6 +1293,7 @@ export default function GuruPage() {
   }
 
   function cancelEditModuleMeta() {
+    moduleMetaBaseline.current = null;
     setEditingModuleMeta(false);
     setEditCover(null);
     setEditCoverKey(null);
@@ -1278,6 +1312,7 @@ export default function GuruPage() {
         method: "PATCH",
         body: JSON.stringify({ title: editModuleTitle, subject: editModuleSubject, description: editModuleDescription, coverKey }),
       });
+      moduleMetaBaseline.current = null;
       setEditingModuleMeta(false);
       setEditCover(null);
       setMessage("Data modul disimpan.");
@@ -1289,9 +1324,18 @@ export default function GuruPage() {
 
   function startEditWorksheetMeta() {
     if (!selectedWorksheet) return;
+    worksheetMetaBaseline.current = {
+      title: selectedWorksheet.title,
+      instructions: selectedWorksheet.instructions ?? "",
+    };
     setEditWorksheetTitle(selectedWorksheet.title);
     setEditWorksheetInstructions(selectedWorksheet.instructions ?? "");
     setEditingWorksheetMeta(true);
+  }
+
+  function cancelEditWorksheetMeta() {
+    worksheetMetaBaseline.current = null;
+    setEditingWorksheetMeta(false);
   }
 
   async function saveWorksheetMeta(event: FormEvent<HTMLFormElement>) {
@@ -1303,6 +1347,7 @@ export default function GuruPage() {
         method: "PATCH",
         body: JSON.stringify({ title: editWorksheetTitle, instructions: editWorksheetInstructions }),
       });
+      worksheetMetaBaseline.current = null;
       setEditingWorksheetMeta(false);
       setMessage("Data LKPD disimpan.");
       await loadModules();
@@ -2356,6 +2401,27 @@ export default function GuruPage() {
     }
   }
 
+  // Penjaga tutup modal edit (Tahap 1): ✕, klik latar, dan Esc pada
+  // modal semuanya memanggil ini lewat prop onClose. Formulir bersih
+  // langsung menjalankan logika Batal-nya sendiri; formulir kotor
+  // ditanya dulu lewat dialog konfirmasi bersama, dan Batal hanya
+  // berjalan bila guru menegaskan membuang perubahannya.
+  async function requestEditModalClose(dirty: boolean, onCancel: () => void) {
+    if (editCloseConfirmRef.current) return;
+    if (closeDecision(dirty) === "close") {
+      onCancel();
+      return;
+    }
+    editCloseConfirmRef.current = true;
+    try {
+      if (await confirmDialog("Perubahan belum disimpan. Tutup tanpa menyimpan?", { confirmLabel: "Tutup" })) {
+        onCancel();
+      }
+    } finally {
+      editCloseConfirmRef.current = false;
+    }
+  }
+
   function startEditAssignment(assignment: AssignmentSummary) {
     assignmentEditSnapshot.current = {
       selectedId,
@@ -2385,10 +2451,23 @@ export default function GuruPage() {
     setAssignmentOpensAt(toDateTimeLocal(new Date(assignment.opens_at)));
     setAssignmentDueAt(toDateTimeLocal(new Date(assignment.due_at)));
     setAssignmentRuasUrl(assignment.ruas_quiz_url ?? "");
-    if (assignmentFormRef.current) {
-      assignmentFormRef.current.open = true;
-      assignmentFormRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
+    // Garis dasar penanda kotor = nilai penugasan persis seperti yang
+    // dimuat ke formulir di atas; berbeda dengan jepretan di awal fungsi
+    // ini (yang menyimpan draf buat-baru untuk dipulihkan saat keluar).
+    assignmentEditBaseline.current = {
+      selectedId: assignment.module_id,
+      selectedWorksheetId: assignment.worksheet_id,
+      title: assignment.title,
+      instructions: assignment.instructions ?? "",
+      opensAt: toDateTimeLocal(new Date(assignment.opens_at)),
+      dueAt: toDateTimeLocal(new Date(assignment.due_at)),
+      ruasUrl: assignment.ruas_quiz_url ?? "",
+      workMode: assignment.work_mode,
+      groupSize: String(assignment.group_size ?? 4),
+      classIds: assignment.classes.map((kelas) => kelas.id),
+      targetType: assignment.target_type,
+      studentIds: assignment.students.map((student) => student.id),
+    };
   }
 
   function exitAssignmentEdit() {
@@ -2409,6 +2488,7 @@ export default function GuruPage() {
       setAssignmentStudentQuery("");
     }
     assignmentEditSnapshot.current = null;
+    assignmentEditBaseline.current = null;
     setEditingAssignment(null);
   }
 
@@ -2600,6 +2680,140 @@ export default function GuruPage() {
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Penyesuaian nilai belum dapat disimpan.");
     }
+  }
+
+  // Penanda kotor ketiga formulir edit: kolom saat ini dibandingkan
+  // dengan garis dasar yang ditangkap saat edit dibuka. Teks pencarian
+  // murid sasaran (assignmentStudentQuery) sengaja tidak dihitung — ia
+  // alat saring sesaat, bukan nilai yang dikirim.
+  const moduleMetaBase = moduleMetaBaseline.current;
+  const moduleMetaDirty = editingModuleMeta && moduleMetaBase !== null
+    ? editModuleTitle !== moduleMetaBase.title
+      || editModuleSubject !== moduleMetaBase.subject
+      || editModuleDescription !== moduleMetaBase.description
+      || editCoverKey !== moduleMetaBase.coverKey
+      || editCover !== null
+    : false;
+  const worksheetMetaBase = worksheetMetaBaseline.current;
+  const worksheetMetaDirty = editingWorksheetMeta && worksheetMetaBase !== null
+    ? editWorksheetTitle !== worksheetMetaBase.title
+      || editWorksheetInstructions !== worksheetMetaBase.instructions
+    : false;
+  const assignmentBase = assignmentEditBaseline.current;
+  const assignmentEditDirty = editingAssignment !== null && assignmentBase !== null
+    ? selectedId !== assignmentBase.selectedId
+      || selectedWorksheetId !== assignmentBase.selectedWorksheetId
+      || assignmentTitle !== assignmentBase.title
+      || assignmentInstructions !== assignmentBase.instructions
+      || assignmentOpensAt !== assignmentBase.opensAt
+      || assignmentDueAt !== assignmentBase.dueAt
+      || assignmentRuasUrl !== assignmentBase.ruasUrl
+      || assignmentWorkMode !== assignmentBase.workMode
+      || assignmentGroupSize !== assignmentBase.groupSize
+      || assignmentTargetType !== assignmentBase.targetType
+      || !sameIdList(assignmentClassIds, assignmentBase.classIds)
+      || !sameIdList(assignmentStudentIds, assignmentBase.studentIds)
+    : false;
+
+  // Formulir penugasan adalah SATU elemen untuk dua tempat: di panel
+  // lipat Langkah 4 saat membuat baru, dan di modal saat mengedit
+  // (Tahap 1). Isi dan pengikatan keadaannya tidak berbeda di keduanya;
+  // yang berpindah hanya titik pasangnya mengikuti editingAssignment.
+  function renderAssignmentForm() {
+    return (
+      <form onSubmit={editingAssignment ? saveAssignmentEdit : createAssignment} style={styles.form}>
+        <input required value={assignmentTitle} onChange={(event) => setAssignmentTitle(event.target.value)} placeholder="Judul penugasan" style={styles.input} />
+        <textarea value={assignmentInstructions} onChange={(event) => setAssignmentInstructions(event.target.value)} placeholder="Petunjuk penugasan" rows={3} style={styles.textarea} />
+        <label style={styles.label}>Modul
+          <select value={selectedId ?? ""} onChange={(event) => setSelectedId(Number(event.target.value))} style={styles.input}>
+            <option value="">Pilih modul</option>
+            {modules.map((module) => <option key={module.id} value={module.id}>{module.title}</option>)}
+          </select>
+        </label>
+        <label style={styles.label}>LKPD
+          <select value={selectedWorksheetId ?? ""} onChange={(event) => setSelectedWorksheetId(Number(event.target.value))} style={styles.input}>
+            <option value="">Pilih LKPD</option>
+            {worksheets.map((worksheet) => <option key={worksheet.id} value={worksheet.id}>{worksheet.title}</option>)}
+          </select>
+        </label>
+        <label style={styles.label}>Mode pengerjaan LKPD
+          <select value={assignmentWorkMode} onChange={(event) => setAssignmentWorkMode(event.target.value as "individu" | "kelompok")} style={styles.input}>
+            <option value="individu">Individu — setiap murid mengerjakan sendiri</option>
+            <option value="kelompok" disabled={assignmentTargetType === "siswa"}>Kelompok — satu LKPD dikerjakan bersama</option>
+          </select>
+        </label>
+        {assignmentWorkMode === "kelompok" ? (
+          <label style={styles.label}>Anggota per kelompok
+            <input type="number" min={2} max={10} value={assignmentGroupSize} onChange={(event) => setAssignmentGroupSize(event.target.value)} style={styles.input} />
+            <span style={styles.muted}>Kelompok dibentuk otomatis secara acak oleh sistem saat penugasan diterbitkan.</span>
+          </label>
+        ) : null}
+        <label style={styles.label}>Sasaran penugasan
+          <select value={assignmentTargetType} onChange={(event) => changeAssignmentTargetType(event.target.value as "kelas" | "siswa")} style={styles.input}>
+            <option value="kelas">Kelas — semua anggota kelas tujuan</option>
+            <option value="siswa">Siswa tertentu — pilih murid satu per satu (remedial/pengayaan)</option>
+          </select>
+          {assignmentTargetType === "siswa" ? <span style={styles.muted}>Sasaran siswa tertentu hanya tersedia untuk mode individu.</span> : null}
+        </label>
+        {assignmentTargetType === "kelas" ? (
+          <div style={styles.checkboxList}>
+            <span style={styles.label}>Kelas tujuan</span>
+            {classes.map((kelas) => <label key={kelas.id} style={styles.checkbox}><input type="checkbox" checked={assignmentClassIds.includes(kelas.id)} onChange={(event) => setAssignmentClassIds((current) => event.target.checked ? [...current, kelas.id] : current.filter((id) => id !== kelas.id))} />{kelas.name} · {kelas.subject}</label>)}
+          </div>
+        ) : (
+          <div style={styles.checkboxList}>
+            <span style={styles.label}>Murid sasaran</span>
+            <input value={assignmentStudentQuery} onChange={(event) => setAssignmentStudentQuery(event.target.value)} placeholder="Cari nama atau username murid" style={styles.input} />
+            <span style={styles.muted}>{assignmentStudentIds.length} murid dipilih</span>
+            {assignmentStudentIds.length > 0 ? (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {assignmentStudentIds.map((studentId) => {
+                  const info = assignmentStudentInfoById.get(studentId);
+                  return (
+                    <span key={studentId} style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid #d0d5dd", borderRadius: 999, padding: "2px 6px 2px 10px", fontSize: 13 }}>
+                      {info ? `${info.name}${info.className ? ` · ${info.className}` : ""}` : `Murid #${studentId}`}
+                      <button type="button" aria-label={`Hapus ${info?.name ?? studentId} dari sasaran`} onClick={() => setAssignmentStudentIds((current) => current.filter((id) => id !== studentId))} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2 }}>×</button>
+                    </span>
+                  );
+                })}
+              </div>
+            ) : null}
+            {classes.filter((kelas) => !kelas.is_archived).map((kelas) => {
+              const query = assignmentStudentQuery.trim().toLowerCase();
+              const members = kelas.members ?? [];
+              const visibleMembers = members.filter((member) => query === "" || member.name.toLowerCase().includes(query) || member.username.toLowerCase().includes(query));
+              if (visibleMembers.length === 0) return null;
+              const allSelected = members.length > 0 && members.every((member) => assignmentStudentIds.includes(member.id));
+              return (
+                <div key={kelas.id} style={{ display: "grid", gap: 4 }}>
+                  <label style={styles.checkbox}>
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={(event) => setAssignmentStudentIds((current) => event.target.checked ? [...new Set([...current, ...members.map((member) => member.id)])] : current.filter((id) => !members.some((member) => member.id === id)))}
+                    />
+                    <strong>{kelas.name} · {kelas.subject}</strong> — pilih semua
+                  </label>
+                  {visibleMembers.map((member) => (
+                    <label key={member.id} style={{ ...styles.checkbox, marginLeft: 22 }}>
+                      <input type="checkbox" checked={assignmentStudentIds.includes(member.id)} onChange={(event) => setAssignmentStudentIds((current) => event.target.checked ? [...current, member.id] : current.filter((id) => id !== member.id))} />
+                      {member.name} · @{member.username}
+                    </label>
+                  ))}
+                </div>
+              );
+            })}
+            {classes.every((kelas) => (kelas.members ?? []).length === 0) ? <p style={styles.empty}>Belum ada murid di kelas mana pun. Murid masuk kelas lewat kode gabung di Langkah 3.</p> : null}
+          </div>
+        )}
+        <label style={styles.label}>Dibuka pada<input type="datetime-local" value={assignmentOpensAt} onChange={(event) => setAssignmentOpensAt(event.target.value)} style={styles.input} /></label>
+        <label style={styles.label}>Batas pengumpulan<input type="datetime-local" value={assignmentDueAt} onChange={(event) => setAssignmentDueAt(event.target.value)} style={styles.input} /></label>
+        <input type="url" value={assignmentRuasUrl} onChange={(event) => setAssignmentRuasUrl(event.target.value)} placeholder="Tautan kuis RUAS (opsional)" style={styles.input} />
+        {editingAssignment?.status === "terbit" ? <p style={styles.message}>Modul, LKPD, dan kelas tujuan terkunci bila sudah ada murid yang mengerjakan. Mode pengerjaan dan ukuran kelompok juga terkunci bila sudah ada murid atau kelompok yang mengerjakan.</p> : null}
+        <button type="submit" style={styles.primaryButton}>{editingAssignment ? <><span className="action-icon" aria-hidden="true">💾</span>Simpan perubahan</> : <><span className="action-icon" aria-hidden="true">+</span>Buat draf penugasan</>}</button>
+        {editingAssignment ? <button type="button" onClick={exitAssignmentEdit} style={styles.secondaryButton}><span className="action-icon" aria-hidden="true">✕</span>Batal</button> : null}
+      </form>
+    );
   }
 
   if (loading) return <main className="dashboard-shell container"><p>Memuat ruang guru...</p></main>;
@@ -2854,30 +3068,7 @@ export default function GuruPage() {
               ) : null}
             </div>
           ) : null}
-          {editingModuleMeta ? (
-            <form onSubmit={saveModuleMeta} style={styles.form}>
-              <input required value={editModuleTitle} onChange={(event) => setEditModuleTitle(event.target.value)} placeholder="Judul modul" style={styles.input} />
-              <input required value={editModuleSubject} onChange={(event) => setEditModuleSubject(event.target.value)} placeholder="Mata pelajaran" style={styles.input} />
-              <textarea value={editModuleDescription} onChange={(event) => setEditModuleDescription(event.target.value)} placeholder="Deskripsi singkat" rows={3} style={styles.textarea} />
-              <CoverField
-                inputId="module-cover-edit-file"
-                pickedName={editCover?.file.name ?? null}
-                preview={editCover ? (
-                  <img src={editCover.previewUrl} alt="Pratinjau sampul materi" style={styles.coverPreview} />
-                ) : editCoverKey && selectedModule ? (
-                  <ModuleCoverImage moduleId={selectedModule.id} coverKey={editCoverKey} style={styles.coverPreview} />
-                ) : null}
-                canClear={Boolean(editCover || editCoverKey)}
-                onPick={pickEditCover}
-                onClear={() => {
-                  setEditCover(null);
-                  setEditCoverKey(null);
-                }}
-              />
-              <button type="submit" style={styles.primaryButton}><span className="action-icon" aria-hidden="true">💾</span>Simpan data modul</button>
-              <button type="button" onClick={cancelEditModuleMeta} style={styles.secondaryButton}><span className="action-icon" aria-hidden="true">✕</span>Batal</button>
-            </form>
-          ) : null}
+          
           <h2 style={styles.sectionTitle}>{editingBlock ? "Edit isi materi" : "Tambah isi materi"}</h2>
           {editingBlock ? (
             <p style={styles.message}>Mode edit: mengubah blok {BLOCK_TYPE_LABELS[editingBlock.type].toLowerCase()}. Jenis blok terkunci — untuk mengganti jenis, hapus blok ini lalu buat blok baru.</p>
@@ -3131,14 +3322,7 @@ export default function GuruPage() {
               <button type="button" className="module-row-action" onClick={startEditWorksheetMeta}><span className="action-icon" aria-hidden="true">✎</span>Edit LKPD</button>
             ) : null}
           </div>
-          {editingWorksheetMeta ? (
-            <form onSubmit={saveWorksheetMeta} style={styles.form}>
-              <input required value={editWorksheetTitle} onChange={(event) => setEditWorksheetTitle(event.target.value)} placeholder="Judul LKPD" style={styles.input} />
-              <textarea value={editWorksheetInstructions} onChange={(event) => setEditWorksheetInstructions(event.target.value)} placeholder="Petunjuk pengerjaan" rows={3} style={styles.textarea} />
-              <button type="submit" style={styles.primaryButton}><span className="action-icon" aria-hidden="true">💾</span>Simpan data LKPD</button>
-              <button type="button" onClick={() => setEditingWorksheetMeta(false)} style={styles.secondaryButton}><span className="action-icon" aria-hidden="true">✕</span>Batal</button>
-            </form>
-          ) : null}
+          
           {editingItem ? (
             <p style={styles.message}>Mode edit: mengubah butir {WORKSHEET_ITEM_TYPE_LABELS[editingItem.item_type] ?? editingItem.item_type}. Jenis butir terkunci — untuk mengganti jenis, hapus butir ini lalu buat butir baru.</p>
           ) : null}
@@ -3232,98 +3416,7 @@ export default function GuruPage() {
         </div>
         <details className="guru-collapsible" ref={assignmentFormRef}>
           <summary>{editingAssignment ? "Edit penugasan" : "+ Buat penugasan"}</summary>
-          <form onSubmit={editingAssignment ? saveAssignmentEdit : createAssignment} style={styles.form}>
-            <input required value={assignmentTitle} onChange={(event) => setAssignmentTitle(event.target.value)} placeholder="Judul penugasan" style={styles.input} />
-            <textarea value={assignmentInstructions} onChange={(event) => setAssignmentInstructions(event.target.value)} placeholder="Petunjuk penugasan" rows={3} style={styles.textarea} />
-            <label style={styles.label}>Modul
-              <select value={selectedId ?? ""} onChange={(event) => setSelectedId(Number(event.target.value))} style={styles.input}>
-                <option value="">Pilih modul</option>
-                {modules.map((module) => <option key={module.id} value={module.id}>{module.title}</option>)}
-              </select>
-            </label>
-            <label style={styles.label}>LKPD
-              <select value={selectedWorksheetId ?? ""} onChange={(event) => setSelectedWorksheetId(Number(event.target.value))} style={styles.input}>
-                <option value="">Pilih LKPD</option>
-                {worksheets.map((worksheet) => <option key={worksheet.id} value={worksheet.id}>{worksheet.title}</option>)}
-              </select>
-            </label>
-            <label style={styles.label}>Mode pengerjaan LKPD
-              <select value={assignmentWorkMode} onChange={(event) => setAssignmentWorkMode(event.target.value as "individu" | "kelompok")} style={styles.input}>
-                <option value="individu">Individu — setiap murid mengerjakan sendiri</option>
-                <option value="kelompok" disabled={assignmentTargetType === "siswa"}>Kelompok — satu LKPD dikerjakan bersama</option>
-              </select>
-            </label>
-            {assignmentWorkMode === "kelompok" ? (
-              <label style={styles.label}>Anggota per kelompok
-                <input type="number" min={2} max={10} value={assignmentGroupSize} onChange={(event) => setAssignmentGroupSize(event.target.value)} style={styles.input} />
-                <span style={styles.muted}>Kelompok dibentuk otomatis secara acak oleh sistem saat penugasan diterbitkan.</span>
-              </label>
-            ) : null}
-            <label style={styles.label}>Sasaran penugasan
-              <select value={assignmentTargetType} onChange={(event) => changeAssignmentTargetType(event.target.value as "kelas" | "siswa")} style={styles.input}>
-                <option value="kelas">Kelas — semua anggota kelas tujuan</option>
-                <option value="siswa">Siswa tertentu — pilih murid satu per satu (remedial/pengayaan)</option>
-              </select>
-              {assignmentTargetType === "siswa" ? <span style={styles.muted}>Sasaran siswa tertentu hanya tersedia untuk mode individu.</span> : null}
-            </label>
-            {assignmentTargetType === "kelas" ? (
-              <div style={styles.checkboxList}>
-                <span style={styles.label}>Kelas tujuan</span>
-                {classes.map((kelas) => <label key={kelas.id} style={styles.checkbox}><input type="checkbox" checked={assignmentClassIds.includes(kelas.id)} onChange={(event) => setAssignmentClassIds((current) => event.target.checked ? [...current, kelas.id] : current.filter((id) => id !== kelas.id))} />{kelas.name} · {kelas.subject}</label>)}
-              </div>
-            ) : (
-              <div style={styles.checkboxList}>
-                <span style={styles.label}>Murid sasaran</span>
-                <input value={assignmentStudentQuery} onChange={(event) => setAssignmentStudentQuery(event.target.value)} placeholder="Cari nama atau username murid" style={styles.input} />
-                <span style={styles.muted}>{assignmentStudentIds.length} murid dipilih</span>
-                {assignmentStudentIds.length > 0 ? (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    {assignmentStudentIds.map((studentId) => {
-                      const info = assignmentStudentInfoById.get(studentId);
-                      return (
-                        <span key={studentId} style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid #d0d5dd", borderRadius: 999, padding: "2px 6px 2px 10px", fontSize: 13 }}>
-                          {info ? `${info.name}${info.className ? ` · ${info.className}` : ""}` : `Murid #${studentId}`}
-                          <button type="button" aria-label={`Hapus ${info?.name ?? studentId} dari sasaran`} onClick={() => setAssignmentStudentIds((current) => current.filter((id) => id !== studentId))} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2 }}>×</button>
-                        </span>
-                      );
-                    })}
-                  </div>
-                ) : null}
-                {classes.filter((kelas) => !kelas.is_archived).map((kelas) => {
-                  const query = assignmentStudentQuery.trim().toLowerCase();
-                  const members = kelas.members ?? [];
-                  const visibleMembers = members.filter((member) => query === "" || member.name.toLowerCase().includes(query) || member.username.toLowerCase().includes(query));
-                  if (visibleMembers.length === 0) return null;
-                  const allSelected = members.length > 0 && members.every((member) => assignmentStudentIds.includes(member.id));
-                  return (
-                    <div key={kelas.id} style={{ display: "grid", gap: 4 }}>
-                      <label style={styles.checkbox}>
-                        <input
-                          type="checkbox"
-                          checked={allSelected}
-                          onChange={(event) => setAssignmentStudentIds((current) => event.target.checked ? [...new Set([...current, ...members.map((member) => member.id)])] : current.filter((id) => !members.some((member) => member.id === id)))}
-                        />
-                        <strong>{kelas.name} · {kelas.subject}</strong> — pilih semua
-                      </label>
-                      {visibleMembers.map((member) => (
-                        <label key={member.id} style={{ ...styles.checkbox, marginLeft: 22 }}>
-                          <input type="checkbox" checked={assignmentStudentIds.includes(member.id)} onChange={(event) => setAssignmentStudentIds((current) => event.target.checked ? [...current, member.id] : current.filter((id) => id !== member.id))} />
-                          {member.name} · @{member.username}
-                        </label>
-                      ))}
-                    </div>
-                  );
-                })}
-                {classes.every((kelas) => (kelas.members ?? []).length === 0) ? <p style={styles.empty}>Belum ada murid di kelas mana pun. Murid masuk kelas lewat kode gabung di Langkah 3.</p> : null}
-              </div>
-            )}
-            <label style={styles.label}>Dibuka pada<input type="datetime-local" value={assignmentOpensAt} onChange={(event) => setAssignmentOpensAt(event.target.value)} style={styles.input} /></label>
-            <label style={styles.label}>Batas pengumpulan<input type="datetime-local" value={assignmentDueAt} onChange={(event) => setAssignmentDueAt(event.target.value)} style={styles.input} /></label>
-            <input type="url" value={assignmentRuasUrl} onChange={(event) => setAssignmentRuasUrl(event.target.value)} placeholder="Tautan kuis RUAS (opsional)" style={styles.input} />
-            {editingAssignment?.status === "terbit" ? <p style={styles.message}>Modul, LKPD, dan kelas tujuan terkunci bila sudah ada murid yang mengerjakan. Mode pengerjaan dan ukuran kelompok juga terkunci bila sudah ada murid atau kelompok yang mengerjakan.</p> : null}
-            <button type="submit" style={styles.primaryButton}>{editingAssignment ? <><span className="action-icon" aria-hidden="true">💾</span>Simpan perubahan</> : <><span className="action-icon" aria-hidden="true">+</span>Buat draf penugasan</>}</button>
-            {editingAssignment ? <button type="button" onClick={exitAssignmentEdit} style={styles.secondaryButton}><span className="action-icon" aria-hidden="true">✕</span>Batal</button> : null}
-          </form>
+          {editingAssignment ? null : renderAssignmentForm()}
         </details>
         {assignments.length > 0 ? (
           <div className="assignment-status-filter" role="group" aria-label="Saring penugasan">
@@ -4117,6 +4210,62 @@ export default function GuruPage() {
           </div>
         </div>
       ) : null}
+
+      {/* Modal edit Tahap 1 — dirender di akar halaman, di luar panel
+          langkah (panel yang tidak aktif disembunyikan dan akan ikut
+          menyembunyikan keturunan position:fixed). Ketiga formulir ini
+          sebelumnya tampil sebaris di panel langkahnya; isi, pengikatan
+          keadaan, dan logika Simpan/Batal-nya sama persis — yang berubah
+          hanya titik pasangnya. Penjaga tutupnya requestEditModalClose. */}
+      <Modal
+        open={editingAssignment !== null}
+        title="Edit penugasan"
+        onClose={() => void requestEditModalClose(assignmentEditDirty, exitAssignmentEdit)}
+      >
+        {renderAssignmentForm()}
+      </Modal>
+
+      <Modal
+        open={editingModuleMeta}
+        title="Edit modul"
+        onClose={() => void requestEditModalClose(moduleMetaDirty, cancelEditModuleMeta)}
+      >
+        <form onSubmit={saveModuleMeta} style={styles.form}>
+          <input required value={editModuleTitle} onChange={(event) => setEditModuleTitle(event.target.value)} placeholder="Judul modul" style={styles.input} />
+          <input required value={editModuleSubject} onChange={(event) => setEditModuleSubject(event.target.value)} placeholder="Mata pelajaran" style={styles.input} />
+          <textarea value={editModuleDescription} onChange={(event) => setEditModuleDescription(event.target.value)} placeholder="Deskripsi singkat" rows={3} style={styles.textarea} />
+          <CoverField
+            inputId="module-cover-edit-file"
+            pickedName={editCover?.file.name ?? null}
+            preview={editCover ? (
+              <img src={editCover.previewUrl} alt="Pratinjau sampul materi" style={styles.coverPreview} />
+            ) : editCoverKey && selectedModule ? (
+              <ModuleCoverImage moduleId={selectedModule.id} coverKey={editCoverKey} style={styles.coverPreview} />
+            ) : null}
+            canClear={Boolean(editCover || editCoverKey)}
+            onPick={pickEditCover}
+            onClear={() => {
+              setEditCover(null);
+              setEditCoverKey(null);
+            }}
+          />
+          <button type="submit" style={styles.primaryButton}><span className="action-icon" aria-hidden="true">💾</span>Simpan data modul</button>
+          <button type="button" onClick={cancelEditModuleMeta} style={styles.secondaryButton}><span className="action-icon" aria-hidden="true">✕</span>Batal</button>
+        </form>
+      </Modal>
+
+      <Modal
+        open={editingWorksheetMeta}
+        title="Edit LKPD"
+        onClose={() => void requestEditModalClose(worksheetMetaDirty, cancelEditWorksheetMeta)}
+      >
+        <form onSubmit={saveWorksheetMeta} style={styles.form}>
+          <input required value={editWorksheetTitle} onChange={(event) => setEditWorksheetTitle(event.target.value)} placeholder="Judul LKPD" style={styles.input} />
+          <textarea value={editWorksheetInstructions} onChange={(event) => setEditWorksheetInstructions(event.target.value)} placeholder="Petunjuk pengerjaan" rows={3} style={styles.textarea} />
+          <button type="submit" style={styles.primaryButton}><span className="action-icon" aria-hidden="true">💾</span>Simpan data LKPD</button>
+          <button type="button" onClick={cancelEditWorksheetMeta} style={styles.secondaryButton}><span className="action-icon" aria-hidden="true">✕</span>Batal</button>
+        </form>
+      </Modal>
     </main>
   );
 }

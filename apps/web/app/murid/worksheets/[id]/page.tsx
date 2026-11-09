@@ -39,6 +39,7 @@ type AttemptResponse = {
   ok: true;
   data: {
     status: "draf" | "terkumpul" | "dinilai" | null;
+    assignment_id?: number | null;
     answers: { item_id: number; answer_text: string | null; attachment_key: string | null }[];
     explanations?: Record<string, string>;
     ungrouped?: boolean;
@@ -88,7 +89,15 @@ export default function WorksheetPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const assignmentId = searchParams.get("assignmentId");
+  const urlAssignmentId = searchParams.get("assignmentId");
+  // Konteks penugasan efektif halaman: berawal dari parameter URL, lalu —
+  // bila URL tidak membawanya — DIADOPSI dari respons attempt pertama.
+  // Server memulihkan konteks dari penugasan terbit yang menjadi sasaran
+  // murid ini (mis. saat LKPD dibuka dari tautan halaman modul yang tidak
+  // membawa parameter), dan adopsi di sini membuat simpan jawaban,
+  // pengumpulan, presensi, dan polling live memakai konteks yang sama
+  // dalam sesi yang sama, tanpa muat ulang.
+  const [assignmentId, setAssignmentId] = useState<string | null>(urlAssignmentId);
   const [data, setData] = useState<WorksheetResponse["data"] | null>(null);
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [touchedSequences, setTouchedSequences] = useState<Set<number>>(new Set());
@@ -149,6 +158,11 @@ export default function WorksheetPage() {
       apiRequest<AttemptResponse>(`/murid/worksheets/${params.id}/attempt${attemptQuery}`),
     ])
       .then(([worksheet, attempt]) => {
+        // Adopsi konteks hasil pemulihan server: hanya bila URL memang
+        // tidak membawa parameter — jalur parameter tidak pernah ditimpa.
+        if (!urlAssignmentId && attempt.data.assignment_id) {
+          setAssignmentId(String(attempt.data.assignment_id));
+        }
         if (attempt.data.ungrouped) {
           // Murid belum masuk kelompok pada penugasan ini: tampilkan
           // keadaan khusus, jangan bangun pemutar soal sama sekali.

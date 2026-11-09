@@ -9,6 +9,7 @@ import { presenceSnapshot, presenceStore, recordHeartbeat } from "../lib/presenc
 import { listVisibleModuleIds, loadAssignmentSubject, studentCanAccessModule, studentIsAssignmentTarget } from "../lib/assignment-target";
 import { buildNotYetOpenBody } from "../lib/halaman-tunggu";
 import { contributionWindowOpen, loadMemberScoreOverride, loadStudentGroup, pickEffectiveAttempt, type AttemptSnapshot } from "../lib/groups";
+import { planRecoveredContext, type RecoveryCandidate } from "../lib/konteks-pulih";
 import { buildStudentGradeRow, chooseGradeAttempt, sortGradeRows, type GradeAttemptCandidate } from "../lib/nilai-saya";
 import { buildUnansweredMessage, isSameAnswerValue, unansweredDetails, type SubmitGateAnswer } from "../lib/submit-gate";
 
@@ -140,37 +141,94 @@ async function getOrCreateGroupAttempt(worksheetId: number, groupId: number) {
 }
 
 type AttemptContext =
-  | { kind: "ready"; attempt: typeof worksheetAttempts.$inferSelect; group: StudentGroupView | null }
-  | { kind: "ungrouped" }
+  | { kind: "ready"; attempt: typeof worksheetAttempts.$inferSelect; group: StudentGroupView | null; assignmentId: number | null }
+  | { kind: "ungrouped"; assignmentId: number }
   | { kind: "error"; status: 400 | 404; message: string };
 
-// Resolusi attempt untuk endpoint LKPD murid. Tanpa konteks penugasan —
-// atau penugasannya individu — perilakunya persis seperti sebelumnya:
-// attempt individu murid itu sendiri. Dengan konteks penugasan kelompok,
-// attempt yang dipakai adalah attempt BERSAMA kelompok murid tersebut;
-// murid yang belum masuk kelompok mana pun pada penugasan itu mendapat
-// keadaan "ungrouped" dan tidak dibuatkan attempt apa pun.
-async function resolveAttemptContext(studentId: number, worksheetId: number, assignmentIdParam: string | null): Promise<AttemptContext> {
-  if (!assignmentIdParam) {
-    return { kind: "ready", attempt: await getOrCreateAttempt(studentId, worksheetId), group: null };
-  }
-  const assignmentId = Number(assignmentIdParam);
-  if (!Number.isInteger(assignmentId) || assignmentId <= 0) {
-    return { kind: "error", status: 400, message: "ID penugasan tidak valid." };
-  }
-  const assignment = await accessibleAssignment(studentId, assignmentId);
-  if (!assignment) {
-    return { kind: "error", status: 404, message: "Penugasan belum tersedia untuk kelas Anda." };
-  }
+type AccessibleAssignment = NonNullable<Awaited<ReturnType<typeof accessibleAssignment>>>;
+
+// Resolusi attempt dari satu penugasan yang sudah terverifikasi dapat
+// diakses murid ini — satu-satunya tempat mode penugasan diterjemahkan
+// menjadi attempt, dipakai jalur parameter maupun jalur pemulihan konteks
+// agar keduanya tidak pernah berbeda perilaku. Penugasan individu memakai
+// attempt individu murid itu sendiri (dengan id penugasan melekat pada
+// konteks); penugasan kelompok memakai attempt BERSAMA kelompok murid
+// tersebut; murid yang belum masuk kelompok mana pun pada penugasan itu
+// mendapat keadaan "ungrouped" dan tidak dibuatkan attempt apa pun.
+async function resolveFromAssignment(studentId: number, worksheetId: number, assignment: AccessibleAssignment): Promise<AttemptContext> {
   if (assignment.worksheetId !== worksheetId) {
     return { kind: "error", status: 400, message: "Penugasan ini tidak terhubung ke LKPD ini." };
   }
   if (assignment.workMode !== "kelompok") {
-    return { kind: "ready", attempt: await getOrCreateAttempt(studentId, worksheetId), group: null };
+    return { kind: "ready", attempt: await getOrCreateAttempt(studentId, worksheetId), group: null, assignmentId: assignment.id };
   }
-  const group = await loadStudentGroup(assignmentId, studentId);
-  if (!group) return { kind: "ungrouped" };
-  return { kind: "ready", attempt: await getOrCreateGroupAttempt(worksheetId, group.id), group };
+  const group = await loadStudentGroup(assignment.id, studentId);
+  if (!group) return { kind: "ungrouped", assignmentId: assignment.id };
+  return { kind: "ready", attempt: await getOrCreateGroupAttempt(worksheetId, group.id), group, assignmentId: assignment.id };
+}
+
+// Kandidat pemulihan konteks: penugasan TERBIT untuk LKPD ini yang menjadi
+// sasaran murid ini — jalur kelas tujuan (kelas tidak diarsipkan) atau
+// jalur sasaran langsung, cermin studentIsAssignmentTarget. Keanggotaan
+// kelompok hanya diperiksa untuk kandidat kelompok (lewat loadStudentGroup,
+// jalur yang sama dengan resolusi berparameter).
+async function loadRecoveryCandidates(studentId: number, worksheetId: number): Promise<RecoveryCandidate[]> {
+  const fields = { id: assignments.id, workMode: assignments.workMode, updatedAt: assignments.updatedAt };
+  const publishedForWorksheet = () => and(eq(assignments.worksheetId, worksheetId), eq(assignments.status, "terbit"));
+  const viaClass = await db
+    .select(fields)
+    .from(assignments)
+    .innerJoin(assignmentClasses, eq(assignmentClasses.assignmentId, assignments.id))
+    .innerJoin(classes, eq(classes.id, assignmentClasses.classId))
+    .innerJoin(classMembers, eq(classMembers.classId, classes.id))
+    .where(and(publishedForWorksheet(), eq(classMembers.studentId, studentId), eq(classes.isArchived, false)));
+  const viaDirect = await db
+    .select(fields)
+    .from(assignments)
+    .innerJoin(assignmentStudents, eq(assignmentStudents.assignmentId, assignments.id))
+    .where(and(publishedForWorksheet(), eq(assignmentStudents.studentId, studentId)));
+  const byId = new Map<number, { id: number; workMode: "individu" | "kelompok"; updatedAt: Date }>();
+  for (const row of [...viaClass, ...viaDirect]) byId.set(row.id, row);
+  const candidates: RecoveryCandidate[] = [];
+  for (const row of byId.values()) {
+    const hasMembership = row.workMode === "kelompok" ? (await loadStudentGroup(row.id, studentId)) !== null : false;
+    candidates.push({ id: row.id, workMode: row.workMode, hasMembership, updatedAtMs: row.updatedAt.getTime() });
+  }
+  return candidates;
+}
+
+// Resolusi attempt untuk endpoint LKPD murid.
+//
+// Jalur parameter (?assignmentId=) tidak berubah: id diverifikasi lewat
+// accessibleAssignment lalu diresolusi dari penugasan itu.
+//
+// Tanpa parameter, konteks DIPULIHKAN dari server (lib/konteks-pulih.ts):
+// tautan LKPD dari halaman modul tidak membawa parameter, dan jatuh
+// diam-diam ke attempt individu membuat jawaban anggota kelompok terdampar
+// di attempt pribadi serta Live Kelompok tidak pernah menyala. Bila ada
+// kandidat penugasan untuk murid ini, konteksnya diresolusi persis seperti
+// jalur parameter (perencana hanya memilih penugasan mana; resolusinya
+// tetap resolveFromAssignment). Tanpa kandidat apa pun — atau kandidatnya
+// berubah di antara dua pembacaan — perilakunya persis seperti sebelumnya:
+// attempt individu murid itu sendiri tanpa konteks penugasan.
+async function resolveAttemptContext(studentId: number, worksheetId: number, assignmentIdParam: string | null): Promise<AttemptContext> {
+  if (assignmentIdParam) {
+    const assignmentId = Number(assignmentIdParam);
+    if (!Number.isInteger(assignmentId) || assignmentId <= 0) {
+      return { kind: "error", status: 400, message: "ID penugasan tidak valid." };
+    }
+    const assignment = await accessibleAssignment(studentId, assignmentId);
+    if (!assignment) {
+      return { kind: "error", status: 404, message: "Penugasan belum tersedia untuk kelas Anda." };
+    }
+    return resolveFromAssignment(studentId, worksheetId, assignment);
+  }
+  const plan = planRecoveredContext(await loadRecoveryCandidates(studentId, worksheetId));
+  if (plan.kind !== "none") {
+    const assignment = await accessibleAssignment(studentId, plan.assignmentId);
+    if (assignment) return resolveFromAssignment(studentId, worksheetId, assignment);
+  }
+  return { kind: "ready", attempt: await getOrCreateAttempt(studentId, worksheetId), group: null, assignmentId: null };
 }
 
 type ExistingGroupAttemptContext =
@@ -689,7 +747,7 @@ muridRoutes.get("/worksheets/:id/attempt", async (c) => {
   if (context.kind === "ungrouped") {
     // Keadaan yang bisa dibedakan sisi klien: murid belum masuk kelompok
     // mana pun pada penugasan ini — tidak ada attempt yang dibuat.
-    return c.json({ ok: true, data: { ungrouped: true, status: null, submitted_at: null, answers: [], group: null } });
+    return c.json({ ok: true, data: { ungrouped: true, assignment_id: context.assignmentId, status: null, submitted_at: null, answers: [], group: null } });
   }
   const attempt = context.attempt;
   const answers = await db.select().from(worksheetAnswers).where(eq(worksheetAnswers.attemptId, attempt.id));
@@ -740,6 +798,10 @@ muridRoutes.get("/worksheets/:id/attempt", async (c) => {
     ok: true,
     data: {
       id: attempt.id,
+      // Id penugasan hasil resolusi konteks (dari parameter ATAU dipulihkan
+      // server): klien mengadopsinya bila URL-nya tidak membawa parameter,
+      // agar simpan/pengumpulan/presensi memakai konteks yang sama.
+      assignment_id: context.assignmentId,
       status: attempt.status,
       submitted_at: attempt.submittedAt,
       answers: answers.map((answer) => ({

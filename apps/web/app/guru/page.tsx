@@ -52,6 +52,7 @@ import { MathText } from "../../components/MathContent";
 import { markdownToHtml, htmlToMarkdown } from "../../components/markdown";
 import { RichTextEditor, sanitizeBlockHtml } from "../../components/RichTextEditor";
 import { LibraryPanel } from "../../components/LibraryPanel";
+import { KurikulumPanel } from "../../components/KurikulumPanel";
 
 type ModuleSummary = {
   id: number;
@@ -513,15 +514,19 @@ export default function GuruPage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [guruStep, setGuruStep] = useState(0);
-  // Tampilan bilah kanan cangkang: lima langkah wizard ATAU Perpustakaan
-  // Bersama. Berpindah ke perpustakaan tidak mengubah guruStep, jadi
-  // kembali ke langkah menampilkan keadaan terakhir langkah itu persis.
-  const [guruView, setGuruView] = useState<"langkah" | "perpustakaan">("langkah");
+  // Tampilan bilah kanan cangkang: lima langkah wizard, Perpustakaan
+  // Bersama, atau daftar CP & ATP. Berpindah tampilan tidak mengubah
+  // guruStep, jadi kembali ke langkah menampilkan keadaan terakhir
+  // langkah itu persis.
+  const [guruView, setGuruView] = useState<"langkah" | "perpustakaan" | "kurikulum">("langkah");
   const langkahTampil = guruView === "langkah";
   // Panel perpustakaan dipasang malas pada kunjungan pertama, lalu tidak
   // pernah dilepas (disembunyikan lewat data-active seperti panel langkah)
   // agar keadaan cari/saring/gulirnya utuh saat guru bolak-balik.
   const [libraryMounted, setLibraryMounted] = useState(false);
+  // Panel CP & ATP bernasib sama: dipasang malas pada kunjungan pertama
+  // dan tidak dilepas, agar pilihan mapel/kelas/semesternya utuh.
+  const [kurikulumMounted, setKurikulumMounted] = useState(false);
   const [previewModule, setPreviewModule] = useState<ModuleSummary | null>(null);
   const [previewBlocks, setPreviewBlocks] = useState<ModuleBlock[] | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -893,6 +898,13 @@ export default function GuruPage() {
   function openLibraryView() {
     setLibraryMounted(true);
     setGuruView("perpustakaan");
+  }
+
+  // Daftar CP & ATP dibuka dengan cara yang sama: tampilan bilah kanan
+  // cangkang, panelnya dipasang pada kunjungan pertama ini.
+  function openCurriculumView() {
+    setKurikulumMounted(true);
+    setGuruView("kurikulum");
   }
 
   // Callback panel Perpustakaan Bersama sesudah guru menyalin: catat
@@ -3172,6 +3184,20 @@ export default function GuruPage() {
               <small>Materi &amp; LKPD dari guru lain</small>
             </span>
           </button>
+          <button
+            type="button"
+            className={`wizard-library-link${guruView === "kurikulum" ? " is-active" : ""}`}
+            onClick={openCurriculumView}
+            aria-current={guruView === "kurikulum" ? "page" : undefined}
+          >
+            <span className="wizard-library-icon" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 6h13" /><path d="M8 12h13" /><path d="M8 18h13" /><path d="M3.5 6h.01" /><path d="M3.5 12h.01" /><path d="M3.5 18h.01" /></svg>
+            </span>
+            <span>
+              <strong>CP &amp; ATP</strong>
+              <small>Capaian &amp; alur tujuan pembelajaran</small>
+            </span>
+          </button>
           <p className="wizard-side-note">Mulai dari materi, lanjutkan ke LKPD dan kelas, lalu pantau hasil belajar murid.</p>
         </aside>
 
@@ -3183,6 +3209,12 @@ export default function GuruPage() {
                   <p className="eyebrow">Perpustakaan Bersama</p>
                   <h2>Perpustakaan Bersama</h2>
                   <p>Materi &amp; LKPD dari guru lain.</p>
+                </>
+              ) : guruView === "kurikulum" ? (
+                <>
+                  <p className="eyebrow">CP &amp; ATP</p>
+                  <h2>Daftar CP &amp; ATP</h2>
+                  <p>Capaian pembelajaran dan alur tujuan pembelajaran tiap mapel, kelas, dan semester.</p>
                 </>
               ) : (
                 <>
@@ -4247,6 +4279,12 @@ export default function GuruPage() {
       {libraryMounted ? (
         <section className="wizard-step-panel" data-active={guruView === "perpustakaan"} style={styles.panel} aria-label="Perpustakaan Bersama">
           <LibraryPanel onOpenCopiedDraft={openCopiedDraft} />
+        </section>
+      ) : null}
+
+      {kurikulumMounted ? (
+        <section className="wizard-step-panel" data-active={guruView === "kurikulum"} style={styles.panel} aria-label="Daftar CP dan ATP">
+          <KurikulumPanel />
         </section>
       ) : null}
           </div>

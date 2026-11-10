@@ -38,7 +38,7 @@ const css = read("../app/globals.css");
 // ---------------------------------------------------------------------------
 {
   check("shell has a dedicated view state beside guruStep",
-    guru.includes('const [guruView, setGuruView] = useState<"langkah" | "perpustakaan">("langkah")'));
+    guru.includes('const [guruView, setGuruView] = useState<"langkah" | "perpustakaan" | "kurikulum">("langkah")'));
   check("steps visibility derives from the view (langkahTampil)",
     guru.includes('const langkahTampil = guruView === "langkah";')
     && guru.includes("data-active={langkahTampil && guruStep === 0}")

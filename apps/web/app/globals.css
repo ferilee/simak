@@ -3648,3 +3648,201 @@ button.wizard-library-link {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* Panel "CP & ATP" (daftar kurikulum baca-saja, Tahap 1): pemilih
+   bertingkat berupa baris chip, panji CP yang menaungi kelompok, dan
+   baris ATP dengan lencana nomor + JP. Palet mengikuti cangkang guru. */
+.kurikulum-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.kurikulum-filters {
+  display: grid;
+  gap: 8px;
+}
+
+.kurikulum-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.kurikulum-filter-label {
+  min-width: 64px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.kurikulum-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.kurikulum-chip {
+  border: 1px solid var(--wizard-accent-ring);
+  border-radius: 999px;
+  padding: 5px 12px;
+  background: var(--wizard-accent-soft);
+  color: var(--color-ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.kurikulum-chip:hover {
+  background: var(--wizard-accent-ring);
+}
+
+.kurikulum-chip.is-active {
+  background: var(--wizard-accent);
+  border-color: var(--wizard-accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.kurikulum-summary {
+  margin: 0;
+  font-size: 14px;
+}
+
+.kurikulum-loading {
+  margin: 0;
+  font-size: 14px;
+  opacity: 0.75;
+}
+
+.kurikulum-error {
+  margin: 0;
+  font-size: 14px;
+  color: #b3261e;
+}
+
+.kurikulum-tree {
+  display: grid;
+  gap: 20px;
+}
+
+.kurikulum-group-wrap {
+  display: grid;
+  gap: 10px;
+}
+
+.kurikulum-cp {
+  border-left: 4px solid var(--wizard-accent);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  background: var(--wizard-accent-soft);
+}
+
+.kurikulum-cp-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: baseline;
+  margin: 0 0 4px;
+}
+
+.kurikulum-cp-code {
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+
+.kurikulum-cp-element {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.kurikulum-cp-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.kurikulum-group {
+  border: 1px solid var(--wizard-accent-ring);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+}
+
+.kurikulum-group-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.kurikulum-group-head h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.kurikulum-group-meta {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+.kurikulum-group-material {
+  margin: 4px 0 0;
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+.kurikulum-atp-list {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kurikulum-atp {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: baseline;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.kurikulum-atp-code {
+  flex: none;
+  border-radius: 6px;
+  padding: 1px 7px;
+  background: var(--wizard-accent-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.kurikulum-atp-text {
+  flex: 1 1 240px;
+}
+
+.kurikulum-capstone {
+  flex: none;
+  border-radius: 999px;
+  padding: 1px 8px;
+  background: var(--wizard-accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.kurikulum-atp-jp {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+.kurikulum-source {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.7;
+}

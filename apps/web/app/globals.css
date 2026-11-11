@@ -4173,3 +4173,179 @@ button.wizard-library-link {
   font-size: 13.5px;
   font-weight: 700;
 }
+
+/* Pemilih cepat (components/PemilihCepat.tsx): combobox pencarian
+   untuk daftar panjang pada formulir guru (modul & LKPD penugasan).
+   Panel menempel di bawah kolom (bukan lapisan modal baru) dan
+   mengikuti sistem warna formulir: tepi --color-border, fokus brand. */
+.pemilih-cepat {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+.pemilih-cepat-fieldrow {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+.pemilih-cepat-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 11px;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.pemilih-cepat-field:focus-visible {
+  outline: none;
+  border-color: var(--color-brand-700);
+  box-shadow: var(--shadow-focus);
+}
+.pemilih-cepat-field[aria-expanded="true"] {
+  border-color: var(--color-brand-700);
+}
+.pemilih-cepat-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pemilih-cepat-value.is-placeholder {
+  color: var(--color-muted);
+}
+.pemilih-cepat-chevron {
+  flex: none;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+.pemilih-cepat-clear {
+  flex: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-muted);
+  padding: 0 10px;
+  cursor: pointer;
+  font: inherit;
+}
+.pemilih-cepat-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 24px rgba(16, 24, 40, 0.14);
+  padding: 6px;
+  box-sizing: border-box;
+}
+.pemilih-cepat-search {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 9px 10px;
+  margin-bottom: 6px;
+  font: inherit;
+  box-sizing: border-box;
+}
+.pemilih-cepat-search:focus-visible {
+  outline: none;
+  border-color: var(--color-brand-700);
+  box-shadow: var(--shadow-focus);
+}
+.pemilih-cepat-list {
+  max-height: 308px;
+  overflow-y: auto;
+}
+.pemilih-cepat-group-label,
+.pemilih-cepat-group-toggle {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 8px 4px;
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--color-muted);
+  box-sizing: border-box;
+}
+.pemilih-cepat-group-toggle {
+  background: transparent;
+  border: none;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--color-muted);
+  text-align: left;
+  cursor: pointer;
+}
+.pemilih-cepat-count {
+  font-weight: 400;
+  color: #98a2b3;
+  white-space: nowrap;
+}
+.pemilih-cepat-option {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.pemilih-cepat-option.is-active {
+  background: var(--color-surface-subtle);
+}
+.pemilih-cepat-option.is-selected {
+  font-weight: 700;
+}
+.pemilih-cepat-check {
+  flex: none;
+  width: 14px;
+  color: var(--color-brand-700);
+}
+.pemilih-cepat-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.pemilih-cepat-mark {
+  background: #fdf3d7;
+  color: inherit;
+  border-radius: 2px;
+}
+.pemilih-cepat-badge {
+  flex: none;
+  border: 1px solid #abefc6;
+  border-radius: 999px;
+  padding: 1px 7px;
+  background: var(--color-success-surface);
+  color: var(--color-success);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.pemilih-cepat-empty {
+  margin: 0;
+  padding: 12px 8px;
+  color: var(--color-muted);
+  font-size: 14px;
+}

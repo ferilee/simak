@@ -53,6 +53,8 @@ import { markdownToHtml, htmlToMarkdown } from "../../components/markdown";
 import { RichTextEditor, sanitizeBlockHtml } from "../../components/RichTextEditor";
 import { LibraryPanel } from "../../components/LibraryPanel";
 import { KurikulumPanel } from "../../components/KurikulumPanel";
+import { PemilihCepat } from "../../components/PemilihCepat";
+import { groupModulesForPicker, orderWorksheetsForPairing } from "../../lib/pemilih-cepat";
 import {
   canonicalTopicOrder,
   groupsForSubject,
@@ -3043,21 +3045,22 @@ export default function GuruPage() {
   // (Tahap 1). Isi dan pengikatan keadaannya tidak berbeda di keduanya;
   // yang berpindah hanya titik pasangnya mengikuti editingAssignment.
   function renderAssignmentForm() {
+    // Pemilih cepat: modul bergrup mengikuti urutan kurikulum yang
+    // sama dengan chip Materi saya; LKPD diurutkan ulang mengikuti
+    // modul terpilih (pasangan ATP lebih dulu). Pergantian modul
+    // TIDAK mereset pilihan LKPD — guru yang menentukannya.
+    const modulePickerGroups = groupModulesForPicker(modules, canonicalTopicOrder(topicGroups));
+    const selectedModuleTitle = modules.find((module) => module.id === selectedId)?.title ?? null;
+    const worksheetPickerGroups = orderWorksheetsForPairing(worksheets, selectedModuleTitle);
     return (
       <form onSubmit={editingAssignment ? saveAssignmentEdit : createAssignment} style={styles.form}>
         <input required value={assignmentTitle} onChange={(event) => setAssignmentTitle(event.target.value)} placeholder="Judul penugasan" style={styles.input} />
         <textarea value={assignmentInstructions} onChange={(event) => setAssignmentInstructions(event.target.value)} placeholder="Petunjuk penugasan" rows={3} style={styles.textarea} />
         <label style={styles.label}>Modul
-          <select value={selectedId ?? ""} onChange={(event) => setSelectedId(Number(event.target.value))} style={styles.input}>
-            <option value="">Pilih modul</option>
-            {modules.map((module) => <option key={module.id} value={module.id}>{module.title}</option>)}
-          </select>
+          <PemilihCepat label="Modul" placeholder="Pilih modul" groups={modulePickerGroups} value={selectedId} onChange={setSelectedId} emptyText="Belum ada modul — buat dulu di Langkah 1." />
         </label>
         <label style={styles.label}>LKPD
-          <select value={selectedWorksheetId ?? ""} onChange={(event) => setSelectedWorksheetId(Number(event.target.value))} style={styles.input}>
-            <option value="">Pilih LKPD</option>
-            {worksheets.map((worksheet) => <option key={worksheet.id} value={worksheet.id}>{worksheet.title}</option>)}
-          </select>
+          <PemilihCepat label="LKPD" placeholder="Pilih LKPD" groups={worksheetPickerGroups} value={selectedWorksheetId} onChange={setSelectedWorksheetId} emptyText="Belum ada LKPD — buat dulu di Langkah 2." />
         </label>
         <label style={styles.label}>Mode pengerjaan LKPD
           <select value={assignmentWorkMode} onChange={(event) => setAssignmentWorkMode(event.target.value as "individu" | "kelompok")} style={styles.input}>

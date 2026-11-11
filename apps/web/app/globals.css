@@ -3846,3 +3846,13 @@ button.wizard-library-link {
   font-size: 12px;
   opacity: 0.7;
 }
+
+/* Baris chip saringan kelompok materi di atas daftar "Materi saya"
+   (Langkah 1): memakai ulang rupa .kurikulum-chip, di sini hanya
+   wadahnya — boleh bergeser mendatar pada layar sempit. */
+.topic-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}

@@ -53,11 +53,21 @@ import { markdownToHtml, htmlToMarkdown } from "../../components/markdown";
 import { RichTextEditor, sanitizeBlockHtml } from "../../components/RichTextEditor";
 import { LibraryPanel } from "../../components/LibraryPanel";
 import { KurikulumPanel } from "../../components/KurikulumPanel";
+import {
+  canonicalTopicOrder,
+  groupsForSubject,
+  matchesTopicFilter,
+  parseTopicGroupFromTitle,
+  planTopicChips,
+  TOPIC_FILTER_SEMUA,
+  type TopicGroupListEntry,
+} from "../../lib/kelompok-materi";
 
 type ModuleSummary = {
   id: number;
   title: string;
   subject: string;
+  topic_group: string | null;
   description: string | null;
   cover_key: string | null;
   status: "draf" | "terbit" | "arsip";
@@ -298,6 +308,13 @@ export default function GuruPage() {
   const [moduleQuery, setModuleQuery] = useState("");
   const [moduleStatusFilter, setModuleStatusFilter] = useState<"semua" | "draf" | "terbit" | "arsip">("semua");
   const [moduleSubjectFilter, setModuleSubjectFilter] = useState("semua");
+  // Saringan kelompok materi (topic_group): nilai "semua", nama
+  // kelompok, atau penanda Lainnya dari lib/kelompok-materi.
+  const [moduleTopicFilter, setModuleTopicFilter] = useState(TOPIC_FILTER_SEMUA);
+  // Daftar kelompok per mapel dari data kurikulum (untuk dropdown
+  // formulir + urutan chip); gagal muat tidak menghalangi apa pun —
+  // saringan tetap bekerja dari nilai yang tersimpan di modul.
+  const [topicGroups, setTopicGroups] = useState<TopicGroupListEntry[]>([]);
   const [moduleSort, setModuleSort] = useState<"terbaru" | "judul" | "penonton">("terbaru");
   const [worksheetQuery, setWorksheetQuery] = useState("");
   const [worksheetStatusFilter, setWorksheetStatusFilter] = useState<"semua" | "draf" | "terbit" | "arsip">("semua");
@@ -314,6 +331,7 @@ export default function GuruPage() {
   const [showCreateModule, setShowCreateModule] = useState(false);
   const [title, setTitle] = useState("");
   const [subject, setSubject] = useState("");
+  const [topicGroup, setTopicGroup] = useState("");
   const [description, setDescription] = useState("");
   // Sampul modul pada formulir buat: berkas terpilih + URL objek pratinjaunya.
   // Berkas baru diunggah setelah modul terbuat (presign butuh id modul),
@@ -347,6 +365,7 @@ export default function GuruPage() {
   const [editingModuleMeta, setEditingModuleMeta] = useState(false);
   const [editModuleTitle, setEditModuleTitle] = useState("");
   const [editModuleSubject, setEditModuleSubject] = useState("");
+  const [editModuleTopicGroup, setEditModuleTopicGroup] = useState("");
   const [editModuleDescription, setEditModuleDescription] = useState("");
   const [editingWorksheetMeta, setEditingWorksheetMeta] = useState(false);
   const [editWorksheetTitle, setEditWorksheetTitle] = useState("");
@@ -427,7 +446,7 @@ export default function GuruPage() {
   // membandingkan kolom formulir saat ini dengannya dan penjaga tutup
   // modal (requestEditModalClose) memakainya untuk memutuskan perlu
   // tidaknya konfirmasi buang perubahan. Dibersihkan saat edit berakhir.
-  const moduleMetaBaseline = useRef<{ title: string; subject: string; description: string; coverKey: string | null } | null>(null);
+  const moduleMetaBaseline = useRef<{ title: string; subject: string; topicGroup: string; description: string; coverKey: string | null } | null>(null);
   const worksheetMetaBaseline = useRef<{ title: string; instructions: string } | null>(null);
   const assignmentEditBaseline = useRef<{
     selectedId: number | null;
@@ -581,6 +600,7 @@ export default function GuruPage() {
   const visibleModules = modules
     .filter((module) => moduleStatusFilter === "semua" || module.status === moduleStatusFilter)
     .filter((module) => moduleSubjectFilter === "semua" || module.subject === moduleSubjectFilter)
+    .filter((module) => matchesTopicFilter(module.topic_group, moduleTopicFilter))
     .filter((module) => normalizedModuleQuery === ""
       || module.title.toLowerCase().includes(normalizedModuleQuery)
       || module.subject.toLowerCase().includes(normalizedModuleQuery)
@@ -596,6 +616,7 @@ export default function GuruPage() {
     setModuleQuery("");
     setModuleStatusFilter("semua");
     setModuleSubjectFilter("semua");
+    setModuleTopicFilter(TOPIC_FILTER_SEMUA);
     setModuleSort("terbaru");
     setModuleArchiveOpen(false);
     setModuleArchiveClosedAtQuery(null);
@@ -987,6 +1008,18 @@ export default function GuruPage() {
   }, []);
 
   useEffect(() => {
+    void (async () => {
+      try {
+        const response = await apiRequest<{ ok: true; data: TopicGroupListEntry[] }>("/kurikulum/groups");
+        setTopicGroups(response.data);
+      } catch {
+        // Daftar kelompok hanya memperkaya dropdown & urutan chip;
+        // tanpa daftarnya halaman tetap berfungsi penuh.
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
     const timer = window.setInterval(() => {
       void apiRequest<IntegrityAlertsResponse>("/integrity/alerts")
         .then((response) => setIntegrityAlerts(response.data))
@@ -1298,7 +1331,7 @@ export default function GuruPage() {
     try {
       const response = await apiRequest<{ ok: true; data: ModuleSummary }>("/modules", {
         method: "POST",
-        body: JSON.stringify({ title, subject, description }),
+        body: JSON.stringify({ title, subject, description, topicGroup: topicGroup || null }),
       });
       const createdId = response.data.id;
       // Sampul diunggah sesudah modul ada (presign butuh id modul), lalu
@@ -1318,6 +1351,7 @@ export default function GuruPage() {
       }
       setTitle("");
       setSubject("");
+      setTopicGroup("");
       setDescription("");
       setNewCover(null);
       setSelectedId(createdId);
@@ -1337,11 +1371,13 @@ export default function GuruPage() {
     moduleMetaBaseline.current = {
       title: selectedModule.title,
       subject: selectedModule.subject,
+      topicGroup: selectedModule.topic_group ?? "",
       description: selectedModule.description ?? "",
       coverKey: selectedModule.cover_key,
     };
     setEditModuleTitle(selectedModule.title);
     setEditModuleSubject(selectedModule.subject);
+    setEditModuleTopicGroup(selectedModule.topic_group ?? "");
     setEditModuleDescription(selectedModule.description ?? "");
     setEditCoverKey(selectedModule.cover_key);
     setEditCover(null);
@@ -1366,7 +1402,7 @@ export default function GuruPage() {
       if (editCover) coverKey = await uploadModuleFile(selectedId, editCover.file);
       await apiRequest(`/modules/${selectedId}`, {
         method: "PATCH",
-        body: JSON.stringify({ title: editModuleTitle, subject: editModuleSubject, description: editModuleDescription, coverKey }),
+        body: JSON.stringify({ title: editModuleTitle, subject: editModuleSubject, description: editModuleDescription, topicGroup: editModuleTopicGroup || null, coverKey }),
       });
       moduleMetaBaseline.current = null;
       setEditingModuleMeta(false);
@@ -2835,6 +2871,7 @@ export default function GuruPage() {
   const moduleMetaDirty = editingModuleMeta && moduleMetaBase !== null
     ? editModuleTitle !== moduleMetaBase.title
       || editModuleSubject !== moduleMetaBase.subject
+      || editModuleTopicGroup !== moduleMetaBase.topicGroup
       || editModuleDescription !== moduleMetaBase.description
       || editCoverKey !== moduleMetaBase.coverKey
       || editCover !== null
@@ -3289,10 +3326,40 @@ export default function GuruPage() {
           </div>
         ) : null}
 
+        {modules.length > 0 && planTopicChips(modules, canonicalTopicOrder(topicGroups)).length > 1 ? (
+          <div className="topic-chip-row" role="group" aria-label="Saring kelompok materi">
+            <button
+              type="button"
+              className={`kurikulum-chip${moduleTopicFilter === TOPIC_FILTER_SEMUA ? " is-active" : ""}`}
+              onClick={() => setModuleTopicFilter(TOPIC_FILTER_SEMUA)}
+              aria-pressed={moduleTopicFilter === TOPIC_FILTER_SEMUA}
+            >
+              Semua kelompok
+            </button>
+            {planTopicChips(modules, canonicalTopicOrder(topicGroups)).map((chip) => (
+              <button
+                key={chip.key}
+                type="button"
+                className={`kurikulum-chip${moduleTopicFilter === chip.key ? " is-active" : ""}`}
+                onClick={() => setModuleTopicFilter(chip.key)}
+                aria-pressed={moduleTopicFilter === chip.key}
+              >
+                {chip.label} ({chip.count})
+              </button>
+            ))}
+          </div>
+        ) : null}
+
         {showCreateModule || modules.length === 0 ? (
           <form onSubmit={createModule} className="module-create-panel" style={styles.form}>
             <input required value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Judul modul" style={styles.input} />
             <input required value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="Mata pelajaran" style={styles.input} />
+            <select value={topicGroup} onChange={(event) => setTopicGroup(event.target.value)} aria-label="Kelompok materi" style={styles.input}>
+              <option value="">Kelompok materi: Lainnya / belum dikelompokkan</option>
+              {groupsForSubject(topicGroups, subject).map((groupName) => (
+                <option key={groupName} value={groupName}>Kelompok materi: {groupName}</option>
+              ))}
+            </select>
             <textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Deskripsi singkat" rows={3} style={styles.textarea} />
             <CoverField
               inputId="module-cover-file"
@@ -4427,6 +4494,20 @@ export default function GuruPage() {
         <form onSubmit={saveModuleMeta} style={styles.form}>
           <input required value={editModuleTitle} onChange={(event) => setEditModuleTitle(event.target.value)} placeholder="Judul modul" style={styles.input} />
           <input required value={editModuleSubject} onChange={(event) => setEditModuleSubject(event.target.value)} placeholder="Mata pelajaran" style={styles.input} />
+          <select value={editModuleTopicGroup} onChange={(event) => setEditModuleTopicGroup(event.target.value)} aria-label="Kelompok materi" style={styles.input}>
+            <option value="">Kelompok materi: Lainnya / belum dikelompokkan</option>
+            {groupsForSubject(topicGroups, editModuleSubject).map((groupName) => (
+              <option key={groupName} value={groupName}>Kelompok materi: {groupName}</option>
+            ))}
+            {editModuleTopicGroup && !groupsForSubject(topicGroups, editModuleSubject).includes(editModuleTopicGroup) ? (
+              <option value={editModuleTopicGroup}>Kelompok materi: {editModuleTopicGroup}</option>
+            ) : null}
+          </select>
+          {editModuleTopicGroup === "" && parseTopicGroupFromTitle(editModuleTitle) && groupsForSubject(topicGroups, editModuleSubject).includes(parseTopicGroupFromTitle(editModuleTitle)!) ? (
+            <button type="button" className="kurikulum-chip" onClick={() => setEditModuleTopicGroup(parseTopicGroupFromTitle(editModuleTitle)!)}>
+              Saran dari judul: {parseTopicGroupFromTitle(editModuleTitle)}
+            </button>
+          ) : null}
           <textarea value={editModuleDescription} onChange={(event) => setEditModuleDescription(event.target.value)} placeholder="Deskripsi singkat" rows={3} style={styles.textarea} />
           <CoverField
             inputId="module-cover-edit-file"

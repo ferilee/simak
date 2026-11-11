@@ -9,7 +9,7 @@
 // and the route wiring (approver-gated endpoints, inactive-mode branch,
 // serializer fields, preview/download extensions) is locked statically
 // against the sources. Jalur B is locked: migration 0013 exists and the
-// journal has exactly 14 entries.
+// journal has exactly 15 entries.
 import { readFileSync, readdirSync } from "node:fs";
 import {
   APPROVALS_FORBIDDEN_MESSAGE,
@@ -71,11 +71,11 @@ function sameFields(a, b) {
 // ---------------------------------------------------------------------------
 {
   const journal = JSON.parse(readRepo("packages/db/migrations/meta/_journal.json"));
-  check("journal has exactly 14 entries", journal.entries.length === 14, `got ${journal.entries.length}`);
-  const last = journal.entries[journal.entries.length - 1];
-  const prev = journal.entries[journal.entries.length - 2];
-  check("last journal entry is 0013_persetujuan_berbagi (idx 13)", last.tag === "0013_persetujuan_berbagi" && last.idx === 13);
-  check("0013 'when' is after 0012 'when'", last.when > prev.when, `${last.when} vs ${prev.when}`);
+  check("journal has exactly 15 entries", journal.entries.length === 15, `got ${journal.entries.length}`);
+  const entry0013 = journal.entries.find((entry) => entry.tag === "0013_persetujuan_berbagi");
+  const entry0012 = journal.entries.find((entry) => entry.tag === "0012_perpustakaan_bersama");
+  check("journal entry 0013_persetujuan_berbagi exists at idx 13", entry0013?.idx === 13);
+  check("0013 'when' is after 0012 'when'", entry0013.when > entry0012.when, `${entry0013.when} vs ${entry0012.when}`);
 
   const files = readdirSync(new URL("../../../../packages/db/migrations", import.meta.url));
   check("migration file 0013 exists", files.some((name) => name.startsWith("0013_") && name.endsWith(".sql")));

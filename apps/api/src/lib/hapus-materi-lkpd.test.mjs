@@ -202,7 +202,7 @@ const readRepo = (rel) => readFileSync(new URL(`../../../../${rel}`, import.meta
     libraryLib.includes("if (row.copiedFromId !== null) ids.add(row.copiedFromId);"));
 
   const journal = JSON.parse(readRepo("packages/db/migrations/meta/_journal.json"));
-  check("no new migration from this package: journal has exactly 14 entries (0013 came later)", journal.entries.length === 14, `got ${journal.entries.length}`);
+  check("no new migration from this package: journal has exactly 15 entries (0013 came later)", journal.entries.length === 15, `got ${journal.entries.length}`);
 }
 
 console.log(`\nhapus-materi-lkpd: ${passed} passed, ${failed} failed`);

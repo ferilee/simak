@@ -12,7 +12,7 @@
 // Same convention as the other suites: no test database, so the pure
 // rules (identity normalization, the sync decision) are tested
 // behaviorally and the DB wiring is locked statically. No migration:
-// the journal stays at 14 entries.
+// the journal stays at 15 entries.
 import { readFileSync } from "node:fs";
 
 // The modules under test parse the environment / build the db pool at
@@ -219,7 +219,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     && upsertSegment.includes("username: identity.username,"));
 
   const journal = JSON.parse(readRepo("packages/db/migrations/meta/_journal.json"));
-  check("journal has exactly 14 entries (no migration in this package)", journal.entries.length === 14,
+  check("journal has exactly 15 entries (no migration in this package)", journal.entries.length === 15,
     `got ${journal.entries.length}`);
 }
 

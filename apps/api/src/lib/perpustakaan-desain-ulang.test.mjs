@@ -9,7 +9,7 @@
 // Same convention as the other library suites: no test database, so the
 // pure aggregations (copy counts per source, the hero stats) are tested
 // behaviorally and the route wiring is locked statically. No migration:
-// the journal stays at 14 entries.
+// the journal stays at 15 entries.
 import { readFileSync } from "node:fs";
 import {
   buildLibraryModuleEntry,
@@ -157,7 +157,7 @@ const readRepo = (rel) => readFileSync(new URL(`../../../../${rel}`, import.meta
     listSegment.includes("contributors,") && listSegment.includes("stats,"));
 
   const journal = JSON.parse(readRepo("packages/db/migrations/meta/_journal.json"));
-  check("journal has exactly 14 entries (no new migration)", journal.entries.length === 14, `got ${journal.entries.length}`);
+  check("journal has exactly 15 entries (no new migration)", journal.entries.length === 15, `got ${journal.entries.length}`);
 }
 
 console.log(`\nperpustakaan-desain-ulang: ${passed} passed, ${failed} failed`);

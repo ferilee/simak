@@ -583,6 +583,7 @@ export type ModuleSource = {
   id: number;
   title: string;
   subject: string;
+  topicGroup: string | null;
   description: string | null;
   coverKey: string | null;
 };
@@ -598,6 +599,7 @@ export function moduleCopyValues(source: ModuleSource, copierId: number, ownerNa
     teacherId: copierId,
     title: source.title,
     subject: source.subject,
+    topicGroup: source.topicGroup,
     description: source.description,
     coverKey: source.coverKey,
     status: "draf" as const,

@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { requireRole } from "../middleware/auth";
-import { findCurriculumSet, listCurriculumSummaries } from "../lib/kurikulum";
+import { findCurriculumSet, listCurriculumSummaries, listTopicGroups } from "../lib/kurikulum";
 
 // Daftar CP & ATP (Tahap 1): referensi kurikulum baca-saja untuk guru.
 // Datanya statis di lib/kurikulum.ts (dokumen kurikulum yang disetujui,
@@ -11,6 +11,12 @@ export const kurikulumRoutes = new Hono();
 
 kurikulumRoutes.get("/", requireRole("guru"), (c) => {
   return c.json({ ok: true, data: listCurriculumSummaries() });
+});
+
+// Daftar kelompok materi per mapel untuk dropdown "Kelompok materi"
+// pada formulir modul (saringan kelompok di ruang guru).
+kurikulumRoutes.get("/groups", requireRole("guru"), (c) => {
+  return c.json({ ok: true, data: listTopicGroups() });
 });
 
 kurikulumRoutes.get("/set", requireRole("guru"), (c) => {

@@ -132,6 +132,20 @@ export const roleSchema = z.enum(ROLES);
 export const createModuleSchema = z.object({
   title: z.string().min(1).max(200),
   subject: z.string().min(1).max(100),
+  // Kelompok materi (TP/Materi pada daftar CP & ATP); null/kosong =
+  // belum dikelompokkan. Disiapkan sebagai string bersih: spasi tepi
+  // dipangkas dan string kosong menjadi null, supaya saringan kelompok
+  // di ruang guru tidak terpecah oleh variasi spasi.
+  topicGroup: z
+    .string()
+    .max(120)
+    .nullable()
+    .optional()
+    .transform((value) => {
+      if (value === undefined) return undefined;
+      const trimmed = value?.trim() ?? null;
+      return trimmed ? trimmed : null;
+    }),
   description: z.string().max(5000).optional(),
   // Kunci objek sampul di penyimpanan; null pada update = hapus sampul.
   coverKey: z.string().max(512).nullable().optional(),

@@ -121,6 +121,60 @@ export function findCurriculumCp(set: CurriculumSet, code: string): CurriculumCp
   return set.cps.find((cp) => cp.code === code) ?? null;
 }
 
+export type TopicGroupList = {
+  subject: string;
+  groups: string[];
+};
+
+/**
+ * Daftar kelompok materi (judul TP/Materi) per mapel untuk dropdown
+ * "Kelompok materi" pada formulir modul: unik, dalam urutan tampil
+ * kurikulum (kelas X ganjil → genap, lalu XI), lintas kelas & semester —
+ * modul hanya menyimpan mapel, bukan kelas/semester, jadi guru memilih
+ * kelompok dari gabungan mapelnya.
+ */
+export function listTopicGroups(sets: readonly CurriculumSet[] = CURRICULUM_SETS): TopicGroupList[] {
+  const bySubject = new Map<string, string[]>();
+  for (const set of sets) {
+    const list = bySubject.get(set.subject) ?? [];
+    for (const group of set.groups) {
+      if (!list.includes(group.title)) list.push(group.title);
+    }
+    bySubject.set(set.subject, list);
+  }
+  return [...bySubject.entries()].map(([subject, groups]) => ({ subject, groups }));
+}
+
+/**
+ * Kunci pencocokan mapel bebas (kolom subject modul adalah teks bebas):
+ * bentuk huruf kecil dari teks penuh, dari isi kurung, dan dari teks
+ * sebelum kurung — sehingga "Koding dan Kecerdasan Artifisial (KKA)",
+ * "KKA", dan "kka" semuanya berujung ke kunci yang sama.
+ */
+export function subjectMatchKeys(raw: string): string[] {
+  const full = raw.trim().toLowerCase();
+  const keys = new Set<string>([full]);
+  const open = full.indexOf("(");
+  const close = full.lastIndexOf(")");
+  if (open >= 0 && close > open) {
+    keys.add(full.slice(open + 1, close).trim());
+    keys.add(full.slice(0, open).trim());
+  }
+  return [...keys].filter((key) => key.length > 0);
+}
+
+/** Kelompok materi untuk satu mapel bebas; [] bila mapelnya tak dikenal. */
+export function topicGroupsForSubject(
+  rawSubject: string,
+  sets: readonly CurriculumSet[] = CURRICULUM_SETS,
+): string[] {
+  const rawKeys = subjectMatchKeys(rawSubject);
+  const match = listTopicGroups(sets).find((entry) =>
+    subjectMatchKeys(entry.subject).some((key) => rawKeys.includes(key)),
+  );
+  return match ? match.groups : [];
+}
+
 const SUMBER_MATEMATIKA =
   "ATP: dokumen ATP Matematika SMKN Pasirian · CP: Keputusan Kepala BSKAP Kemendikdasmen No. 046/H/KR/2025";
 const SUMBER_KKA =

@@ -9,7 +9,7 @@
 // Same convention as the other library suites: no test database, so the
 // pure rules (summary merge + ordering, the teacher_id parser, entry
 // passthrough) are tested behaviorally and the route wiring is locked
-// statically. No migration: the journal stays at 14 entries.
+// statically. No migration: the journal stays at 15 entries.
 import { readFileSync } from "node:fs";
 import {
   buildContributorSummaries,
@@ -174,7 +174,7 @@ const readRepo = (rel) => readFileSync(new URL(`../../../../${rel}`, import.meta
     listSegment.includes("pending_count: pendingCount,") && listSegment.includes("contributors,"));
 
   const journal = JSON.parse(readRepo("packages/db/migrations/meta/_journal.json"));
-  check("journal has exactly 14 entries (no new migration)", journal.entries.length === 14, `got ${journal.entries.length}`);
+  check("journal has exactly 15 entries (no new migration)", journal.entries.length === 15, `got ${journal.entries.length}`);
 }
 
 console.log(`\nperpustakaan-kontributor: ${passed} passed, ${failed} failed`);

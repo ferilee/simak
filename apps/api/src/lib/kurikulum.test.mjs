@@ -20,6 +20,8 @@ import {
   findCurriculumCp,
   findCurriculumSet,
   listCurriculumSummaries,
+  listTopicGroups,
+  topicGroupsForSubject,
 } from "./kurikulum.ts";
 
 let passed = 0;
@@ -115,10 +117,32 @@ const appSource = readFileSync(new URL("../app.ts", import.meta.url), "utf8");
 check("app.ts memasang route /kurikulum", appSource.includes('v1.route("/kurikulum", kurikulumRoutes)'));
 const routeSource = readFileSync(new URL("../routes/kurikulum.ts", import.meta.url), "utf8");
 check(
-  "kedua route kurikulum khusus guru",
-  (routeSource.match(/, requireRole\("guru"\),/g) ?? []).length === 2,
+  "ketiga route kurikulum khusus guru",
+  (routeSource.match(/, requireRole\("guru"\),/g) ?? []).length === 3,
 );
 check("route kurikulum baca-saja: tanpa akses basis data", !routeSource.includes("@simak/db"));
+
+// --- Daftar kelompok materi untuk dropdown modul -------------------------
+const topicGroups = listTopicGroups();
+check(
+  "daftar kelompok memuat Matematika (14 kelompok) dan KKA (6 kelompok)",
+  topicGroups.find((e) => e.subject === "Matematika")?.groups.length === 14 &&
+    topicGroups.find((e) => e.subject === "KKA")?.groups.length === 6,
+);
+check(
+  "urutan kelompok Matematika mengikuti kurikulum (Eksponen pertama, Peluang Bersyarat terakhir)",
+  topicGroups.find((e) => e.subject === "Matematika")?.groups[0] === "Eksponen" &&
+    topicGroups.find((e) => e.subject === "Matematika")?.groups.at(-1) === "Peluang Bersyarat",
+);
+check(
+  "mapel bebas 'Koding dan Kecerdasan Artifisial (KKA)' cocok ke kelompok KKA",
+  topicGroupsForSubject("Koding dan Kecerdasan Artifisial (KKA)").includes("Berpikir Komputasional"),
+);
+check(
+  "mapel bebas 'Matematika' cocok ke kelompok Matematika",
+  topicGroupsForSubject("Matematika").includes("Matematika Keuangan"),
+);
+check("mapel tak dikenal → daftar kelompok kosong", topicGroupsForSubject("Bahasa Indonesia").length === 0);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

@@ -43,6 +43,7 @@ function serializeModule(
     id: module.id,
     title: module.title,
     subject: module.subject,
+    topic_group: module.topicGroup,
     description: module.description,
     cover_key: module.coverKey,
     status: module.status,

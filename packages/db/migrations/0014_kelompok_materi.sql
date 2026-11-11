@@ -1,0 +1,1 @@
+ALTER TABLE `modules` ADD `topic_group` varchar(120);

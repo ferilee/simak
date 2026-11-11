@@ -8,6 +8,14 @@ export const modules = mysqlTable("modules", {
     .references(() => users.id),
   title: varchar("title", { length: 200 }).notNull(),
   subject: varchar("subject", { length: 100 }).notNull(),
+  // Kelompok materi (TP/Materi pada daftar CP & ATP, mis. "Eksponen",
+  // "Matematika Keuangan", "Berpikir Komputasional"): penanda resmi agar
+  // daftar Materi saya bisa disaring per kelompok. NULL = belum
+  // dikelompokkan (tampil di saringan "Lainnya"). Nilai diisi guru lewat
+  // dropdown yang daftarnya berasal dari data kurikulum; kolomnya teks
+  // polos seperti subject, bukan kunci asing — daftar kelompok hidup di
+  // data kurikulum yang terbit bersama kode.
+  topicGroup: varchar("topic_group", { length: 120 }),
   description: text("description"),
   // Kunci objek sampul modul di penyimpanan (RustFS); URL unduhan bertanda
   // tangan diterbitkan segar lewat /uploads/download seperti lampiran blok.

@@ -9,7 +9,7 @@
 // the route wiring (owner-only toggles, guru-only catalog, transaction
 // copies, serializer fields) is locked statically against the sources.
 // Jalur B is locked: migration 0012 exists (the journal has since grown
-// to 14 entries with 0013_persetujuan_berbagi — see that package's suite).
+// to 15 entries with 0014_kelompok_materi — see that package's suite).
 import { readFileSync, readdirSync } from "node:fs";
 import {
   buildLibraryModuleEntry,
@@ -46,7 +46,7 @@ const readRepo = (rel) => readFileSync(new URL(`../../../../${rel}`, import.meta
 // ---------------------------------------------------------------------------
 {
   const journal = JSON.parse(readRepo("packages/db/migrations/meta/_journal.json"));
-  check("journal has exactly 14 entries (0013 persetujuan-berbagi menyusul 0012)", journal.entries.length === 14, `got ${journal.entries.length}`);
+  check("journal has exactly 15 entries (0013 persetujuan-berbagi menyusul 0012)", journal.entries.length === 15, `got ${journal.entries.length}`);
   const entry0012 = journal.entries[12];
   const entry0011 = journal.entries[11];
   check("journal entry idx 12 is 0012_perpustakaan_bersama", entry0012.tag === "0012_perpustakaan_bersama" && entry0012.idx === 12);

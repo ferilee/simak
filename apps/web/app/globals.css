@@ -4050,3 +4050,88 @@ button.wizard-library-link {
 .avatar-error {
   color: #b42318;
 }
+
+/* Pengingat tugas murid: checklist langkah + pita tenggat pada kartu
+   penugasan beranda. Keputusan langkah/tingkatnya dari lib/pengingat.ts;
+   kelas-kelas ini hanya menggambar hasilnya. */
+.assignment-card--mendesak {
+  border-color: #f3b8b0;
+  background: #fffafa;
+}
+.assign-reminder {
+  justify-self: start;
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+.assign-reminder--segera {
+  background: #fffaeb;
+  border: 1px solid #f5d48e;
+  color: #93370d;
+}
+.assign-reminder--mendesak {
+  background: var(--color-danger-surface);
+  border: 1px solid #f3b8b0;
+  color: var(--color-danger);
+}
+.assign-steps {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 10px 0 0;
+  border-top: 1px dashed var(--color-border-soft);
+  display: grid;
+  gap: 5px;
+}
+.assign-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  color: #344054;
+}
+.assign-step-mark {
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+  font-weight: 800;
+  color: #98a2b3;
+}
+.assign-step.is-done {
+  color: var(--color-muted);
+}
+.assign-step.is-done .assign-step-mark {
+  color: var(--color-success);
+}
+.assign-step.is-done .assign-step-label {
+  text-decoration: line-through;
+}
+.assign-step.is-next {
+  font-weight: 750;
+  color: var(--color-ink);
+}
+.assign-step-hint {
+  border-radius: 999px;
+  padding: 1px 8px;
+  background: #fdf3d7;
+  color: #9a6200;
+  font-size: 12px;
+  font-weight: 700;
+}
+.assign-step-next {
+  border-radius: 999px;
+  padding: 1px 8px;
+  background: var(--color-brand-50);
+  color: var(--color-brand-700);
+  font-size: 12px;
+  font-weight: 700;
+}
+.assign-steps-done {
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--color-border-soft);
+  color: var(--color-success);
+  font-size: 13.5px;
+  font-weight: 700;
+}

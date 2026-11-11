@@ -431,6 +431,41 @@ muridRoutes.get("/today", async (c) => {
     // Abaikan — kartu XP tidak tampil.
   }
 
+  // Checklist langkah per penugasan pada kartu beranda: ketuntasan
+  // materi per modul dan pengiriman exit ticket per penugasan, masing-
+  // masing SATU query himpunan untuk seluruh daftar (bukan per
+  // penugasan). Predikat tuntasnya sama dengan GET /murid/modules/:id
+  // (baris baca_materi_tuntas murid ini untuk modul itu); predikat exit
+  // ticket sama dengan halaman detail penugasan (ada baris exit_tickets
+  // untuk pasangan penugasan+murid). Pola gagal-aman yang sama dengan
+  // sinyal beranda lain: kegagalan → himpunan kosong (langkah tampil
+  // belum selesai) dan tidak pernah menggagalkan ringkasan beranda.
+  const assignmentModuleIds = [...new Set(uniqueAssignments.flatMap((assignment) => (assignment.moduleId === null ? [] : [assignment.moduleId])))];
+  let completedMaterialModuleIds = new Set<number>();
+  try {
+    if (assignmentModuleIds.length > 0) {
+      const rows = await db
+        .select({ moduleId: activityLogs.moduleId })
+        .from(activityLogs)
+        .where(and(eq(activityLogs.studentId, user.userId), eq(activityLogs.event, "baca_materi_tuntas"), inArray(activityLogs.moduleId, assignmentModuleIds)));
+      completedMaterialModuleIds = new Set(rows.flatMap((row) => (row.moduleId === null ? [] : [row.moduleId])));
+    }
+  } catch {
+    // Abaikan — langkah materi tampil sebagai belum tuntas.
+  }
+  let submittedExitTicketAssignmentIds = new Set<number>();
+  try {
+    if (uniqueAssignments.length > 0) {
+      const rows = await db
+        .select({ assignmentId: exitTickets.assignmentId })
+        .from(exitTickets)
+        .where(and(eq(exitTickets.studentId, user.userId), inArray(exitTickets.assignmentId, uniqueAssignments.map((assignment) => assignment.id))));
+      submittedExitTicketAssignmentIds = new Set(rows.map((row) => row.assignmentId));
+    }
+  } catch {
+    // Abaikan — langkah exit ticket tampil sebagai belum diisi.
+  }
+
   return c.json({
     ok: true,
     data: {
@@ -460,11 +495,19 @@ muridRoutes.get("/today", async (c) => {
               groupAttemptByAssignment.get(assignment.id),
             )
           : individual;
-        return serializeAssignmentForStudent(
-          assignment,
-          assignmentProgress(assignment, effective),
-          assignment.workMode === "kelompok" ? (groupByAssignment.get(assignment.id) ?? null) : undefined,
-        );
+        return {
+          ...serializeAssignmentForStudent(
+            assignment,
+            assignmentProgress(assignment, effective),
+            assignment.workMode === "kelompok" ? (groupByAssignment.get(assignment.id) ?? null) : undefined,
+          ),
+          // Dua field checklist kartu beranda (lihat query himpunan di
+          // atas): material_completed hanya bermakna bila penugasan
+          // punya modul — tanpa modul selalu false dan web tidak
+          // menggambar langkah materinya.
+          material_completed: assignment.moduleId !== null && completedMaterialModuleIds.has(assignment.moduleId),
+          exit_ticket_submitted: submittedExitTicketAssignmentIds.has(assignment.id),
+        };
       }),
       has_viewed_material: hasViewedMaterial,
     },
@@ -815,6 +858,36 @@ muridRoutes.get("/worksheets/:id/attempt", async (c) => {
   }
   const attempt = context.attempt;
   const answers = await db.select().from(worksheetAnswers).where(eq(worksheetAnswers.attemptId, attempt.id));
+  // Konteks materi untuk banner pengingat di halaman LKPD: penugasan
+  // yang melekat pada attempt ini (dari parameter ATAU dipulihkan
+  // server — konteks yang sama dengan assignment_id pada respons)
+  // menentukan modulnya; ketuntasan memakai predikat yang sama dengan
+  // GET /murid/modules/:id (baris baca_materi_tuntas murid ini untuk
+  // modul itu). Tanpa konteks penugasan, atau penugasannya tanpa modul,
+  // material null dan banner tidak tampil. Kegagalan query juga
+  // menghasilkan null — banner pengingat tidak pernah boleh
+  // menggagalkan pemuatan attempt.
+  let material: { module_id: number; completed: boolean } | null = null;
+  if (context.assignmentId !== null) {
+    try {
+      const [contextAssignment] = await db
+        .select({ moduleId: assignments.moduleId })
+        .from(assignments)
+        .where(eq(assignments.id, context.assignmentId))
+        .limit(1);
+      if (contextAssignment?.moduleId != null) {
+        const moduleId = contextAssignment.moduleId;
+        const [completedRow] = await db
+          .select({ id: activityLogs.id })
+          .from(activityLogs)
+          .where(and(eq(activityLogs.studentId, user.userId), eq(activityLogs.moduleId, moduleId), eq(activityLogs.event, "baca_materi_tuntas")))
+          .limit(1);
+        material = { module_id: moduleId, completed: Boolean(completedRow) };
+      }
+    } catch {
+      material = null;
+    }
+  }
   // Pembahasan hanya dibuka setelah LKPD dikumpulkan/dinilai. Kunci jawaban
   // (answer_key) tidak pernah dikirim ke murid.
   let explanations: Record<number, string> | undefined;
@@ -866,6 +939,9 @@ muridRoutes.get("/worksheets/:id/attempt", async (c) => {
       // server): klien mengadopsinya bila URL-nya tidak membawa parameter,
       // agar simpan/pengumpulan/presensi memakai konteks yang sama.
       assignment_id: context.assignmentId,
+      // Konteks materi banner pengingat (lihat di atas): { module_id,
+      // completed } atau null bila attempt ini tidak terikat modul.
+      material,
       status: attempt.status,
       submitted_at: attempt.submittedAt,
       answers: answers.map((answer) => ({

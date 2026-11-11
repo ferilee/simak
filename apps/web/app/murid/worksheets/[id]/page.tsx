@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { apiRequest } from "../../../../lib/api";
 import { ITEM_TYPE_LABELS, itemTypeLabel, submitButtonLabel } from "../../../../lib/label-kumpulkan";
+import { materialBannerVisible } from "../../../../lib/pengingat";
 import { advanceSavedSnapshot, diffAnswersPayload, mergeLiveAnswers, type LiveAnswer, type LivePayloadEntry } from "../../../../lib/live-kelompok";
 import { prepareImageForUpload } from "../../../../lib/prepare-image";
 import { Toast } from "../../../../components/Toast";
@@ -40,6 +41,10 @@ type AttemptResponse = {
   data: {
     status: "draf" | "terkumpul" | "dinilai" | null;
     assignment_id?: number | null;
+    // Konteks materi dari server untuk banner pengingat: modul milik
+    // penugasan attempt ini + apakah murid sudah menuntaskannya.
+    // null bila attempt tidak terikat penugasan bermodul.
+    material?: { module_id: number; completed: boolean } | null;
     answers: { item_id: number; answer_text: string | null; attachment_key: string | null }[];
     explanations?: Record<string, string>;
     ungrouped?: boolean;
@@ -115,6 +120,12 @@ export default function WorksheetPage() {
   const [contributionDrafts, setContributionDrafts] = useState<Record<number, number>>({});
   const [contributionSaving, setContributionSaving] = useState(false);
   const [status, setStatus] = useState<"draf" | "terkumpul" | "dinilai">("draf");
+  // Banner pengingat materi: konteksnya dari respons attempt (server),
+  // penutupannya hanya state lokal sesi halaman ini — tidak disimpan
+  // ke mana pun, jadi banner muncul lagi pada kunjungan berikutnya
+  // selama membaca belum tuntas. Itu memang tujuannya.
+  const [materialInfo, setMaterialInfo] = useState<{ module_id: number; completed: boolean } | null>(null);
+  const [materialBannerClosed, setMaterialBannerClosed] = useState(false);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   // Pemutar satu soal per halaman: pageIndex == items.length berarti layar
@@ -204,6 +215,7 @@ export default function WorksheetPage() {
     }));
     setData(worksheetData);
     setStatus(attemptData.status ?? "draf");
+    setMaterialInfo(attemptData.material ?? null);
     setGroupInfo(attemptData.group ?? null);
     if (attemptData.last_edited_by) {
       setLastEditedBy({ name: attemptData.last_edited_by.name, at: attemptData.last_edited_at ?? null });
@@ -770,6 +782,9 @@ export default function WorksheetPage() {
       : lastSavedAt
         ? `Tersimpan ${String(lastSavedAt.getHours()).padStart(2, "0")}:${String(lastSavedAt.getMinutes()).padStart(2, "0")}`
         : "";
+  // Banner pengingat materi: hanya pengingat — tidak pernah
+  // menghalangi pengerjaan atau pengumpulan dalam keadaan apa pun.
+  const showMaterialBanner = materialBannerVisible(materialInfo, status) && !materialBannerClosed;
 
   return (
     <main style={styles.container}>
@@ -900,6 +915,25 @@ export default function WorksheetPage() {
             );
           })}
         </nav>
+      ) : null}
+
+      {showMaterialBanner && materialInfo ? (
+        <div style={styles.materialBanner} role="note">
+          <p style={styles.materialBannerText}>
+            📖 Kamu belum menuntaskan membaca materi ini. Baca dulu sampai selesai supaya lebih mudah mengerjakan — sekalian dapat +10 XP.
+          </p>
+          <div style={styles.materialBannerActions}>
+            <Link href={`/murid/modules/${materialInfo.module_id}`} style={styles.materialBannerLink}>Baca Materi</Link>
+            <button
+              type="button"
+              onClick={() => setMaterialBannerClosed(true)}
+              style={styles.materialBannerClose}
+              aria-label="Tutup pengingat materi"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
       ) : null}
 
       <div ref={cardTopRef} style={styles.pageAnchor}>
@@ -1223,6 +1257,11 @@ const styles = {
   contributionButtons: { display: "flex", gap: 6 },
   contributionButton: { minWidth: 40, minHeight: 40, border: "1px solid #d0d5dd", borderRadius: 8, background: "white", color: "#475467", fontWeight: 700, fontSize: 14, cursor: "pointer" },
   contributionButtonActive: { background: "#175cd3", borderColor: "#175cd3", color: "white" },
+  materialBanner: { display: "flex", gap: 12, alignItems: "flex-start", justifyContent: "space-between", background: "#eff8ff", border: "1px solid #b2ddff", padding: 14, borderRadius: 10, marginTop: 20 },
+  materialBannerText: { margin: 0, fontSize: 14.5, color: "#175cd3", lineHeight: 1.6 },
+  materialBannerActions: { display: "flex", gap: 8, alignItems: "center", flexShrink: 0 },
+  materialBannerLink: { borderRadius: 8, background: "#175cd3", color: "white", padding: "8px 12px", fontWeight: 700, fontSize: 13.5, textDecoration: "none", whiteSpace: "nowrap" as const },
+  materialBannerClose: { border: "1px solid #b2ddff", borderRadius: 8, background: "white", color: "#175cd3", width: 34, height: 34, fontWeight: 700, cursor: "pointer", flexShrink: 0 },
   integrityNotice: { display: "flex", gap: 10, alignItems: "flex-start", background: "#FFFAEB", border: "1px solid #F79009", padding: 14, borderRadius: 10 },
   integrityNoticeIcon: { fontSize: 18, lineHeight: 1.4 },
   integrityNoticeTitle: { margin: 0, fontSize: 15, fontWeight: 700, color: "#93370D", lineHeight: 1.4 },

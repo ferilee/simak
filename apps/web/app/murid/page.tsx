@@ -8,6 +8,7 @@ import { decideBaruMarkers, readNilaiSayaBaseline } from "../../lib/nilai-saya";
 import { quoteOfTheDay, salamForHour } from "../../lib/sapaan";
 import { xpProgressLabel, type XpSummary } from "../../lib/xp";
 import { avatarImagePath, priceLabel, stateLabel, type AvatarCatalogItem, type AvatarsResponse } from "../../lib/avatar";
+import { allStepsDone, planAssignmentSteps, planReminderLevel, worksheetStatusFromProgress } from "../../lib/pengingat";
 import { submissionStatusLabel } from "../lib/labels";
 import { Toast } from "../../components/Toast";
 import { Modal } from "../../components/Modal";
@@ -45,6 +46,11 @@ type AssignmentSummary = {
   opens_at: string;
   due_at: string;
   progress: "belum_dibuka" | "belum" | "draf" | "terkumpul" | "dinilai" | "terlambat";
+  // Bukti checklist kartu dari server: tuntas membaca modul penugasan
+  // ini (catatan baca_materi_tuntas) dan exit ticket penugasan ini
+  // sudah dikirim murid.
+  material_completed: boolean;
+  exit_ticket_submitted: boolean;
 };
 
 type TodayResponse = {
@@ -584,14 +590,60 @@ function ModuleListCover({ moduleId, coverKey }: { moduleId: number; coverKey: s
 }
 
 function AssignmentCard({ assignment }: { assignment: AssignmentSummary }) {
+  // Checklist langkah dari bukti server pada payload kartu: ketuntasan
+  // materi + exit ticket datang sebagai field /murid/today, status LKPD
+  // mengikuti progres kartu (attempt efektif — kelompok memakai attempt
+  // bersamanya). Exit ticket selalu berlaku karena halaman detail
+  // penugasan selalu menggambar langkah itu (lib/pengingat.ts).
+  const steps = planAssignmentSteps({
+    hasModule: assignment.module_id !== null,
+    materialCompleted: assignment.material_completed,
+    hasWorksheet: assignment.worksheet_id !== null,
+    worksheetStatus: assignment.worksheet_id !== null ? worksheetStatusFromProgress(assignment.progress) : null,
+    hasExitTicket: true,
+    exitTicketSubmitted: assignment.exit_ticket_submitted,
+  });
+  const reminder = planReminderLevel({ dueAt: assignment.due_at, steps, now: new Date() });
+  const stepsDone = allStepsDone(steps);
+  const nextStepIndex = steps.findIndex((step) => !step.done);
+  // Penugasan yang sudah dinilai tidak perlu checklist: nilainya sudah
+  // terbit dan tidak ada langkah yang bisa dikejar lagi dari kartu ini.
+  const showSteps = assignment.progress !== "dinilai";
   return (
-    <Link href={`/murid/assignments/${assignment.id}`} className="content-card content-link">
+    <Link
+      href={`/murid/assignments/${assignment.id}`}
+      className={`content-card content-link${reminder.level === "mendesak" ? " assignment-card--mendesak" : ""}`}
+    >
       <strong>{assignment.title}</strong>
       {assignment.work_mode === "kelompok" ? (
         <span className="group-mode-badge" style={{ alignSelf: "flex-start" }}>👥 Kelompok{assignment.group ? ` · ${assignment.group.name}` : ""}</span>
       ) : null}
       <span className="content-muted">{assignment.instructions ?? "Buka detail penugasan untuk mulai."}</span>
+      {reminder.level !== "none" ? (
+        <span className={`assign-reminder assign-reminder--${reminder.level}`} role="note">
+          ⏰ {reminder.level === "mendesak" ? (reminder.overdue ? "Sudah lewat tenggat" : "Tenggat dekat") : "Segera tenggat"} — {reminder.missingLabels.join(" · ")}
+        </span>
+      ) : null}
       <span className="content-meta">Status: {submissionStatusLabel(assignment.progress)} · batas {formatDate(assignment.due_at)}</span>
+      {showSteps ? (
+        stepsDone ? (
+          <span className="assign-steps-done">Semua langkah selesai ✓</span>
+        ) : (
+          <ul className="assign-steps">
+            {steps.map((step, index) => (
+              <li
+                key={step.key}
+                className={`assign-step${step.done ? " is-done" : ""}${index === nextStepIndex ? " is-next" : ""}`}
+              >
+                <span className="assign-step-mark" aria-hidden="true">{step.done ? "✓" : "○"}</span>
+                <span className="assign-step-label">{step.label}</span>
+                {step.hint ? <span className="assign-step-hint">{step.hint}</span> : null}
+                {index === nextStepIndex ? <span className="assign-step-next">Berikutnya</span> : null}
+              </li>
+            ))}
+          </ul>
+        )
+      ) : null}
       <span className="content-action">Buka penugasan →</span>
     </Link>
   );

@@ -11,6 +11,11 @@ export const users = mysqlTable("users", {
   role: mysqlEnum("role", ["guru", "murid"]).notNull(),
   nis: varchar("nis", { length: 32 }),
   isActive: boolean("is_active").notNull().default(true),
+  // Kapan murid pertama kali menyambut modal ucapan selamat datang di
+  // ruang murid (NULL = belum pernah disambut). Penanda di server —
+  // bukan di perangkat — karena murid berbagi perangkat: penanda lokal
+  // akan menyambut orang yang salah atau melewatkan yang berhak.
+  welcomedAt: timestamp("welcomed_at"),
   lastSyncedAt: timestamp("last_synced_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),

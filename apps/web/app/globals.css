@@ -3922,3 +3922,21 @@ button.wizard-library-link {
 [id^="isi-b"] {
   scroll-margin-top: 70px;
 }
+
+/* Modal ucapan selamat datang murid (ruang murid, sekali seumur akun). */
+.welcome-quote {
+  margin: 14px 0;
+  padding: 12px 16px;
+  border-left: 4px solid #0b84f3;
+  border-radius: 0 10px 10px 0;
+  background: #eef4fc;
+  color: #153463;
+  font-style: italic;
+}
+.welcome-steps {
+  margin: 8px 0 4px;
+  padding-left: 22px;
+  display: grid;
+  gap: 8px;
+  color: #24466e;
+}

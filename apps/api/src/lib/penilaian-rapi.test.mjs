@@ -152,9 +152,9 @@ console.log("Case 9: Jalur — tidak ada migrasi melampaui 0013 (Persetujuan Ber
 {
   const migrationsDir = new URL("../../../../packages/db/migrations/", import.meta.url);
   const files = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql"));
-  check("tidak ada berkas migrasi 0015+", !files.some((name) => /^001[5-9]/.test(name)), files.join(","));
+  check("tidak ada berkas migrasi 0016+", !files.some((name) => /^001[6-9]|^002/.test(name)), files.join(","));
   const journal = JSON.parse(read("../../../../packages/db/migrations/meta/_journal.json"));
-  check("jurnal 15 entri (idx terakhir 14, 0014 kelompok-materi)", journal.entries.length === 15 && journal.entries[journal.entries.length - 1].idx === 14);
+  check("jurnal 16 entri (idx terakhir 15, 0015 ucapan-selamat-datang)", journal.entries.length === 16 && journal.entries[journal.entries.length - 1].idx === 15);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

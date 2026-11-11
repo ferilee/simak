@@ -68,11 +68,8 @@ check(
 const journal = JSON.parse(
   readFileSync(new URL("../../../../packages/db/migrations/meta/_journal.json", import.meta.url), "utf8"),
 );
-const lastEntry = journal.entries.at(-1);
-check(
-  "jurnal migrasi berakhir di 0014_kelompok_materi",
-  lastEntry.idx === 14 && lastEntry.tag === "0014_kelompok_materi",
-);
+const entry0014 = journal.entries.find((entry) => entry.tag === "0014_kelompok_materi");
+check("jurnal migrasi memuat 0014_kelompok_materi pada idx 14", entry0014?.idx === 14);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

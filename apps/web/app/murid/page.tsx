@@ -5,8 +5,10 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiRequest } from "../../lib/api";
 import { decideBaruMarkers, readNilaiSayaBaseline } from "../../lib/nilai-saya";
+import { quoteOfTheDay, salamForHour } from "../../lib/sapaan";
 import { submissionStatusLabel } from "../lib/labels";
 import { Toast } from "../../components/Toast";
+import { Modal } from "../../components/Modal";
 
 type ClassSummary = {
   id: number;
@@ -45,7 +47,7 @@ type AssignmentSummary = {
 
 type TodayResponse = {
   ok: true;
-  data: { classes: ClassSummary[]; modules: ModuleSummary[]; assignments: AssignmentSummary[]; has_viewed_material: boolean };
+  data: { classes: ClassSummary[]; modules: ModuleSummary[]; assignments: AssignmentSummary[]; has_viewed_material: boolean; needs_welcome: boolean };
 };
 
 type MeResponse = {
@@ -63,7 +65,8 @@ type NilaiDotResponse = {
 export default function MuridPage() {
   const router = useRouter();
   const [user, setUser] = useState<MeResponse["user"] | null>(null);
-  const [data, setData] = useState<TodayResponse["data"]>({ classes: [], modules: [], assignments: [], has_viewed_material: false });
+  const [data, setData] = useState<TodayResponse["data"]>({ classes: [], modules: [], assignments: [], has_viewed_material: false, needs_welcome: false });
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
   const [joinCode, setJoinCode] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
@@ -88,6 +91,16 @@ export default function MuridPage() {
     data.assignments.length > 0,
   ];
   const displayName = user?.display_name ?? user?.name ?? "Murid";
+
+  // Menutup sambutan (tombol "Mulai belajar", X, klik luar, Escape —
+  // semuanya lewat onClose Modal) mencatat penanda ke server agar
+  // tidak tampil lagi. Gagal catat tidak menghalangi penutupan; modal
+  // paling-paling tampil sekali lagi pada kunjungan berikutnya.
+  function dismissWelcome() {
+    setWelcomeOpen(false);
+    setData((current) => ({ ...current, needs_welcome: false }));
+    void apiRequest("/murid/welcome/seen", { method: "POST" }).catch(() => undefined);
+  }
   const activeAssignments = data.assignments
     .filter((assignment) => new Date(assignment.due_at).getTime() >= Date.now())
     .sort((left, right) => new Date(left.due_at).getTime() - new Date(right.due_at).getTime());
@@ -105,6 +118,10 @@ export default function MuridPage() {
       }
       const today = await apiRequest<TodayResponse>("/murid/today");
       setData(today.data);
+      // Sambutan pertama: server yang memutuskan (penanda welcomed_at),
+      // jadi modal ini tampil tepat sekali untuk akun ini di perangkat
+      // mana pun.
+      if (today.data.needs_welcome) setWelcomeOpen(true);
       setJoinOpen(today.data.classes.length === 0);
       // Titik penanda "ada nilai baru" untuk tautan Nilai Saya: satu
       // pengambilan ringan, baseline kunjungan terakhir hanya DIBACA di
@@ -182,6 +199,30 @@ export default function MuridPage() {
       </header>
 
       {message ? <Toast message={message} onDismiss={() => setMessage("")} /> : null}
+
+      <Modal
+        open={welcomeOpen}
+        title={`${salamForHour(new Date().getHours())}, ${displayName}!`}
+        subtitle="Selamat datang di SIMAK — ruang belajarmu"
+        onClose={dismissWelcome}
+        footer={(
+          <button type="button" className="button button-primary" onClick={dismissWelcome}>
+            Mulai belajar
+          </button>
+        )}
+      >
+        <p>
+          Senang kamu ada di sini. Di SIMAK kamu membaca materi dari gurumu, mengerjakan LKPD
+          bersama kelompokmu, dan melihat nilaimu bertumbuh — semua dalam satu tempat.
+        </p>
+        <blockquote className="welcome-quote">{quoteOfTheDay(new Date())}</blockquote>
+        <p><strong>Tiga langkah belajar di SIMAK:</strong></p>
+        <ol className="welcome-steps">
+          <li><strong>Baca materi</strong> sampai tuntas — daftar isi di bagian atas materi membantumu melompat antar bagian.</li>
+          <li><strong>Kerjakan LKPD lewat menu Penugasan</strong> — dengan begitu jawabanmu tercatat bersama kelompokmu.</li>
+          <li><strong>Isi exit ticket</strong> sesudahnya — ceritakan kesan dan kesulitanmu supaya gurumu tahu cara membantumu.</li>
+        </ol>
+      </Modal>
 
       <div className="container wizard-layout wizard-theme-murid">
         <aside className="wizard-sidebar" aria-label="Langkah ruang murid">

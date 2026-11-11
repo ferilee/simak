@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, asc, eq, inArray, isNotNull, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
 import { db, schema } from "@simak/db";
 import { contributionRatingsSchema, exitTicketSchema, presenceHeartbeatSchema, worksheetAnswersSchema } from "@simak/shared";
@@ -12,6 +12,7 @@ import { contributionWindowOpen, loadMemberScoreOverride, loadStudentGroup, pick
 import { planRecoveredContext, type RecoveryCandidate } from "../lib/konteks-pulih";
 import { buildStudentGradeRow, chooseGradeAttempt, sortGradeRows, type GradeAttemptCandidate } from "../lib/nilai-saya";
 import { buildUnansweredMessage, isSameAnswerValue, unansweredDetails, type SubmitGateAnswer } from "../lib/submit-gate";
+import { needsWelcome } from "../lib/sapaan";
 
 // Beranda murid + detail penugasan — halaman paling ringan adalah prioritas.
 export const muridRoutes = new Hono();
@@ -386,9 +387,26 @@ muridRoutes.get("/today", async (c) => {
     // Abaikan — langkah Materi tampil sebagai belum selesai.
   }
 
+  // Penanda sambutan pertama: modal ucapan selamat datang hanya tampil
+  // bila welcomed_at murid ini masih NULL. Sama seperti sinyal materi di
+  // atas, kegagalan query tidak boleh menggagalkan ringkasan beranda —
+  // kegagalan dianggap sudah disambut (modal tidak tampil).
+  let showWelcome = false;
+  try {
+    const [me] = await db
+      .select({ welcomedAt: users.welcomedAt })
+      .from(users)
+      .where(eq(users.id, user.userId))
+      .limit(1);
+    showWelcome = needsWelcome(me?.welcomedAt);
+  } catch {
+    // Abaikan — modal sambutan tidak tampil.
+  }
+
   return c.json({
     ok: true,
     data: {
+      needs_welcome: showWelcome,
       classes: memberships.map((membership) => ({
         id: membership.id,
         name: membership.name,
@@ -421,6 +439,18 @@ muridRoutes.get("/today", async (c) => {
       has_viewed_material: hasViewedMaterial,
     },
   });
+});
+
+// Modal ucapan selamat datang ditutup murid: catat penanda sambutan
+// (hanya bila masih NULL — panggilan berulang tidak menggeser waktu
+// sambutan pertama) agar modal tidak tampil lagi untuk akun ini.
+muridRoutes.post("/welcome/seen", async (c) => {
+  const user = c.get("user")!;
+  await db
+    .update(users)
+    .set({ welcomedAt: new Date() })
+    .where(and(eq(users.id, user.userId), isNull(users.welcomedAt)));
+  return c.json({ ok: true, data: { needs_welcome: false } });
 });
 
 // Halaman "Nilai Saya": rangkuman semua nilai LKPD murid yang meminta yang

@@ -3940,3 +3940,41 @@ button.wizard-library-link {
   gap: 8px;
   color: #24466e;
 }
+
+/* Kartu poin XP murid (gamifikasi): total, level, bilah kemajuan. */
+.xp-card {
+  margin: 16px 0 4px;
+  padding: 14px 16px;
+  display: grid;
+  gap: 6px;
+  border: 1px solid #f3d27a;
+  border-radius: 12px;
+  background: #fffaf0;
+}
+.xp-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 20px;
+  color: #7a4d00;
+}
+.xp-card-level {
+  font-weight: 600;
+  color: #9a6200;
+}
+.xp-progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #f3e3bb;
+  overflow: hidden;
+}
+.xp-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #f5a623;
+  transition: width 0.4s ease;
+}
+.xp-card-note {
+  font-size: 13px;
+  color: #7a5a17;
+}

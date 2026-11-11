@@ -51,11 +51,8 @@ check(
 const journal = JSON.parse(
   readFileSync(new URL("../../../../packages/db/migrations/meta/_journal.json", import.meta.url), "utf8"),
 );
-const lastEntry = journal.entries.at(-1);
-check(
-  "jurnal migrasi berakhir di 0015_ucapan_selamat_datang (16 entri)",
-  journal.entries.length === 16 && lastEntry.idx === 15 && lastEntry.tag === "0015_ucapan_selamat_datang",
-);
+const entry0015 = journal.entries.find((entry) => entry.tag === "0015_ucapan_selamat_datang");
+check("jurnal migrasi memuat 0015_ucapan_selamat_datang pada idx 15", entry0015?.idx === 15);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

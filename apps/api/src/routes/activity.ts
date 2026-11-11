@@ -5,6 +5,7 @@ import { db, schema } from "@simak/db";
 import { activitySchema } from "@simak/shared";
 import { requireRole } from "../middleware/auth";
 import { studentCanAccessModule, studentIsAssignmentTarget } from "../lib/assignment-target";
+import { awardXp } from "../lib/xp";
 
 // Pencatatan peristiwa belajar untuk presensi otomatis dan rekap bukti.
 export const activityRoutes = new Hono();
@@ -46,6 +47,9 @@ activityRoutes.post("/", zValidator("json", activitySchema), async (c) => {
         moduleId,
         event: "baca_materi_tuntas",
       });
+      // XP materi tuntas: dibayar tepat di sini — satu-satunya tempat
+      // catatan tuntas pertama dibuat, jadi tidak mungkin ganda.
+      await awardXp(user.userId, "materi_tuntas", moduleId);
     }
     return c.json({ ok: true });
   }

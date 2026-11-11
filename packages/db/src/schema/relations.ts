@@ -8,6 +8,7 @@ import { assignments, assignmentClasses } from "./assignments";
 import { assignmentGroups, assignmentGroupMembers } from "./groups";
 import { submissions, submissionAnswers } from "./submissions";
 import { activityLogs, exitTickets } from "./activity";
+import { xpLedger } from "./xp";
 import { integrityEvents } from "./integrity";
 import { ruasScores } from "./ruas-scores";
 
@@ -18,6 +19,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   submissions: many(submissions),
   worksheetAttempts: many(worksheetAttempts),
   activityLogs: many(activityLogs),
+  xpLedger: many(xpLedger),
   integrityEvents: many(integrityEvents),
   ruasScores: many(ruasScores),
 }));
@@ -130,6 +132,10 @@ export const activityLogsRelations = relations(activityLogs, ({ one }) => ({
 export const exitTicketsRelations = relations(exitTickets, ({ one }) => ({
   assignment: one(assignments, { fields: [exitTickets.assignmentId], references: [assignments.id] }),
   student: one(users, { fields: [exitTickets.studentId], references: [users.id] }),
+}));
+
+export const xpLedgerRelations = relations(xpLedger, ({ one }) => ({
+  student: one(users, { fields: [xpLedger.studentId], references: [users.id] }),
 }));
 
 export const integrityEventsRelations = relations(integrityEvents, ({ one }) => ({

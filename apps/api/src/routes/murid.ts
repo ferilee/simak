@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, asc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
 import { db, schema } from "@simak/db";
 import { contributionRatingsSchema, exitTicketSchema, presenceHeartbeatSchema, worksheetAnswersSchema } from "@simak/shared";
@@ -13,13 +13,14 @@ import { planRecoveredContext, type RecoveryCandidate } from "../lib/konteks-pul
 import { buildStudentGradeRow, chooseGradeAttempt, sortGradeRows, type GradeAttemptCandidate } from "../lib/nilai-saya";
 import { buildUnansweredMessage, isSameAnswerValue, unansweredDetails, type SubmitGateAnswer } from "../lib/submit-gate";
 import { needsWelcome } from "../lib/sapaan";
+import { awardXp, summarizeXp, XP_POINTS, type XpSummary } from "../lib/xp";
 
 // Beranda murid + detail penugasan — halaman paling ringan adalah prioritas.
 export const muridRoutes = new Hono();
 
 muridRoutes.use("*", requireRole("murid"));
 
-const { activityLogs, assignmentClasses, assignmentStudents, assignments, classes, classMembers, exitTickets, groupContributionRatings, moduleBlocks, modules, users, worksheetAnswers, worksheetAttemptMemberScores, worksheetAttempts, worksheetItems, worksheets } = schema;
+const { activityLogs, assignmentClasses, assignmentGroupMembers, assignmentStudents, assignments, classes, classMembers, exitTickets, groupContributionRatings, moduleBlocks, modules, users, worksheetAnswers, worksheetAttemptMemberScores, worksheetAttempts, worksheetItems, worksheets, xpLedger } = schema;
 
 type StudentGroupView = NonNullable<Awaited<ReturnType<typeof loadStudentGroup>>>;
 
@@ -403,10 +404,26 @@ muridRoutes.get("/today", async (c) => {
     // Abaikan — modal sambutan tidak tampil.
   }
 
+  // Ringkasan XP murid dari buku besar xp_ledger (total = jumlah semua
+  // baris penghargaan). Pola gagal-aman yang sama dengan sinyal di atas:
+  // kegagalan query menghasilkan xp null dan kartu XP tidak dirender —
+  // beranda tidak pernah gagal gara-gara gamifikasi.
+  let xpSummary: XpSummary | null = null;
+  try {
+    const [row] = await db
+      .select({ total: sql<number>`coalesce(sum(${xpLedger.points}), 0)` })
+      .from(xpLedger)
+      .where(eq(xpLedger.studentId, user.userId));
+    xpSummary = summarizeXp(Number(row?.total ?? 0));
+  } catch {
+    // Abaikan — kartu XP tidak tampil.
+  }
+
   return c.json({
     ok: true,
     data: {
       needs_welcome: showWelcome,
+      xp: xpSummary,
       classes: memberships.map((membership) => ({
         id: membership.id,
         name: membership.name,
@@ -645,13 +662,17 @@ muridRoutes.post("/assignments/:id/exit-ticket", zValidator("json", exitTicketSc
 
   const input = c.req.valid("json");
   const [existing] = await db.select({ id: exitTickets.id }).from(exitTickets).where(and(eq(exitTickets.assignmentId, assignmentId), eq(exitTickets.studentId, user.userId))).limit(1);
+  let xpAwarded = 0;
   if (existing) {
     await db.update(exitTickets).set({ understood3: input.understood3, examples2: input.examples2, confusing1: input.confusing1 }).where(eq(exitTickets.id, existing.id));
   } else {
     await db.insert(exitTickets).values({ assignmentId, studentId: user.userId, ...input });
+    // XP exit ticket hanya untuk tiket yang BARU dibuat — kirim ulang
+    // memperbarui isi tiket lama dan tidak membayar lagi.
+    xpAwarded = await awardXp(user.userId, "exit_ticket", assignmentId);
   }
   await db.insert(activityLogs).values({ studentId: user.userId, assignmentId, event: "exit_ticket" });
-  return c.json({ ok: true, data: { submitted: true } });
+  return c.json({ ok: true, data: { submitted: true, xp_awarded: xpAwarded } });
 });
 
 muridRoutes.get("/modules/:id", async (c) => {
@@ -1016,7 +1037,25 @@ muridRoutes.post("/worksheets/:id/submit", async (c) => {
     }
   }
   await db.update(worksheetAttempts).set({ status: "terkumpul", submittedAt: new Date() }).where(eq(worksheetAttempts.id, attempt.id));
-  return c.json({ ok: true, data: { status: "terkumpul" } });
+  // XP LKPD terkumpul: attempt individu membayar pengumpulnya; attempt
+  // kelompok membayar SETIAP anggota kelompok (kerja kolektif — bukan
+  // lomba menekan tombol Kumpulkan). Penjaga status "draf" di atas
+  // membuat titik ini tercapai tepat sekali per attempt, dan kunci
+  // unik buku besar menahan sisa perlombaan apa pun.
+  let xpAwarded = 0;
+  if (context.group) {
+    const memberRows = await db
+      .select({ studentId: assignmentGroupMembers.studentId })
+      .from(assignmentGroupMembers)
+      .where(eq(assignmentGroupMembers.groupId, context.group.id));
+    for (const member of memberRows) {
+      await awardXp(member.studentId, "lkpd_terkumpul", attempt.id);
+    }
+    xpAwarded = memberRows.some((member) => member.studentId === user.userId) ? XP_POINTS.lkpd_terkumpul : 0;
+  } else {
+    xpAwarded = await awardXp(user.userId, "lkpd_terkumpul", attempt.id);
+  }
+  return c.json({ ok: true, data: { status: "terkumpul", xp_awarded: xpAwarded } });
 });
 
 // Penilaian kontribusi antarteman (Tahap 2): jendela isian hanya saat

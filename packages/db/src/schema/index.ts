@@ -7,6 +7,7 @@ export * from "./assignments";
 export * from "./groups";
 export * from "./submissions";
 export * from "./activity";
+export * from "./xp";
 export * from "./integrity";
 export * from "./ruas-scores";
 export * from "./relations";

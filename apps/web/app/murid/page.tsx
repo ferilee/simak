@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { apiRequest } from "../../lib/api";
 import { decideBaruMarkers, readNilaiSayaBaseline } from "../../lib/nilai-saya";
 import { quoteOfTheDay, salamForHour } from "../../lib/sapaan";
+import { xpProgressLabel, type XpSummary } from "../../lib/xp";
 import { submissionStatusLabel } from "../lib/labels";
 import { Toast } from "../../components/Toast";
 import { Modal } from "../../components/Modal";
@@ -47,7 +48,7 @@ type AssignmentSummary = {
 
 type TodayResponse = {
   ok: true;
-  data: { classes: ClassSummary[]; modules: ModuleSummary[]; assignments: AssignmentSummary[]; has_viewed_material: boolean; needs_welcome: boolean };
+  data: { classes: ClassSummary[]; modules: ModuleSummary[]; assignments: AssignmentSummary[]; has_viewed_material: boolean; needs_welcome: boolean; xp: XpSummary | null };
 };
 
 type MeResponse = {
@@ -65,7 +66,7 @@ type NilaiDotResponse = {
 export default function MuridPage() {
   const router = useRouter();
   const [user, setUser] = useState<MeResponse["user"] | null>(null);
-  const [data, setData] = useState<TodayResponse["data"]>({ classes: [], modules: [], assignments: [], has_viewed_material: false, needs_welcome: false });
+  const [data, setData] = useState<TodayResponse["data"]>({ classes: [], modules: [], assignments: [], has_viewed_material: false, needs_welcome: false, xp: null });
   const [welcomeOpen, setWelcomeOpen] = useState(false);
   const [joinCode, setJoinCode] = useState("");
   const [message, setMessage] = useState("");
@@ -233,6 +234,26 @@ export default function MuridPage() {
               <span>Ruang murid</span>
             </div>
           </div>
+          {data.xp ? (
+            <section className="xp-card" aria-label="Poin XP saya">
+              <div className="xp-card-head">
+                <span aria-hidden="true">⭐</span>
+                <strong>{data.xp.total} XP</strong>
+              </div>
+              <span className="xp-card-level">{data.xp.levelName}</span>
+              <div
+                className="xp-progress-track"
+                role="progressbar"
+                aria-valuenow={data.xp.progressPct}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label={`Kemajuan menuju level berikutnya: ${data.xp.progressPct}%`}
+              >
+                <div className="xp-progress-fill" style={{ width: `${data.xp.progressPct}%` }} />
+              </div>
+              <span className="xp-card-note">{xpProgressLabel(data.xp)}</span>
+            </section>
+          ) : null}
           <nav className={`wizard-steps wizard-steps-${studentStep}`}>
             {studentSteps.map((step, index) => (
               <button

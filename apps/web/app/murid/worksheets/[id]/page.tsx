@@ -662,7 +662,7 @@ export default function WorksheetPage() {
     }
     try {
       const attemptQuery = assignmentId ? `?assignmentId=${assignmentId}` : "";
-      await apiRequest(`/murid/worksheets/${data.worksheet.id}/submit${attemptQuery}`, { method: "POST" });
+      const submitResult = await apiRequest<{ ok: true; data: { status: string; xp_awarded?: number } }>(`/murid/worksheets/${data.worksheet.id}/submit${attemptQuery}`, { method: "POST" });
       if (assignmentId) {
         await apiRequest("/activity", {
           method: "POST",
@@ -671,7 +671,8 @@ export default function WorksheetPage() {
       }
       setStatus("terkumpul");
       setLivePresence([]);
-      setMessage("LKPD berhasil dikumpulkan.");
+      const xpAwarded = submitResult.data.xp_awarded ?? 0;
+      setMessage(xpAwarded > 0 ? `LKPD berhasil dikumpulkan. +${xpAwarded} XP ⭐` : "LKPD berhasil dikumpulkan.");
       if (groupInfo) void loadContributionRatings();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "LKPD belum dapat dikumpulkan.");

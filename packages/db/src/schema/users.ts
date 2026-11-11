@@ -16,6 +16,12 @@ export const users = mysqlTable("users", {
   // bukan di perangkat — karena murid berbagi perangkat: penanda lokal
   // akan menyambut orang yang salah atau melewatkan yang berhak.
   welcomedAt: timestamp("welcomed_at"),
+  // Slug avatar yang sedang dipasang murid (katalog statis di
+  // apps/api/src/lib/avatar.ts; NULL = belum memasang avatar). Avatar
+  // dimiliki lewat penukaran poin XP yang tercatat di buku besar
+  // xp_ledger (event "tukar_avatar") — kolom ini hanya penunjuk
+  // pilihan tampilannya, bukan catatan kepemilikan.
+  avatarSlug: varchar("avatar_slug", { length: 64 }),
   lastSyncedAt: timestamp("last_synced_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),

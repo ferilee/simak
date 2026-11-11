@@ -9,7 +9,8 @@
 //    699/700/1000), tingkat tertinggi tanpa level berikutnya.
 //  - Migrasi 0016 membuat xp_ledger dengan kunci unik
 //    (student_id, event, source_id) — penjamin tidak pernah ganda —
-//    dan menutup jurnal pada 17 entri.
+//    dan terdaftar di jurnal pada idx 16 (dicari by-tag: jurnal terus
+//    bertambah oleh paket-paket berikutnya).
 //  - Wiring: penghargaan hanya di tempat kejadian benar-benar baru
 //    (catatan tuntas pertama, transisi attempt ke terkumpul, tiket
 //    exit yang baru dibuat), /murid/today membawa xp gagal-aman.
@@ -99,9 +100,9 @@ check(
 const xpSchema = readFileSync(new URL("../../../../packages/db/src/schema/xp.ts", import.meta.url), "utf8");
 check("skema mendefinisikan tabel xp_ledger", xpSchema.includes('mysqlTable(\n  "xp_ledger"'));
 check(
-  "skema: event varchar(32) dengan tiga kejadian XP",
+  "skema: event varchar(32) dengan empat kejadian (3 penghargaan + tukar_avatar dari paket Avatar Murid)",
   xpSchema.includes('varchar("event", { length: 32 })') &&
-    xpSchema.includes('"materi_tuntas" | "lkpd_terkumpul" | "exit_ticket"'),
+    xpSchema.includes('"materi_tuntas" | "lkpd_terkumpul" | "exit_ticket" | "tukar_avatar"'),
 );
 check(
   "skema: kunci unik (student_id, event, source_id) + indeks student_id",
@@ -136,10 +137,10 @@ check(
 const journal = JSON.parse(
   readFileSync(new URL("../../../../packages/db/migrations/meta/_journal.json", import.meta.url), "utf8"),
 );
-const lastEntry = journal.entries.at(-1);
+const entry0016 = journal.entries.find((entry) => entry.tag === "0016_poin_xp");
 check(
-  "jurnal migrasi berakhir di 0016_poin_xp (17 entri)",
-  journal.entries.length === 17 && lastEntry.idx === 16 && lastEntry.tag === "0016_poin_xp",
+  "jurnal migrasi memuat 0016_poin_xp pada idx 16",
+  entry0016?.idx === 16,
 );
 
 // --- Wiring titik penghargaan ----------------------------------------------
@@ -185,8 +186,9 @@ check(
   muridRoute.includes("data: { submitted: true, xp_awarded: xpAwarded }"),
 );
 check(
-  "/today: ringkasan XP dari jumlah buku besar lewat summarizeXp",
-  muridRoute.includes("summarizeXp(Number(row?.total ?? 0))") &&
+  "/today: level dari XP seumur (jumlah baris positif), saldo dari jumlah semua baris",
+  muridRoute.includes("summarizeXp(Number(row?.lifetime ?? 0), Number(row?.balance ?? 0))") &&
+    muridRoute.includes("coalesce(sum(case when ${xpLedger.points} > 0 then ${xpLedger.points} else 0 end), 0)") &&
     muridRoute.includes("coalesce(sum(${xpLedger.points}), 0)"),
 );
 check(

@@ -13,6 +13,13 @@ import { users } from "./users";
 // penugasan untuk exit_ticket. Nilai poin per kejadian tinggal di
 // apps/api/src/lib/xp.ts (XP_POINTS) dan tersalin ke kolom points saat
 // baris ditulis, supaya riwayat tidak berubah bila besaran kelak diubah.
+//
+// Penukaran avatar (paket Avatar Murid) memakai buku besar yang sama:
+// satu baris event "tukar_avatar" berpoin negatif (atau 0 untuk avatar
+// gratis) dengan source_id = id avatar di katalog — baris itu sekaligus
+// bukti kepemilikan, dan kunci unik melarang membeli avatar yang sama
+// dua kali. Level murid dihitung dari XP seumur (jumlah baris berpoin
+// positif saja); saldo tukar adalah jumlah semua baris.
 export const xpLedger = mysqlTable(
   "xp_ledger",
   {
@@ -20,7 +27,7 @@ export const xpLedger = mysqlTable(
     studentId: bigint("student_id", { mode: "number" })
       .notNull()
       .references(() => users.id),
-    event: varchar("event", { length: 32 }).$type<"materi_tuntas" | "lkpd_terkumpul" | "exit_ticket">().notNull(),
+    event: varchar("event", { length: 32 }).$type<"materi_tuntas" | "lkpd_terkumpul" | "exit_ticket" | "tukar_avatar">().notNull(),
     sourceId: bigint("source_id", { mode: "number" }).notNull(),
     points: int("points").notNull(),
     createdAt: timestamp("created_at").notNull().defaultNow(),

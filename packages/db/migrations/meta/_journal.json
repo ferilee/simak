@@ -120,6 +120,13 @@
       "when": 1794368585878,
       "tag": "0016_poin_xp",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "5",
+      "when": 1794369994078,
+      "tag": "0017_avatar_murid",
+      "breakpoints": true
     }
   ]
 }

@@ -7,6 +7,7 @@ import { apiRequest } from "../../lib/api";
 import { decideBaruMarkers, readNilaiSayaBaseline } from "../../lib/nilai-saya";
 import { quoteOfTheDay, salamForHour } from "../../lib/sapaan";
 import { xpProgressLabel, type XpSummary } from "../../lib/xp";
+import { avatarImagePath, priceLabel, stateLabel, type AvatarCatalogItem, type AvatarsResponse } from "../../lib/avatar";
 import { submissionStatusLabel } from "../lib/labels";
 import { Toast } from "../../components/Toast";
 import { Modal } from "../../components/Modal";
@@ -48,7 +49,7 @@ type AssignmentSummary = {
 
 type TodayResponse = {
   ok: true;
-  data: { classes: ClassSummary[]; modules: ModuleSummary[]; assignments: AssignmentSummary[]; has_viewed_material: boolean; needs_welcome: boolean; xp: XpSummary | null };
+  data: { classes: ClassSummary[]; modules: ModuleSummary[]; assignments: AssignmentSummary[]; has_viewed_material: boolean; needs_welcome: boolean; xp: XpSummary | null; avatar_slug: string | null };
 };
 
 type MeResponse = {
@@ -66,8 +67,13 @@ type NilaiDotResponse = {
 export default function MuridPage() {
   const router = useRouter();
   const [user, setUser] = useState<MeResponse["user"] | null>(null);
-  const [data, setData] = useState<TodayResponse["data"]>({ classes: [], modules: [], assignments: [], has_viewed_material: false, needs_welcome: false, xp: null });
+  const [data, setData] = useState<TodayResponse["data"]>({ classes: [], modules: [], assignments: [], has_viewed_material: false, needs_welcome: false, xp: null, avatar_slug: null });
   const [welcomeOpen, setWelcomeOpen] = useState(false);
+  const [avatarOpen, setAvatarOpen] = useState(false);
+  const [avatars, setAvatars] = useState<AvatarsResponse["data"] | null>(null);
+  const [avatarError, setAvatarError] = useState("");
+  const [avatarMessage, setAvatarMessage] = useState("");
+  const [avatarBusy, setAvatarBusy] = useState<string | null>(null);
   const [joinCode, setJoinCode] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
@@ -101,6 +107,86 @@ export default function MuridPage() {
     setWelcomeOpen(false);
     setData((current) => ({ ...current, needs_welcome: false }));
     void apiRequest("/murid/welcome/seen", { method: "POST" }).catch(() => undefined);
+  }
+
+  // Pemilih avatar: katalog + kepemilikan + saldo selalu segar dari
+  // server saat modal dibuka (GET /murid/avatars). Sesudah tukar/pakai/
+  // lepas berhasil, state lokal diperbarui di tempat — termasuk saldo
+  // pada kartu XP beranda — tanpa memuat ulang halaman.
+  async function openAvatarPicker() {
+    setAvatarOpen(true);
+    setAvatarMessage("");
+    setAvatarError("");
+    try {
+      const response = await apiRequest<AvatarsResponse>("/murid/avatars");
+      setAvatars(response.data);
+    } catch {
+      setAvatars(null);
+      setAvatarError("Katalog avatar belum dapat dimuat. Coba lagi nanti.");
+    }
+  }
+
+  async function redeemAvatar(item: AvatarCatalogItem) {
+    setAvatarBusy(item.slug);
+    setAvatarMessage("");
+    try {
+      const response = await apiRequest<{ ok: true; data: { slug: string; balance: number; owned: boolean } }>(
+        `/murid/avatars/${item.slug}/redeem`,
+        { method: "POST" },
+      );
+      setAvatars((current) => (current ? {
+        ...current,
+        balance: response.data.balance,
+        catalog: current.catalog.map((entry) => (entry.slug === item.slug ? { ...entry, owned: true } : entry)),
+      } : current));
+      setData((current) => ({
+        ...current,
+        xp: current.xp ? { ...current.xp, balance: response.data.balance } : current.xp,
+      }));
+      setAvatarMessage(`${item.name} sekarang milikmu. Pasang lewat tombol Pakai.`);
+    } catch (error) {
+      setAvatarMessage(error instanceof Error ? error.message : "Avatar belum dapat ditukar.");
+    } finally {
+      setAvatarBusy(null);
+    }
+  }
+
+  async function equipAvatar(item: AvatarCatalogItem) {
+    setAvatarBusy(item.slug);
+    setAvatarMessage("");
+    try {
+      await apiRequest(`/murid/avatars/${item.slug}/equip`, { method: "POST" });
+      setAvatars((current) => (current ? {
+        ...current,
+        equipped_slug: item.slug,
+        catalog: current.catalog.map((entry) => ({ ...entry, equipped: entry.slug === item.slug })),
+      } : current));
+      setData((current) => ({ ...current, avatar_slug: item.slug }));
+      setAvatarMessage(`${item.name} terpasang.`);
+    } catch (error) {
+      setAvatarMessage(error instanceof Error ? error.message : "Avatar belum dapat dipasang.");
+    } finally {
+      setAvatarBusy(null);
+    }
+  }
+
+  async function unequipAvatar() {
+    setAvatarBusy("unequip");
+    setAvatarMessage("");
+    try {
+      await apiRequest("/murid/avatars/unequip", { method: "POST" });
+      setAvatars((current) => (current ? {
+        ...current,
+        equipped_slug: null,
+        catalog: current.catalog.map((entry) => ({ ...entry, equipped: false })),
+      } : current));
+      setData((current) => ({ ...current, avatar_slug: null }));
+      setAvatarMessage("Avatar dilepas.");
+    } catch (error) {
+      setAvatarMessage(error instanceof Error ? error.message : "Avatar belum dapat dilepas.");
+    } finally {
+      setAvatarBusy(null);
+    }
   }
   const activeAssignments = data.assignments
     .filter((assignment) => new Date(assignment.due_at).getTime() >= Date.now())
@@ -225,6 +311,52 @@ export default function MuridPage() {
         </ol>
       </Modal>
 
+      <Modal
+        open={avatarOpen}
+        title="Avatar saya"
+        subtitle="Tukar poin XP untuk membuka avatar baru, lalu pasang yang kamu suka."
+        onClose={() => setAvatarOpen(false)}
+      >
+        {avatarError ? <p className="avatar-error">{avatarError}</p> : null}
+        {!avatars && !avatarError ? <p>Memuat katalog avatar...</p> : null}
+        {avatars ? (
+          <>
+            <p className="avatar-balance">Saldo tukar kamu: <strong>{avatars.balance} XP</strong></p>
+            <div className="avatar-grid">
+              {avatars.catalog.map((item) => {
+                const kurang = item.price - avatars.balance;
+                return (
+                  <article key={item.slug} className={`avatar-card${item.equipped ? " is-equipped" : ""}`}>
+                    <img className="avatar-card-img" src={item.image_url} alt={item.name} width={72} height={72} />
+                    <strong>{item.name}</strong>
+                    <span className="avatar-card-state">{stateLabel(item)}</span>
+                    {item.equipped ? (
+                      <button type="button" className="button button-secondary" disabled>Terpasang</button>
+                    ) : item.owned ? (
+                      <button type="button" className="button" disabled={avatarBusy !== null} onClick={() => void equipAvatar(item)}>
+                        Pakai
+                      </button>
+                    ) : kurang > 0 ? (
+                      <button type="button" className="button button-secondary" disabled>Kurang {kurang} XP</button>
+                    ) : (
+                      <button type="button" className="button" disabled={avatarBusy !== null} onClick={() => void redeemAvatar(item)}>
+                        {item.price === 0 ? "Ambil Gratis" : `Tukar ${priceLabel(item.price)}`}
+                      </button>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+            {avatars.equipped_slug ? (
+              <button type="button" className="button button-secondary avatar-unequip" disabled={avatarBusy !== null} onClick={() => void unequipAvatar()}>
+                Lepas Avatar
+              </button>
+            ) : null}
+            {avatarMessage ? <p className="avatar-note" role="status">{avatarMessage}</p> : null}
+          </>
+        ) : null}
+      </Modal>
+
       <div className="container wizard-layout wizard-theme-murid">
         <aside className="wizard-sidebar" aria-label="Langkah ruang murid">
           <div className="wizard-profile">
@@ -236,11 +368,24 @@ export default function MuridPage() {
           </div>
           {data.xp ? (
             <section className="xp-card" aria-label="Poin XP saya">
-              <div className="xp-card-head">
-                <span aria-hidden="true">⭐</span>
-                <strong>{data.xp.total} XP</strong>
+              <div className="xp-card-top">
+                {data.avatar_slug ? (
+                  <img
+                    className="xp-card-avatar"
+                    src={avatarImagePath(data.avatar_slug)}
+                    alt="Avatar saya"
+                    width={52}
+                    height={52}
+                  />
+                ) : null}
+                <div className="xp-card-headings">
+                  <div className="xp-card-head">
+                    <span aria-hidden="true">⭐</span>
+                    <strong>{data.xp.total} XP</strong>
+                  </div>
+                  <span className="xp-card-level">{data.xp.levelName}</span>
+                </div>
               </div>
-              <span className="xp-card-level">{data.xp.levelName}</span>
               <div
                 className="xp-progress-track"
                 role="progressbar"
@@ -252,6 +397,10 @@ export default function MuridPage() {
                 <div className="xp-progress-fill" style={{ width: `${data.xp.progressPct}%` }} />
               </div>
               <span className="xp-card-note">{xpProgressLabel(data.xp)}</span>
+              <span className="xp-card-balance">Saldo tukar: {data.xp.balance} XP</span>
+              <button type="button" className="button button-secondary xp-card-button" onClick={() => void openAvatarPicker()}>
+                Ganti Avatar
+              </button>
             </section>
           ) : null}
           <nav className={`wizard-steps wizard-steps-${studentStep}`}>

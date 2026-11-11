@@ -14,6 +14,7 @@ import { buildStudentGradeRow, chooseGradeAttempt, sortGradeRows, type GradeAtte
 import { buildUnansweredMessage, isSameAnswerValue, unansweredDetails, type SubmitGateAnswer } from "../lib/submit-gate";
 import { needsWelcome } from "../lib/sapaan";
 import { awardXp, summarizeXp, XP_POINTS, type XpSummary } from "../lib/xp";
+import { avatarBySlug } from "../lib/avatar";
 
 // Beranda murid + detail penugasan — halaman paling ringan adalah prioritas.
 export const muridRoutes = new Hono();
@@ -392,29 +393,40 @@ muridRoutes.get("/today", async (c) => {
   // bila welcomed_at murid ini masih NULL. Sama seperti sinyal materi di
   // atas, kegagalan query tidak boleh menggagalkan ringkasan beranda —
   // kegagalan dianggap sudah disambut (modal tidak tampil).
+  // Avatar terpasang dibaca dari baris users yang sama; slug selalu
+  // divalidasi ke katalog avatar (slug asing diperlakukan belum
+  // memasang), dan kegagalan query yang sama mengosongkannya.
   let showWelcome = false;
+  let equippedAvatarSlug: string | null = null;
   try {
     const [me] = await db
-      .select({ welcomedAt: users.welcomedAt })
+      .select({ welcomedAt: users.welcomedAt, avatarSlug: users.avatarSlug })
       .from(users)
       .where(eq(users.id, user.userId))
       .limit(1);
     showWelcome = needsWelcome(me?.welcomedAt);
+    equippedAvatarSlug = me?.avatarSlug && avatarBySlug(me.avatarSlug) ? me.avatarSlug : null;
   } catch {
-    // Abaikan — modal sambutan tidak tampil.
+    // Abaikan — modal sambutan tidak tampil, avatar tidak dirender.
   }
 
-  // Ringkasan XP murid dari buku besar xp_ledger (total = jumlah semua
-  // baris penghargaan). Pola gagal-aman yang sama dengan sinyal di atas:
-  // kegagalan query menghasilkan xp null dan kartu XP tidak dirender —
-  // beranda tidak pernah gagal gara-gara gamifikasi.
+  // Ringkasan XP murid dari buku besar xp_ledger. Level dihitung dari
+  // XP SEUMUR — jumlah baris berpoin positif saja — agar menukar XP
+  // untuk avatar tidak pernah menurunkan level; saldo tukar (jumlah
+  // semua baris) menyertai ringkasan sebagai field balance. Pola
+  // gagal-aman yang sama dengan sinyal di atas: kegagalan query
+  // menghasilkan xp null dan kartu XP tidak dirender — beranda tidak
+  // pernah gagal gara-gara gamifikasi.
   let xpSummary: XpSummary | null = null;
   try {
     const [row] = await db
-      .select({ total: sql<number>`coalesce(sum(${xpLedger.points}), 0)` })
+      .select({
+        lifetime: sql<number>`coalesce(sum(case when ${xpLedger.points} > 0 then ${xpLedger.points} else 0 end), 0)`,
+        balance: sql<number>`coalesce(sum(${xpLedger.points}), 0)`,
+      })
       .from(xpLedger)
       .where(eq(xpLedger.studentId, user.userId));
-    xpSummary = summarizeXp(Number(row?.total ?? 0));
+    xpSummary = summarizeXp(Number(row?.lifetime ?? 0), Number(row?.balance ?? 0));
   } catch {
     // Abaikan — kartu XP tidak tampil.
   }
@@ -424,6 +436,7 @@ muridRoutes.get("/today", async (c) => {
     data: {
       needs_welcome: showWelcome,
       xp: xpSummary,
+      avatar_slug: equippedAvatarSlug,
       classes: memberships.map((membership) => ({
         id: membership.id,
         name: membership.name,

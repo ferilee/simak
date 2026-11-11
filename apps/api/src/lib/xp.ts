@@ -4,8 +4,11 @@ import { db, schema } from "@simak/db";
 // tercatat di server — bukan untuk kebenaran jawaban (itu wilayah
 // penilaian guru). Setiap penghargaan adalah satu baris buku besar
 // xp_ledger; kunci unik (student_id, event, source_id) di tabel itu
-// membuat sumber yang sama tidak pernah membayar dua kali. Total XP
-// adalah jumlah buku besar, jadi tidak ada penghitung yang menyimpang.
+// membuat sumber yang sama tidak pernah membayar dua kali. Tidak ada
+// penghitung yang menyimpang: level dihitung dari XP seumur (jumlah
+// baris berpoin positif) dan saldo tukar dari jumlah semua baris —
+// penukaran avatar (event "tukar_avatar" di lib/avatar.ts) menulis
+// baris negatif ke buku besar yang sama.
 
 const { xpLedger } = schema;
 
@@ -31,6 +34,7 @@ export const XP_LEVELS = [
 
 export type XpSummary = {
   total: number;
+  balance: number;
   levelIndex: number;
   levelName: string;
   nextLevelName: string | null;
@@ -39,9 +43,18 @@ export type XpSummary = {
   progressPct: number;
 };
 
-/** Ringkasan level dari total XP: murni, tanpa basis data. */
-export function summarizeXp(totalInput: number): XpSummary {
+/**
+ * Ringkasan level dari XP SEUMUR: murni, tanpa basis data. Level hanya
+ * naik dari perolehan (total = jumlah baris berpoin positif) — menukar
+ * XP untuk avatar tidak pernah menurunkan level. Saldo tukar (balance)
+ * adalah jumlah SEMUA baris buku besar (perolehan dikurangi penukaran)
+ * dan dilaporkan apa adanya di samping total; pemanggil yang tidak
+ * memisahkan keduanya (konteks tanpa penukaran) boleh mengosongkannya —
+ * saldo lalu dianggap sama dengan total.
+ */
+export function summarizeXp(totalInput: number, balanceInput?: number): XpSummary {
   const total = Math.max(0, Math.floor(totalInput) || 0);
+  const balance = Math.max(0, Math.floor(balanceInput ?? totalInput) || 0);
   let levelIndex = 0;
   for (let i = 0; i < XP_LEVELS.length; i++) {
     if (total >= XP_LEVELS[i]!.min) levelIndex = i;
@@ -51,6 +64,7 @@ export function summarizeXp(totalInput: number): XpSummary {
   if (!next) {
     return {
       total,
+      balance,
       levelIndex,
       levelName: current.name,
       nextLevelName: null,
@@ -62,6 +76,7 @@ export function summarizeXp(totalInput: number): XpSummary {
   const progressPct = Math.min(100, Math.max(0, Math.floor(((total - current.min) / (next.min - current.min)) * 100)));
   return {
     total,
+    balance,
     levelIndex,
     levelName: current.name,
     nextLevelName: next.name,

@@ -7,6 +7,7 @@ import { moduleRoutes } from "./routes/modules";
 import { worksheetRoutes } from "./routes/worksheets";
 import { assignmentRoutes } from "./routes/assignments";
 import { muridRoutes } from "./routes/murid";
+import { avatarRoutes } from "./routes/avatar";
 import { submissionRoutes } from "./routes/submissions";
 import { gradingRoutes } from "./routes/grading";
 import { reportRoutes } from "./routes/reports";
@@ -40,6 +41,9 @@ export function createApp() {
   v1.route("/worksheets", worksheetRoutes);
   v1.route("/assignments", assignmentRoutes);
   v1.route("/murid", muridRoutes);
+  // Avatar murid berbagi awalan /murid dengan router beranda: jalurnya
+  // /murid/avatars* dan penjaga perannya sama (khusus murid).
+  v1.route("/murid", avatarRoutes);
   v1.route("/submissions", submissionRoutes);
   v1.route("/grading", gradingRoutes);
   v1.route("/reports", reportRoutes);

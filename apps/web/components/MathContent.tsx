@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from "react";
 import katex from "katex";
 
 import { apiRequest } from "../lib/api";
+import { injectHeadingIds } from "../lib/daftar-isi";
 import { markdownToHtml } from "./markdown";
 
 // String-level KaTeX rendering.
@@ -288,15 +289,21 @@ export function MathText({ text, className }: { text: string; className?: string
   return <span className={className} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
-export function MathHtml({ html, className, moduleId }: { html: string; className?: string; moduleId?: number }) {
-  const renderedHtml = useMemo(() => renderMathInHtml(sanitizeRichText(html)), [html]);
+export function MathHtml({ html, className, moduleId, headingIdPrefix }: { html: string; className?: string; moduleId?: number; headingIdPrefix?: string }) {
+  const renderedHtml = useMemo(() => {
+    const sanitized = sanitizeRichText(html);
+    return renderMathInHtml(headingIdPrefix ? injectHeadingIds(sanitized, headingIdPrefix) : sanitized);
+  }, [html, headingIdPrefix]);
   const containerRef = useResolvedInlineImages(moduleId, renderedHtml);
 
   return <div ref={containerRef} className={className} dangerouslySetInnerHTML={{ __html: renderedHtml }} />;
 }
 
-export function MarkdownHtml({ markdown, className, moduleId }: { markdown: string; className?: string; moduleId?: number }) {
-  const renderedHtml = useMemo(() => renderMathInHtml(sanitizeRichText(markdownToHtml(markdown))), [markdown]);
+export function MarkdownHtml({ markdown, className, moduleId, headingIdPrefix }: { markdown: string; className?: string; moduleId?: number; headingIdPrefix?: string }) {
+  const renderedHtml = useMemo(() => {
+    const sanitized = sanitizeRichText(markdownToHtml(markdown));
+    return renderMathInHtml(headingIdPrefix ? injectHeadingIds(sanitized, headingIdPrefix) : sanitized);
+  }, [markdown, headingIdPrefix]);
   const containerRef = useResolvedInlineImages(moduleId, renderedHtml);
 
   return <div ref={containerRef} className={className} dangerouslySetInnerHTML={{ __html: renderedHtml }} />;

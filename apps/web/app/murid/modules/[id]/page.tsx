@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "../../../../lib/api";
+import { planTableOfContents, tocAnchorForBlock, tocHeadingPrefix, type TocEntry } from "../../../../lib/daftar-isi";
 import { ReadingProgress } from "../../../../components/ReadingProgress";
 import { Toast } from "../../../../components/Toast";
 import { MarkdownHtml, MathHtml, MathText } from "../../../../components/MathContent";
@@ -31,6 +32,7 @@ export default function ModulePage() {
   const router = useRouter();
   const [data, setData] = useState<ModuleResponse["data"] | null>(null);
   const [message, setMessage] = useState("");
+  const tocEntries = useMemo(() => (data ? planTableOfContents(data.blocks) : []), [data]);
 
   useEffect(() => {
     void apiRequest<ModuleResponse>(`/murid/modules/${params.id}`)
@@ -54,6 +56,7 @@ export default function ModulePage() {
       <h1 style={styles.title}>{data.module.title}</h1>
       {data.module.description ? <p style={styles.description}><MathText text={data.module.description} /></p> : null}
       {data.module.cover_key ? <ModuleCover moduleId={data.module.id} coverKey={data.module.cover_key} /> : null}
+      {tocEntries.length >= 2 ? <ModuleToc entries={tocEntries} /> : null}
       <article style={styles.content}>
         {data.blocks.map((block) => <ModuleBlock key={block.id} block={block} moduleId={data.module.id} />)}
       </article>
@@ -76,13 +79,13 @@ export default function ModulePage() {
 
 function ModuleBlock({ block, moduleId }: { block: Block; moduleId: number }) {
   if (block.type === "sub_bab") {
-    return <h2 style={styles.subheading}>{String(block.content.title ?? "Sub-bab")}</h2>;
+    return <h2 id={tocAnchorForBlock(block.id)} style={styles.subheading}>{String(block.content.title ?? "Sub-bab")}</h2>;
   }
   if (block.type === "teks") {
     if (block.content.format === "markdown" || typeof block.content.markdown === "string") {
-      return <MarkdownHtml markdown={String(block.content.markdown ?? "")} className="math-rich-content" moduleId={moduleId} />;
+      return <MarkdownHtml markdown={String(block.content.markdown ?? "")} className="math-rich-content" moduleId={moduleId} headingIdPrefix={tocHeadingPrefix(block.id)} />;
     }
-    return <MathHtml html={String(block.content.html ?? "")} className="math-rich-content" moduleId={moduleId} />;
+    return <MathHtml html={String(block.content.html ?? "")} className="math-rich-content" moduleId={moduleId} headingIdPrefix={tocHeadingPrefix(block.id)} />;
   }
   if (block.type === "video") {
     return <VideoBlock block={block} />;
@@ -91,6 +94,36 @@ function ModuleBlock({ block, moduleId }: { block: Block; moduleId: number }) {
     return <AttachmentBlock block={block} moduleId={moduleId} />;
   }
   return null;
+}
+
+// Daftar isi materi: panel lengket yang bisa dilipat di atas artikel.
+// Klik entri menggulir halus ke jangkarnya lalu panel menutup lagi,
+// supaya layar HP kembali lega untuk membaca.
+function ModuleToc({ entries }: { entries: TocEntry[] }) {
+  const [open, setOpen] = useState(false);
+
+  function jumpTo(anchor: string) {
+    setOpen(false);
+    document.getElementById(anchor)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  return (
+    <nav className="module-toc" aria-label="Daftar isi materi">
+      <button type="button" className="module-toc-toggle" onClick={() => setOpen((current) => !current)} aria-expanded={open}>
+        <span aria-hidden="true">☰</span> Daftar isi <span className="module-toc-count">{entries.length} bagian</span>
+        <span aria-hidden="true">{open ? "▾" : "▸"}</span>
+      </button>
+      {open ? (
+        <ol className="module-toc-list">
+          {entries.map((entry) => (
+            <li key={entry.anchor} className={entry.depth === 2 ? "module-toc-item is-depth-2" : "module-toc-item"}>
+              <button type="button" onClick={() => jumpTo(entry.anchor)}>{entry.label}</button>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </nav>
+  );
 }
 
 // Sampul modul sebagai banner di bawah judul: URL diterbitkan segar lewat

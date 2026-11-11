@@ -964,6 +964,44 @@ a {
   }
 }
 
+/* Gerbang keplausiban membaca: target waktu wajar tampil sebagai pil
+   kecil di atas lencana progres; pemberitahuan "terlalu cepat" tampil
+   sebagai kartu lembut di tempat yang sama — membimbing melanjutkan
+   membaca, bukan menuduh. Keduanya melayang di atas lencana (z-index
+   sama-sama di bawah modal). */
+.reading-progress-target {
+  position: fixed;
+  right: 18px;
+  bottom: 88px;
+  z-index: 40;
+  margin: 0;
+  max-width: min(300px, calc(100vw - 36px));
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 4px 14px rgba(16, 24, 40, 0.14);
+  color: #6941c6;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.reading-progress-notice {
+  position: fixed;
+  right: 18px;
+  bottom: 88px;
+  z-index: 40;
+  margin: 0;
+  max-width: min(300px, calc(100vw - 36px));
+  padding: 12px 14px;
+  border: 1px solid #fedf89;
+  border-radius: 12px;
+  background: #fffaeb;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.16);
+  color: #93370d;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
 .assignment-step-copy {
   display: grid;
   min-width: 0;

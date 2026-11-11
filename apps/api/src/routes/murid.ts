@@ -14,6 +14,7 @@ import { buildStudentGradeRow, chooseGradeAttempt, sortGradeRows, type GradeAtte
 import { buildUnansweredMessage, isSameAnswerValue, unansweredDetails, type SubmitGateAnswer } from "../lib/submit-gate";
 import { needsWelcome } from "../lib/sapaan";
 import { awardXp, summarizeXp, XP_POINTS, type XpSummary } from "../lib/xp";
+import { countMaterialWords, minReadingSeconds } from "../lib/baca-wajar";
 import { avatarBySlug } from "../lib/avatar";
 
 // Beranda murid + detail penugasan — halaman paling ringan adalah prioritas.
@@ -807,6 +808,14 @@ muridRoutes.get("/modules/:id", async (c) => {
         instructions: worksheet.instructions,
       })),
       material_completed: materialCompleted,
+      // Target waktu membaca wajar untuk materi ini (gerbang
+      // keplausiban lib/baca-wajar): murid tahu sejak awal berapa
+      // lama membaca yang diharapkan — ambangnya transparan, bukan
+      // jebakan. Dihitung dari blok yang sama dengan yang dilayani.
+      reading: (() => {
+        const wordCount = countMaterialWords(blocks.map((block) => ({ type: block.type, content: block.contentJson })));
+        return { word_count: wordCount, min_seconds: minReadingSeconds(wordCount) };
+      })(),
     },
   });
 });

@@ -24,7 +24,13 @@ type ModuleResponse = {
     blocks: Block[];
     worksheets: { id: number; title: string; instructions: string | null }[];
     material_completed: boolean;
+    reading: { word_count: number; min_seconds: number };
   };
+};
+
+type MeResponse = {
+  ok: true;
+  user: { id?: number; username: string; role: "guru" | "murid" };
 };
 
 export default function ModulePage() {
@@ -32,6 +38,7 @@ export default function ModulePage() {
   const router = useRouter();
   const [data, setData] = useState<ModuleResponse["data"] | null>(null);
   const [message, setMessage] = useState("");
+  const [studentId, setStudentId] = useState<number | null>(null);
   const tocEntries = useMemo(() => (data ? planTableOfContents(data.blocks) : []), [data]);
 
   useEffect(() => {
@@ -45,6 +52,17 @@ export default function ModulePage() {
         setMessage(error instanceof Error ? error.message : "Materi belum dapat dimuat.");
       });
   }, [params.id, router]);
+
+  // Id murid untuk kunci persistensi waktu membaca (perangkat dipakai
+  // bergantian). Gagal memuatnya tidak mengganggu membaca: pelacakan
+  // waktu aktif tetap berjalan, hanya tanpa simpanan antar-kunjungan.
+  useEffect(() => {
+    void apiRequest<MeResponse>("/auth/me")
+      .then((response) => {
+        if (typeof response.user?.id === "number") setStudentId(response.user.id);
+      })
+      .catch(() => {});
+  }, []);
 
   if (message) return <main style={styles.container}><Toast message={message} onDismiss={() => setMessage("")} /><Link href="/murid">← Kembali ke ruang murid</Link></main>;
   if (!data) return <main style={styles.container}><p>Memuat materi...</p></main>;
@@ -72,7 +90,12 @@ export default function ModulePage() {
           ))}
         </section>
       ) : null}
-      <ReadingProgress moduleId={data.module.id} alreadyCompleted={data.material_completed} />
+      <ReadingProgress
+        moduleId={data.module.id}
+        alreadyCompleted={data.material_completed}
+        minSeconds={data.reading?.min_seconds ?? null}
+        studentId={studentId}
+      />
     </main>
   );
 }

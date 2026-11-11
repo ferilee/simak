@@ -101,6 +101,12 @@ export const activitySchema = z
     assignmentId: z.number().int().positive().optional(),
     moduleId: z.number().int().positive().optional(),
     event: z.enum(ACTIVITY_EVENTS),
+    // Waktu membaca AKTIF (detik) yang dilaporkan klien khusus untuk
+    // peristiwa baca_materi_tuntas — bahan gerbang keplausiban
+    // ketuntasan (lib/baca-wajar di API): di bawah ambang wajar untuk
+    // panjang materi, ketuntasan belum dicatat. Batas atas 6 jam
+    // hanya pagar kewarasan; absen berarti 0 (tidak menguntungkan).
+    activeSeconds: z.number().int().min(0).max(21600).optional(),
   })
   .superRefine((value, ctx) => {
     if (value.event === "baca_materi_tuntas") {

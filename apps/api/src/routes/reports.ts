@@ -5,6 +5,7 @@ import { requireRole } from "../middleware/auth";
 import { mapGroupAttemptsToStudents, pickEffectiveAttempt, resolveEffectiveMemberScore } from "../lib/groups";
 import { loadAssignmentSubject } from "../lib/assignment-target";
 import { loadTeacherClassMemberships, resolveStudentClass } from "../lib/student-class";
+import { REKAP_HEADER_PDF_COLOR, measurePdfText, planRekapColumnWidths, planRekapRowFills, rekapFillPdfColor, type RekapCellFill } from "../lib/rekap-pdf";
 
 // Rekap bukti = agregasi activity_logs + worksheet_attempts + exit_tickets.
 // Format laporan: JSON (default), CSV yang dapat dibuka di Excel, atau PDF.
@@ -237,33 +238,57 @@ function csvDate(value: Date | null) { return value?.toISOString() ?? ""; }
 function csvEscape(value: string) { return /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value; }
 
 function createSessionPdf(data: SessionReportData) {
-  const columns = [{ title: "No.", width: 28, chars: 4 }, { title: "Murid", width: 150, chars: 24 }, { title: "Kelas", width: 95, chars: 15 }, { title: "Presensi", width: 65, chars: 9 }, { title: "LKPD", width: 55, chars: 8 }, { title: "Nilai", width: 45, chars: 6 }, { title: "Exit", width: 45, chars: 6 }, { title: "RUAS", width: 40, chars: 6 }];
+  const headers = ["No.", "Murid", "Kelas", "Presensi", "LKPD", "Nilai", "Exit", "RUAS"];
   const rows = data.students.map((student, index) => [String(index + 1), `${student.name} (${student.username})`, student.class_name, student.hadir ? "Hadir" : "Belum hadir", student.submission_status, student.total_score === null ? "-" : String(student.total_score), student.exit_ticket_submitted ? "Sudah" : "Belum", student.ruas_score === null ? "-" : String(student.ruas_score)]);
-  return createTabularPdf(`SIMAK - Rekap Sesi: ${data.assignment.title}`, `Batas: ${pdfDate(data.assignment.due_at)} | Murid: ${data.summary.total_students} | Hadir: ${data.summary.hadir} | Kumpul: ${data.summary.submitted} | Exit: ${data.summary.exit_ticket}`, columns, rows);
+  // Lebar kolom mengikuti isi (lib/rekap-pdf): tidak ada lagi teks
+  // terpotong seperti "terkumpul" pada lebar tetap lama. Lebar cetak
+  // halaman A4 potret di antara margin 36pt kiri/kanan = 523pt.
+  const widthPlan = planRekapColumnWidths({ headers, rows, measure: measurePdfText, headerFontSize: 8, bodyFontSize: 7.5, cellPaddingX: 4, maxTableWidth: 523, wrapColumnIndex: 1 });
+  const columns = headers.map((title, index) => ({ title, width: widthPlan.widths[index]!, chars: widthPlan.chars[index]! }));
+  // Warna latar sel menurut ketuntasan (lib/rekap-pdf). Penugasan
+  // dianggap memakai kuis RUAS bila ada bukti impor nilai RUAS untuk
+  // penugasan ini (yang cocok terhitung di ringkasan, sisanya tercatat
+  // sebagai baris tak cocok) — lihat catatan model data di lib.
+  const ruasBerlaku = data.summary.ruas_scored > 0 || data.ruas_unmatched.length > 0;
+  const cellFills: (RekapCellFill)[][] = data.students.map((student) => {
+    const fills = planRekapRowFills({
+      materiDibuka: student.opened_at !== null,
+      materiHadir: student.hadir,
+      lkpdStatus: student.submission_status,
+      nilai: student.total_score,
+      exitTicketSubmitted: student.exit_ticket_submitted,
+      ruasScore: student.ruas_score,
+      ruasBerlaku,
+    });
+    return [null, null, null, fills.materi, fills.lkpd, fills.nilai, fills.exit, fills.ruas];
+  });
+  return createTabularPdf(`SIMAK - Rekap Sesi: ${data.assignment.title}`, `Batas: ${pdfDate(data.assignment.due_at)} | Murid: ${data.summary.total_students} | Hadir: ${data.summary.hadir} | Kumpul: ${data.summary.submitted} | Exit: ${data.summary.exit_ticket}`, columns, rows, { cellFills, headerColor: REKAP_HEADER_PDF_COLOR });
 }
 function createRangePdf(data: { from: string | undefined; to: string | undefined; summary: { assignments: number; students: number; hadir: number; submitted: number; exit_ticket: number; ruas_scored: number }; assignments: SessionReportData[] }) {
   const columns = [{ title: "No.", width: 28, chars: 4 }, { title: "Penugasan", width: 190, chars: 30 }, { title: "Dibuka", width: 90, chars: 14 }, { title: "Murid", width: 48, chars: 7 }, { title: "Hadir", width: 48, chars: 7 }, { title: "Kumpul", width: 52, chars: 8 }, { title: "Exit", width: 48, chars: 7 }, { title: "RUAS", width: 48, chars: 7 }];
   const rows = data.assignments.map((report, index) => [String(index + 1), report.assignment.title, pdfDate(report.assignment.opens_at), String(report.summary.total_students), String(report.summary.hadir), String(report.summary.submitted), String(report.summary.exit_ticket), String(report.summary.ruas_scored)]);
   return createTabularPdf(`SIMAK - Rekap Rentang ${data.from} s.d. ${data.to}`, `Penugasan: ${data.summary.assignments} | Murid: ${data.summary.students} | Hadir: ${data.summary.hadir} | Kumpul: ${data.summary.submitted} | Exit: ${data.summary.exit_ticket} | RUAS: ${data.summary.ruas_scored}`, columns, rows);
 }
-function createTabularPdf(title: string, subtitle: string, columns: { title: string; width: number; chars: number }[], tableRows: string[][]) {
-  const pageRows: string[][][] = []; let currentPage: string[][] = []; let currentHeight = 0;
-  for (const row of tableRows) { const height = pdfRowHeight(row, columns); if (currentPage.length > 0 && currentHeight + height > 661) { pageRows.push(currentPage); currentPage = []; currentHeight = 0; } currentPage.push(row); currentHeight += height; }
-  if (currentPage.length > 0 || pageRows.length === 0) pageRows.push(currentPage);
+type TabularPdfOptions = { cellFills?: (RekapCellFill)[][]; headerColor?: string };
+function createTabularPdf(title: string, subtitle: string, columns: { title: string; width: number; chars: number }[], tableRows: string[][], options: TabularPdfOptions = {}) {
+  const pageRows: string[][][] = []; const pageFills: (RekapCellFill)[][][] = []; let currentPage: string[][] = []; let currentFills: (RekapCellFill)[][] = []; let currentHeight = 0;
+  tableRows.forEach((row, rowIndex) => { const height = pdfRowHeight(row, columns); if (currentPage.length > 0 && currentHeight + height > 661) { pageRows.push(currentPage); pageFills.push(currentFills); currentPage = []; currentFills = []; currentHeight = 0; } currentPage.push(row); currentFills.push(options.cellFills?.[rowIndex] ?? []); currentHeight += height; });
+  if (currentPage.length > 0 || pageRows.length === 0) { pageRows.push(currentPage); pageFills.push(currentFills); }
   const objects: (string | null)[] = [null, "<< /Type /Catalog /Pages 2 0 R >>", null, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]; const pageRefs: string[] = [];
-  for (const [index, rows] of pageRows.entries()) { const content = createPdfTablePage(title, subtitle, rows, columns, index + 1, pageRows.length); const pageObject = objects.length; const contentObject = pageObject + 1; pageRefs.push(`${pageObject} 0 R`); objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentObject} 0 R >>`); objects.push(`<< /Length ${content.length} >>\nstream\n${content}endstream`); }
+  for (const [index, rows] of pageRows.entries()) { const content = createPdfTablePage(title, subtitle, rows, columns, index + 1, pageRows.length, pageFills[index] ?? [], options.headerColor); const pageObject = objects.length; const contentObject = pageObject + 1; pageRefs.push(`${pageObject} 0 R`); objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentObject} 0 R >>`); objects.push(`<< /Length ${content.length} >>\nstream\n${content}endstream`); }
   objects[2] = `<< /Type /Pages /Kids [${pageRefs.join(" ")}] /Count ${pageRows.length} >>`; let pdf = "%PDF-1.4\n"; const offsets = [0];
   for (let index = 1; index < objects.length; index += 1) { offsets[index] = pdf.length; pdf += `${index} 0 obj\n${objects[index]}\nendobj\n`; }
   const xrefOffset = pdf.length; pdf += `xref\n0 ${objects.length}\n0000000000 65535 f \n`; for (let index = 1; index < objects.length; index += 1) pdf += `${String(offsets[index]).padStart(10, "0")} 00000 n \n`; return `${pdf}trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
 }
-function createPdfTablePage(title: string, subtitle: string, rows: string[][], columns: { title: string; width: number; chars: number }[], pageNumber: number, pageCount: number) {
+function createPdfTablePage(title: string, subtitle: string, rows: string[][], columns: { title: string; width: number; chars: number }[], pageNumber: number, pageCount: number, rowFills: (RekapCellFill)[][] = [], headerColor?: string) {
   const left = 36; const tableWidth = columns.reduce((total, column) => total + column.width, 0); let content = pdfText(title, left, 805, 15) + pdfText(subtitle, left, 783, 8); if (pageCount > 1) content += pdfText(`Halaman ${pageNumber} dari ${pageCount}`, 470, 805, 8);
-  let y = 735; content += pdfRect(left, y - 24, tableWidth, 24, true); let x = left; for (const column of columns) { content += pdfText(column.title, x + 4, y - 16, 8); x += column.width; } y -= 24;
-  for (const row of rows) { const height = pdfRowHeight(row, columns); content += pdfRect(left, y - height, tableWidth, height); x = left; row.forEach((value, index) => { const column = columns[index]!; wrapPdfText(value, column.chars).forEach((line, lineIndex) => { content += pdfText(line, x + 4, y - 14 - lineIndex * 10, 7.5); }); x += column.width; }); x = left; for (const column of columns.slice(0, -1)) { x += column.width; content += `${x} ${y - height} m ${x} ${y} l S\n`; } y -= height; }
+  let y = 735; content += pdfRect(left, y - 24, tableWidth, 24, true, headerColor); let x = left; for (const column of columns) { content += pdfText(column.title, x + 4, y - 16, 8); x += column.width; } y -= 24;
+  rows.forEach((row, rowIndex) => { const height = pdfRowHeight(row, columns); content += pdfRect(left, y - height, tableWidth, height); const fills = rowFills[rowIndex] ?? []; x = left; row.forEach((value, index) => { const fill = fills[index]; if (fill) content += pdfCellFill(x, y - height, columns[index]!.width, height, rekapFillPdfColor(fill)); x += columns[index]!.width; }); x = left; row.forEach((value, index) => { const column = columns[index]!; wrapPdfText(value, column.chars).forEach((line, lineIndex) => { content += pdfText(line, x + 4, y - 14 - lineIndex * 10, 7.5); }); x += column.width; }); x = left; for (const column of columns.slice(0, -1)) { x += column.width; content += `${x} ${y - height} m ${x} ${y} l S\n`; } y -= height; });
   return content;
 }
 function pdfRowHeight(row: string[], columns: { chars: number }[]) { return Math.max(24, Math.max(...row.map((value, index) => wrapPdfText(value, columns[index]!.chars).length)) * 10 + 10); }
 function wrapPdfText(value: string, maxChars: number) { const words = value.split(/\s+/).filter(Boolean); const lines: string[] = []; let current = ""; for (const word of words) { if (word.length > maxChars) { if (current) lines.push(current); for (let index = 0; index < word.length; index += maxChars) lines.push(word.slice(index, index + maxChars)); current = ""; continue; } const next = current ? `${current} ${word}` : word; if (next.length > maxChars) { lines.push(current); current = word; } else current = next; } if (current) lines.push(current); return lines.length > 0 ? lines : [""]; }
-function pdfRect(x: number, y: number, width: number, height: number, fill = false) { return fill ? `0.93 0.95 0.98 rg ${x} ${y} ${width} ${height} re f 0 0 0 rg ${x} ${y} ${width} ${height} re S\n` : `${x} ${y} ${width} ${height} re S\n`; }
+function pdfRect(x: number, y: number, width: number, height: number, fill = false, fillColor = "0.93 0.95 0.98") { return fill ? `${fillColor} rg ${x} ${y} ${width} ${height} re f 0 0 0 rg ${x} ${y} ${width} ${height} re S\n` : `${x} ${y} ${width} ${height} re S\n`; }
+function pdfCellFill(x: number, y: number, width: number, height: number, color: string) { return `${color} rg ${x} ${y} ${width} ${height} re f 0 0 0 rg\n`; }
 function pdfDate(value: Date | null) { return value ? new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Jakarta" }).format(value) : "-"; }
 function pdfText(value: string, x: number, y: number, size: number) { const safe = value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\x20-\x7E]/g, "?").replaceAll("\\", "\\\\").replaceAll("(", "\\(").replaceAll(")", "\\)"); return `BT /F1 ${size} Tf ${x} ${y} Td (${safe}) Tj ET\n`; }

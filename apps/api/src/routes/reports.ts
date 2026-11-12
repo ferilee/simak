@@ -5,7 +5,7 @@ import { requireRole } from "../middleware/auth";
 import { mapGroupAttemptsToStudents, pickEffectiveAttempt, resolveEffectiveMemberScore } from "../lib/groups";
 import { loadAssignmentSubject } from "../lib/assignment-target";
 import { loadTeacherClassMemberships, resolveStudentClass } from "../lib/student-class";
-import { REKAP_HEADER_PDF_COLOR, measurePdfText, planRekapColumnWidths, planRekapRowFills, rekapFillPdfColor, type RekapCellFill } from "../lib/rekap-pdf";
+import { REKAP_HEADER_PDF_COLOR, materialReadingText, measurePdfText, planMaterialReadingState, planRekapColumnWidths, planRekapRowFills, rekapFillPdfColor, type MaterialReadingState, type RekapCellFill } from "../lib/rekap-pdf";
 
 // Rekap bukti = agregasi activity_logs + worksheet_attempts + exit_tickets.
 // Format laporan: JSON (default), CSV yang dapat dibuka di Excel, atau PDF.
@@ -16,6 +16,7 @@ const { activityLogs, assignmentClasses, assignmentGroupMembers, assignmentGroup
 type TargetStudent = { id: number; name: string; username: string; nis: string | null; classId: number; className: string };
 type ReportRow = {
   student_id: number; name: string; username: string; class_name: string; hadir: boolean; opened_at: Date | null;
+  material_opened: boolean; material_completed: boolean;
   started_lkpd_at: Date | null; submission_status: "belum" | "draf" | "terkumpul" | "dinilai"; submitted_at: Date | null;
   total_score: number | null; exit_ticket_submitted: boolean; exit_ticket_submitted_at: Date | null; ruas_opened_at: Date | null;
   ruas_score: number | null; ruas_match_status: "cocok" | "tidak_ditemukan" | "duplikat" | null;
@@ -67,12 +68,21 @@ async function loadSessionReportData(userId: number, assignmentId: number): Prom
   if (!assignment) return null;
   const students = await getTargetStudents(assignment);
   const studentIds = students.map((student) => student.id);
-  const [activities, attempts, tickets, importedRuas] = await Promise.all([
+  const [activities, attempts, tickets, importedRuas, materialEvents] = await Promise.all([
     studentIds.length ? db.select({ studentId: activityLogs.studentId, event: activityLogs.event, createdAt: activityLogs.createdAt }).from(activityLogs).where(and(eq(activityLogs.assignmentId, assignmentId), inArray(activityLogs.studentId, studentIds))) : Promise.resolve([]),
     assignment.worksheetId !== null && studentIds.length ? db.select({ studentId: worksheetAttempts.studentId, status: worksheetAttempts.status, submittedAt: worksheetAttempts.submittedAt, totalScore: worksheetAttempts.totalScore }).from(worksheetAttempts).where(and(eq(worksheetAttempts.worksheetId, assignment.worksheetId), inArray(worksheetAttempts.studentId, studentIds))) : Promise.resolve([]),
     studentIds.length ? db.select({ studentId: exitTickets.studentId, submittedAt: exitTickets.createdAt }).from(exitTickets).where(and(eq(exitTickets.assignmentId, assignmentId), inArray(exitTickets.studentId, studentIds))) : Promise.resolve([]),
     db.select({ studentId: ruasScores.studentId, identifier: ruasScores.identifier, studentName: ruasScores.studentName, score: ruasScores.score, matchStatus: ruasScores.matchStatus, note: ruasScores.note }).from(ruasScores).where(eq(ruasScores.assignmentId, assignmentId)),
+    // Sinyal membaca materi diambil per MODULE_ID penugasan, bukan per
+    // assignment_id: event "baca_materi_tuntas" memang dicatat dengan
+    // assignment_id null (ketuntasan itu per modul), dan "buka_materi"
+    // tercatat baik lewat penugasan maupun dibuka langsung. Penugasan
+    // tanpa modul tidak punya sinyal — keduanya false di baris.
+    assignment.moduleId !== null && studentIds.length ? db.select({ studentId: activityLogs.studentId, event: activityLogs.event }).from(activityLogs).where(and(eq(activityLogs.moduleId, assignment.moduleId), inArray(activityLogs.studentId, studentIds), inArray(activityLogs.event, ["buka_materi", "baca_materi_tuntas"]))) : Promise.resolve([]),
   ]);
+
+  const materialOpenedStudents = new Set(materialEvents.filter((row) => row.event === "buka_materi").map((row) => row.studentId));
+  const materialCompletedStudents = new Set(materialEvents.filter((row) => row.event === "baca_materi_tuntas").map((row) => row.studentId));
 
   const activitiesByStudent = new Map<number, typeof activities>();
   for (const activity of activities) activitiesByStudent.set(activity.studentId, [...(activitiesByStudent.get(activity.studentId) ?? []), activity]);
@@ -137,7 +147,9 @@ async function loadSessionReportData(userId: number, assignmentId: number): Prom
     const submitted = Boolean(attempt && attempt.status !== "draf") || Boolean(ticket);
     return {
       student_id: student.id, name: student.name, username: student.username, class_name: student.className,
-      hadir: Boolean(openedAt && submitted), opened_at: openedAt, started_lkpd_at: firstEvent("mulai_lkpd"),
+      hadir: Boolean(openedAt && submitted), opened_at: openedAt,
+      material_opened: materialOpenedStudents.has(student.id), material_completed: materialCompletedStudents.has(student.id),
+      started_lkpd_at: firstEvent("mulai_lkpd"),
       submission_status: attempt?.status ?? "belum", submitted_at: attempt?.submittedAt ?? null,
       total_score: attempt?.totalScore === null || attempt?.totalScore === undefined ? null : Number(attempt.totalScore),
       exit_ticket_submitted: Boolean(ticket), exit_ticket_submitted_at: ticket?.submittedAt ?? null,
@@ -219,11 +231,11 @@ function respondSessionReport(c: any, data: SessionReportData, format: string | 
   return c.json({ ok: true, data });
 }
 function respondSessionCsv(c: any, data: SessionReportData, filename: string) {
-  const csvRows = [["Nama", "Username", "Kelas", "Presensi", "Status LKPD", "Waktu kumpul", "Nilai LKPD", "Exit ticket", "Waktu exit ticket", "Kuis RUAS", "Waktu buka RUAS", "Nilai RUAS"], ...data.students.map((row) => [row.name, row.username, row.class_name, row.hadir ? "Hadir" : "Belum hadir", row.submission_status, csvDate(row.submitted_at), row.total_score === null ? "" : String(row.total_score), row.exit_ticket_submitted ? "Sudah" : "Belum", csvDate(row.exit_ticket_submitted_at), row.ruas_opened_at ? "Dibuka" : "Belum", csvDate(row.ruas_opened_at), row.ruas_score === null ? "" : String(row.ruas_score)])];
+  const csvRows = [["Nama", "Username", "Kelas", "Materi/Modul", "Status LKPD", "Waktu kumpul", "Nilai LKPD", "Exit ticket", "Waktu exit ticket", "Kuis RUAS", "Waktu buka RUAS", "Nilai RUAS"], ...data.students.map((row) => [row.name, row.username, row.class_name, readingTextOf(row), row.submission_status, csvDate(row.submitted_at), row.total_score === null ? "" : String(row.total_score), row.exit_ticket_submitted ? "Sudah" : "Belum", csvDate(row.exit_ticket_submitted_at), row.ruas_opened_at ? "Dibuka" : "Belum", csvDate(row.ruas_opened_at), row.ruas_score === null ? "" : String(row.ruas_score)])];
   const csv = `\uFEFF${csvRows.map((row) => row.map(csvEscape).join(",")).join("\r\n")}\r\n`; c.header("Content-Type", "text/csv; charset=utf-8"); c.header("Content-Disposition", `attachment; filename=\"${filename}.csv\"`); return c.body(csv);
 }
 function respondRangeCsv(c: any, data: { from: string | undefined; to: string | undefined; assignments: SessionReportData[] }) {
-  const csvRows = [["Penugasan", "Dibuka", "Batas", "Nama", "Username", "Kelas", "Presensi", "Status LKPD", "Nilai LKPD", "Exit ticket", "Nilai RUAS"], ...data.assignments.flatMap((report) => report.students.map((row) => [report.assignment.title, csvDate(report.assignment.opens_at), csvDate(report.assignment.due_at), row.name, row.username, row.class_name, row.hadir ? "Hadir" : "Belum hadir", row.submission_status, row.total_score === null ? "" : String(row.total_score), row.exit_ticket_submitted ? "Sudah" : "Belum", row.ruas_score === null ? "" : String(row.ruas_score)]))];
+  const csvRows = [["Penugasan", "Dibuka", "Batas", "Nama", "Username", "Kelas", "Materi/Modul", "Status LKPD", "Nilai LKPD", "Exit ticket", "Nilai RUAS"], ...data.assignments.flatMap((report) => report.students.map((row) => [report.assignment.title, csvDate(report.assignment.opens_at), csvDate(report.assignment.due_at), row.name, row.username, row.class_name, readingTextOf(row), row.submission_status, row.total_score === null ? "" : String(row.total_score), row.exit_ticket_submitted ? "Sudah" : "Belum", row.ruas_score === null ? "" : String(row.ruas_score)]))];
   const csv = `\uFEFF${csvRows.map((row) => row.map(csvEscape).join(",")).join("\r\n")}\r\n`; c.header("Content-Type", "text/csv; charset=utf-8"); c.header("Content-Disposition", `attachment; filename=\"simak-rekap-${data.from}-${data.to}.csv\"`); return c.body(csv);
 }
 function respondRangePdf(c: any, data: { from: string | undefined; to: string | undefined; summary: { assignments: number; students: number; hadir: number; submitted: number; exit_ticket: number; ruas_scored: number }; assignments: SessionReportData[] }) { const pdf = createRangePdf(data); c.header("Content-Type", "application/pdf"); c.header("Content-Disposition", `attachment; filename=\"simak-rekap-${data.from}-${data.to}.pdf\"`); return c.body(pdf); }
@@ -235,11 +247,18 @@ function parseWibRange(from: string | undefined, to: string | undefined) {
   return { from: start, toExclusive };
 }
 function csvDate(value: Date | null) { return value?.toISOString() ?? ""; }
+// Keadaan membaca materi per baris laporan — satu sumber untuk PDF
+// sesi dan kedua CSV (pengganti kolom Presensi era daring).
+function readingStateOf(row: ReportRow): MaterialReadingState { return planMaterialReadingState({ opened: row.material_opened, completed: row.material_completed }); }
+function readingTextOf(row: ReportRow): string { return materialReadingText(readingStateOf(row)); }
 function csvEscape(value: string) { return /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value; }
 
 function createSessionPdf(data: SessionReportData) {
-  const headers = ["No.", "Murid", "Kelas", "Presensi", "LKPD", "Nilai", "Exit", "RUAS"];
-  const rows = data.students.map((student, index) => [String(index + 1), `${student.name} (${student.username})`, student.class_name, student.hadir ? "Hadir" : "Belum hadir", student.submission_status, student.total_score === null ? "-" : String(student.total_score), student.exit_ticket_submitted ? "Sudah" : "Belum", student.ruas_score === null ? "-" : String(student.ruas_score)]);
+  const headers = ["No.", "Murid", "Kelas", "Materi/Modul", "LKPD", "Nilai", "Exit", "RUAS"];
+  // Kolom keempat kini keadaan membaca materi (Tuntas/Belum tuntas/
+  // Belum) dari sinyal activity_logs per modul penugasan — kolom
+  // Presensi era daring diganti untuk pembelajaran tatap muka.
+  const rows = data.students.map((student, index) => [String(index + 1), `${student.name} (${student.username})`, student.class_name, readingTextOf(student), student.submission_status, student.total_score === null ? "-" : String(student.total_score), student.exit_ticket_submitted ? "Sudah" : "Belum", student.ruas_score === null ? "-" : String(student.ruas_score)]);
   // Lebar kolom mengikuti isi (lib/rekap-pdf): tidak ada lagi teks
   // terpotong seperti "terkumpul" pada lebar tetap lama. Lebar cetak
   // halaman A4 potret di antara margin 36pt kiri/kanan = 523pt.
@@ -252,8 +271,7 @@ function createSessionPdf(data: SessionReportData) {
   const ruasBerlaku = data.summary.ruas_scored > 0 || data.ruas_unmatched.length > 0;
   const cellFills: (RekapCellFill)[][] = data.students.map((student) => {
     const fills = planRekapRowFills({
-      materiDibuka: student.opened_at !== null,
-      materiHadir: student.hadir,
+      materiState: readingStateOf(student),
       lkpdStatus: student.submission_status,
       nilai: student.total_score,
       exitTicketSubmitted: student.exit_ticket_submitted,

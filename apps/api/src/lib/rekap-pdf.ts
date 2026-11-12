@@ -10,16 +10,18 @@
 // dan kepala tabel biru muda CFE2F3.
 //
 // CATATAN MODEL DATA (jujur, dari baris nyata ReportRow di reports.ts):
-// - Persen membaca materi TIDAK ADA di data — ketuntasan materi di
-//   server bersifat biner (baris activity_logs "baca_materi_tuntas")
-//   dan tidak diteruskan ke baris rekap. Sinyal terdekat yang setia di
-//   baris rekap adalah opened_at (pernah "buka_materi") dan hadir
-//   (membuka materi DAN sudah mengumpulkan sesuatu). Aturan persen
-//   dipetakan ke sinyal itu untuk kolom Presensi: belum pernah membuka
-//   materi = "0%" (merah), sudah membuka tetapi belum hadir = "belum
-//   tuntas" (kuning), hadir = tuntas untuk keperluan warna (tanpa
-//   warna). Batasnya: murid yang selesai membaca tetapi belum
-//   mengumpulkan apa pun tetap kuning di kolom Presensi.
+// - Kolom keempat rekap dulu bernama "Presensi" (sisa era belajar
+//   daring: hadir = membuka materi DAN sudah mengumpulkan sesuatu).
+//   Rekap kini dipakai untuk pembelajaran tatap muka, jadi kolom itu
+//   DIGANTI keadaan membaca materi yang sesungguhnya. Persen membaca
+//   tetap tidak ada di data — ketuntasan materi di server bersifat
+//   biner — tetapi baris rekap kini meneruskan dua sinyal nyata dari
+//   activity_logs untuk module_id penugasan itu: material_opened
+//   (ada event "buka_materi") dan material_completed (ada event
+//   "baca_materi_tuntas"). Dari keduanya planMaterialReadingState
+//   menurunkan tiga keadaan jujur: Tuntas / Belum tuntas / Belum.
+//   Penugasan tanpa modul (module_id null) tidak punya sinyal apa
+//   pun — kedua sinyal false, keadaannya "belum".
 // - "Penugasan punya kuis RUAS" juga tidak punya kolom penanda. Nilai
 //   RUAS pada rekap berasal dari IMPOR CSV nilai RUAS oleh guru
 //   (tabel ruas_scores), jadi sinyal terdekatnya: penugasan dianggap
@@ -60,11 +62,45 @@ export const REKAP_HEADER_PDF_COLOR = hexToPdfColor(REKAP_HEADER_HEX);
 
 export type RekapLkpdStatus = "belum" | "draf" | "terkumpul" | "dinilai";
 
+// ---------------------------------------------------------------------
+// Keadaan membaca materi (pengganti kolom Presensi)
+// ---------------------------------------------------------------------
+
+export type MaterialReadingState = "tuntas" | "belum_tuntas" | "belum";
+
+/**
+ * Keadaan membaca modul/materi milik penugasan untuk seorang murid,
+ * dari dua sinyal activity_logs per module_id: pernah membuka materi
+ * (event "buka_materi") dan tercatat tuntas (event
+ * "baca_materi_tuntas"). Ketuntasan menang atas pembukaan: murid yang
+ * tuntas pasti sudah membaca, apa pun catatan bukanya.
+ */
+export function planMaterialReadingState(input: { opened: boolean; completed: boolean }): MaterialReadingState {
+  if (input.completed) return "tuntas";
+  if (input.opened) return "belum_tuntas";
+  return "belum";
+}
+
+/** Teks tampil keadaan membaca — persis seperti yang dibaca guru. */
+export const MATERIAL_READING_TEXT: Record<MaterialReadingState, string> = {
+  tuntas: "Tuntas",
+  belum_tuntas: "Belum tuntas",
+  belum: "Belum",
+};
+
+export function materialReadingText(state: MaterialReadingState): string {
+  return MATERIAL_READING_TEXT[state];
+}
+
+/** Warna sel kolom Materi/Modul: tuntas polos, belum tuntas kuning, belum merah. */
+export function materialReadingFill(state: MaterialReadingState): RekapCellFill {
+  if (state === "tuntas") return null;
+  return state === "belum_tuntas" ? "kuning" : "merah";
+}
+
 export type RekapRowState = {
-  /** opened_at !== null pada baris rekap: murid pernah membuka materi. */
-  materiDibuka: boolean;
-  /** hadir pada baris rekap: membuka materi dan sudah mengumpulkan. */
-  materiHadir: boolean;
+  /** Keadaan membaca materi murid untuk penugasan ini. */
+  materiState: MaterialReadingState;
   lkpdStatus: RekapLkpdStatus;
   /** total_score baris rekap; null = belum ada nilai. */
   nilai: number | null;
@@ -80,11 +116,9 @@ export type RekapFillColumn = "materi" | "lkpd" | "nilai" | "exit" | "ruas";
 export function planRekapCellFill(kolom: RekapFillColumn, keadaan: RekapRowState): RekapCellFill {
   switch (kolom) {
     case "materi":
-      // Pemetaan persen ke sinyal baris: 0% ≙ belum pernah membuka
-      // materi; 1–99% ≙ sudah membuka tetapi belum hadir (belum
-      // tuntas rangkaiannya); 100% ≙ hadir.
-      if (!keadaan.materiDibuka) return "merah";
-      return keadaan.materiHadir ? null : "kuning";
+      // Kolom Materi/Modul membaca keadaan membacanya sendiri
+      // (planMaterialReadingState), bukan lagi proksi presensi.
+      return materialReadingFill(keadaan.materiState);
     case "lkpd":
       if (keadaan.lkpdStatus === "belum") return "merah";
       if (keadaan.lkpdStatus === "draf") return "kuning";

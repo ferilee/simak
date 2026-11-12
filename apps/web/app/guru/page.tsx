@@ -55,6 +55,7 @@ import { LibraryPanel } from "../../components/LibraryPanel";
 import { KurikulumPanel } from "../../components/KurikulumPanel";
 import { PemilihCepat } from "../../components/PemilihCepat";
 import { groupModulesForPicker, orderWorksheetsForPairing } from "../../lib/pemilih-cepat";
+import { filterAssignmentsByClass, planAssignmentCounts } from "../../lib/hitungan-penugasan";
 import {
   canonicalTopicOrder,
   groupsForSubject,
@@ -726,20 +727,20 @@ export default function GuruPage() {
     setWorksheetArchiveClosedAtQuery(null);
   }
 
-  // Saringan status daftar penugasan (Langkah 4): hitungan per status dari
-  // data yang sudah termuat; daftar tampil diturunkan murni di sisi klien.
+  // Saringan kelas + status daftar penugasan (Langkah 4): himpunan dasar,
+  // hitungan chip, dan daftar tampil diturunkan murni di sisi klien oleh
+  // lib/hitungan-penugasan dari satu sumber yang sama — angka chip
+  // mengikuti kelas terpilih (saringan status tidak mengecilkannya) dan
+  // penyebut ringkasan "Menampilkan X dari Y" adalah himpunan dasar itu.
+  const classFilteredAssignments = filterAssignmentsByClass(assignments, assignmentClassFilter);
+  const assignmentCounts = planAssignmentCounts(assignments, assignmentClassFilter);
   const assignmentStatusCounts: Record<"semua" | "draf" | "terbit" | "ditutup", number> = {
-    semua: assignments.length,
-    terbit: assignments.filter((assignment) => assignment.status === "terbit").length,
-    draf: assignments.filter((assignment) => assignment.status === "draf").length,
-    ditutup: assignments.filter((assignment) => assignment.status === "ditutup").length,
+    semua: assignmentCounts.total,
+    terbit: assignmentCounts.terbit,
+    draf: assignmentCounts.draf,
+    ditutup: assignmentCounts.ditutup,
   };
   // Daftar tampil = saringan status DAN saringan kelas (keduanya berlaku).
-  const classFilteredAssignments = assignmentClassFilter === "semua"
-    ? assignments
-    : assignments.filter((assignment) => assignmentClassFilter === "siswa"
-      ? assignment.target_type === "siswa"
-      : assignment.classes.some((kelas) => kelas.id === Number(assignmentClassFilter)));
   const visibleAssignments = assignmentStatusFilter === "semua"
     ? classFilteredAssignments
     : classFilteredAssignments.filter((assignment) => assignment.status === assignmentStatusFilter);
@@ -3787,7 +3788,7 @@ export default function GuruPage() {
         <div className="module-section-heading">
           <div>
             <h2 style={styles.sectionTitle}>Penugasan ke kelas</h2>
-            <p className="module-section-summary">{assignmentFiltersActive ? `Menampilkan ${visibleAssignments.length} dari ${assignments.length} penugasan` : `${assignments.length} penugasan · pilih aksi dari daftar`}</p>
+            <p className="module-section-summary">{assignmentFiltersActive ? `Menampilkan ${visibleAssignments.length} dari ${classFilteredAssignments.length} penugasan` : `${assignments.length} penugasan · pilih aksi dari daftar`}</p>
           </div>
         </div>
         <details className="guru-collapsible" ref={assignmentFormRef}>

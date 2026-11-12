@@ -20,6 +20,7 @@ function check(label, condition, detail = "") {
 
 const page = readFileSync(new URL("../app/murid/worksheets/[id]/page.tsx", import.meta.url), "utf8");
 const guru = readFileSync(new URL("../app/guru/page.tsx", import.meta.url), "utf8");
+const hitungan = readFileSync(new URL("./hitungan-penugasan.ts", import.meta.url), "utf8");
 
 // Potret tersimpan: soal 1 terisi, soal 2 jawaban teman, soal 3 foto lama.
 const SAVED = [
@@ -144,10 +145,11 @@ console.log("Case 6: saringan kelas Langkah 4 guru (statis)");
   check("select saringan kelas di samping chip status", guru.includes('aria-label="Saring kelas penugasan"') && guru.includes('<option value="semua">Semua kelas</option>'));
   check("opsi per kelas dari daftar kelas guru", guru.includes("{classes.map((kelas) => <option key={kelas.id} value={String(kelas.id)}>{kelas.name}</option>)}"));
   check("opsi Siswa tertentu ada", guru.includes('<option value="siswa">Siswa tertentu</option>'));
-  check("kelas terpilih menyaring lewat classes penugasan", guru.includes("assignment.classes.some((kelas) => kelas.id === Number(assignmentClassFilter))"));
-  check("opsi siswa menyaring lewat target_type", guru.includes('assignmentClassFilter === "siswa"\n      ? assignment.target_type === "siswa"'));
+  check("halaman menyaring kelas lewat lib hitungan-penugasan", guru.includes("const classFilteredAssignments = filterAssignmentsByClass(assignments, assignmentClassFilter);"));
+  check("kelas terpilih menyaring lewat classes penugasan", hitungan.includes("assignment.classes.some((kelas) => kelas.id === classId)"));
+  check("opsi siswa menyaring lewat target_type", hitungan.includes('classFilter === "siswa"') && hitungan.includes('assignment.target_type === "siswa"'));
   check("kedua saringan berkomposisi (kelas dulu, lalu status)", guru.includes("const visibleAssignments = assignmentStatusFilter === \"semua\"\n    ? classFilteredAssignments\n    : classFilteredAssignments.filter((assignment) => assignment.status === assignmentStatusFilter);"));
-  check("ringkasan kepala konsisten dengan saringan gabungan", guru.includes("assignmentFiltersActive ? `Menampilkan ${visibleAssignments.length} dari ${assignments.length} penugasan`"));
+  check("ringkasan kepala konsisten dengan saringan gabungan", guru.includes("assignmentFiltersActive ? `Menampilkan ${visibleAssignments.length} dari ${classFilteredAssignments.length} penugasan`"));
   check("pesan kosong untuk saringan kelas", guru.includes("Tidak ada penugasan yang cocok dengan saringan kelas dan status saat ini."));
 }
 

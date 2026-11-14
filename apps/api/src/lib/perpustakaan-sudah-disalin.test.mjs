@@ -179,7 +179,7 @@ const WORKSHEET_DUP_MESSAGE = "LKPD ini sudah pernah Anda salin.";
     worksheetCopySegment.includes("eq(worksheets.teacherId, user.userId), eq(worksheets.copiedFromId, worksheetId)"));
 
   const journal = JSON.parse(readRepo("packages/db/migrations/meta/_journal.json"));
-  check("journal has exactly 18 entries (0016 poin-xp menyusul, tanpa migrasi baru dari paket ini)", journal.entries.length === 18, `got ${journal.entries.length}`);
+  check("journal has exactly 19 entries (0016 poin-xp menyusul, tanpa migrasi baru dari paket ini)", journal.entries.length === 19, `got ${journal.entries.length}`);
 }
 
 console.log(`\nperpustakaan-sudah-disalin: ${passed} passed, ${failed} failed`);

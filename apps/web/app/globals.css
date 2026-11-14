@@ -4349,3 +4349,17 @@ button.wizard-library-link {
   color: var(--color-muted);
   font-size: 14px;
 }
+
+/* Blok Media Interaktif: saat pembungkusnya layar penuh, bingkai
+   mengisi seluruh layar (rasio tetap dilepas). */
+.interactive-frame:fullscreen {
+  background: #101828;
+  display: flex;
+  flex-direction: column;
+}
+.interactive-frame:fullscreen iframe {
+  flex: 1;
+  min-height: 0;
+  aspect-ratio: auto;
+  border-radius: 0;
+}

@@ -132,9 +132,9 @@ const journal = JSON.parse(
   readFileSync(new URL("../../../../packages/db/migrations/meta/_journal.json", import.meta.url), "utf8"),
 );
 check(
-  "jurnal migrasi tetap 18 entri dan berakhir di 0017_avatar_murid",
-  journal.entries.length === 18 && journal.entries[journal.entries.length - 1].tag === "0017_avatar_murid",
-  `entries=${journal.entries.length}, last=${journal.entries[journal.entries.length - 1]?.tag}`,
+  "entri jurnal 0017_avatar_murid tetap di idx 17 (dicari per tag; paket ini sendiri tanpa migrasi)",
+  journal.entries.find((entry) => entry.tag === "0017_avatar_murid")?.idx === 17,
+  `entries=${journal.entries.length}`,
 );
 
 console.log(`\n${passed} passed, ${failed} failed`);

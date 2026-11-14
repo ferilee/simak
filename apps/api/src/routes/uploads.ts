@@ -5,8 +5,9 @@ import { Hono } from "hono";
 import { and, eq, or } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
 import { db, schema } from "@simak/db";
-import { presignUploadSchema, presignWorksheetUploadSchema } from "@simak/shared";
+import { presignInteraktifUploadSchema, presignUploadSchema, presignWorksheetUploadSchema } from "@simak/shared";
 import { env } from "../lib/env";
+import { INTERAKTIF_CSP_HEADER, INTERAKTIF_KEY_PREFIX, isInteraktifKey, looksLikeHtmlHead } from "../lib/interaktif";
 import { isLibraryApprover } from "../lib/library";
 import { requireAuth, requireRole } from "../middleware/auth";
 
@@ -147,6 +148,46 @@ uploadRoutes.post(
   },
 );
 
+// Presign unggah berkas HTML mandiri untuk blok Media Interaktif.
+// Berbeda dari presign lampiran: hanya .html/.htm bertipe text/html,
+// batas 25 MB, dan kuncinya hidup di bawah awalan khusus "interaktif/"
+// agar route penyajiannya bisa mengurungnya (lihat lib/interaktif).
+uploadRoutes.post(
+  "/presign-interaktif",
+  requireRole("guru"),
+  zValidator("json", presignInteraktifUploadSchema),
+  async (c) => {
+    const user = c.get("user")!;
+    const input = c.req.valid("json");
+    const [module] = await db
+      .select({ id: modules.id })
+      .from(modules)
+      .where(and(eq(modules.id, input.moduleId), eq(modules.teacherId, user.userId)))
+      .limit(1);
+    if (!module) return c.json({ ok: false, message: "Modul tidak ditemukan." }, 404);
+
+    const extension = /\.htm$/i.test(input.filename) ? ".htm" : ".html";
+    const key = `${INTERAKTIF_KEY_PREFIX}${user.userId}/${input.moduleId}/${randomUUID()}${extension}`;
+    const command = new PutObjectCommand({
+      Bucket: env.RUSTFS_BUCKET,
+      Key: key,
+      ContentType: input.contentType,
+      ContentLength: input.size,
+    });
+    const uploadUrl = await getSignedUrl(storage, command, { expiresIn: MAX_PRESIGN_SECONDS });
+
+    return c.json({
+      ok: true,
+      data: {
+        upload_url: uploadUrl,
+        attachment_key: key,
+        expires_in: MAX_PRESIGN_SECONDS,
+        content_type: input.contentType,
+      },
+    });
+  },
+);
+
 // Unduh foto jawaban murid — hanya guru pemilik LKPD, dan key harus benar-benar
 // dipakai oleh sebuah jawaban pada attempt LKPD tersebut.
 uploadRoutes.get("/download-answer", requireRole("guru"), async (c) => {
@@ -177,12 +218,104 @@ uploadRoutes.get("/download-answer", requireRole("guru"), async (c) => {
   return c.json({ ok: true, data: { download_url: downloadUrl, expires_in: DOWNLOAD_PRESIGN_SECONDS } });
 });
 
+// Penyajian berkas HTML Media Interaktif (mode unggah). HTML unggahan
+// adalah JavaScript arbitrer, jadi route ini adalah satu-satunya pintu
+// keluarnya dan ia membalas dengan pengurungan penuh:
+// Content-Security-Policy: sandbox allow-scripts membuat dokumennya
+// ber-asal buram (tidak bisa menyentuh cookie, DOM, atau penyimpanan
+// asal SIMAK), X-Content-Type-Options: nosniff mengunci tipenya, dan
+// web merangkainya dengan iframe sandbox="allow-scripts" pula.
+// Syarat sajian sama ketatnya dengan /download — sesi sah, akses ke
+// modulnya sah — DITAMBAH: kunci harus di bawah awalan interaktif/ dan
+// benar-benar dirujuk sebuah blok interaktif modul itu, dan kepala
+// berkasnya harus lolos pemeriksaan HTML ringan (lib/interaktif).
+uploadRoutes.get("/interaktif", requireAuth, async (c) => {
+  const user = c.get("user")!;
+  const key = c.req.query("key");
+  const moduleId = Number(c.req.query("moduleId"));
+  if (!key || !Number.isInteger(moduleId) || moduleId <= 0) {
+    return c.json({ ok: false, message: "Media interaktif tidak valid." }, 400);
+  }
+  if (!isInteraktifKey(key)) {
+    return c.json({ ok: false, message: "Media interaktif tidak ditemukan." }, 404);
+  }
+
+  const [module] = await db.select().from(modules).where(eq(modules.id, moduleId)).limit(1);
+  if (!module) return c.json({ ok: false, message: "Modul tidak ditemukan." }, 404);
+  if (user.role === "murid") {
+    if (module.status !== "terbit") return c.json({ ok: false, message: "Media interaktif tidak tersedia." }, 404);
+    const [access] = await db
+      .select({ id: classMembers.id })
+      .from(classMembers)
+      .innerJoin(classes, eq(classes.id, classMembers.classId))
+      .where(
+        and(
+          eq(classMembers.studentId, user.userId),
+          eq(classes.isArchived, false),
+          or(eq(classes.teacherId, module.teacherId), eq(classes.subject, module.subject)),
+        ),
+      )
+      .limit(1);
+    if (!access) return c.json({ ok: false, message: "Media interaktif belum tersedia untuk Anda." }, 403);
+  } else if (user.role === "guru" && module.teacherId !== user.userId && !module.isShared) {
+    const approverPreview = module.shareStatus === "menunggu" && isLibraryApprover(user, env.SIMAK_LIBRARY_APPROVER);
+    if (!approverPreview) {
+      return c.json({ ok: false, message: "Modul tidak ditemukan." }, 404);
+    }
+  }
+
+  const blocks = await db
+    .select({ type: moduleBlocks.type, attachmentKey: moduleBlocks.attachmentKey, contentJson: moduleBlocks.contentJson })
+    .from(moduleBlocks)
+    .where(eq(moduleBlocks.moduleId, moduleId));
+  const referenced = blocks.some((block) => {
+    if (block.attachmentKey === key) return block.type === "interaktif";
+    if (block.type !== "interaktif" || block.contentJson === null) return false;
+    const content = block.contentJson as Record<string, unknown>;
+    return content.source === "unggah" && content.fileKey === key;
+  });
+  if (!referenced) return c.json({ ok: false, message: "Media interaktif tidak ditemukan." }, 404);
+
+  let bytes: Uint8Array<ArrayBuffer>;
+  try {
+    const object = await internalStorage.send(new GetObjectCommand({ Bucket: env.RUSTFS_BUCKET, Key: key }));
+    if (!object.Body) return c.json({ ok: false, message: "Media interaktif tidak ditemukan." }, 404);
+    const fetched = await object.Body.transformToByteArray();
+    // Salin ke larik berpenyangga ArrayBuffer tegas agar tipe badan
+    // respons Hono terpenuhi apa adanya.
+    bytes = new Uint8Array(fetched.byteLength);
+    bytes.set(fetched);
+  } catch {
+    return c.json({ ok: false, message: "Media interaktif tidak ditemukan." }, 404);
+  }
+  if (!looksLikeHtmlHead(bytes)) {
+    return c.json({ ok: false, message: "Berkas media interaktif bukan HTML yang sah." }, 415);
+  }
+
+  return c.body(bytes, 200, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Content-Security-Policy": INTERAKTIF_CSP_HEADER,
+    "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "private, no-store",
+  });
+});
+
 uploadRoutes.get("/download", requireAuth, async (c) => {
   const user = c.get("user")!;
   const key = c.req.query("key");
   const moduleId = Number(c.req.query("moduleId"));
   if (!key || !Number.isInteger(moduleId) || moduleId <= 0) {
     return c.json({ ok: false, message: "Lampiran tidak valid." }, 400);
+  }
+
+  // Berkas HTML Media Interaktif TIDAK pernah keluar lewat unduhan
+  // bertanda tangan penyimpanan: satu-satunya jalannya adalah route
+  // /uploads/interaktif yang membalas dengan CSP sandbox. Tanpa
+  // penjaga ini, kunci interaktif yang sah dirujuk blok akan lolos
+  // pemeriksaan rujukan di bawah dan tersaji mentah dari asal
+  // penyimpanan tanpa kurungan apa pun.
+  if (isInteraktifKey(key)) {
+    return c.json({ ok: false, message: "Lampiran tidak ditemukan." }, 404);
   }
 
   const [module] = await db.select().from(modules).where(eq(modules.id, moduleId)).limit(1);

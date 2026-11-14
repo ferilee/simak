@@ -71,6 +71,8 @@ function stringField(content: Record<string, unknown> | null | undefined, key: s
  *  - sub_bab: judulnya saja (skema blok ini memang hanya title).
  *  - gambar/video: keterangan (caption) pendeknya — teks yang memang
  *    dibaca murid; medianya sendiri 0 kata.
+ *  - interaktif: hanya keterangannya (field title) — isi HTML/URL
+ *    medianya bukan prosa yang dibaca dan tidak dihitung sama sekali.
  *  - berkas: 0 — label adalah label tombol unduh, bukan prosa.
  * Blok tak dikenal atau konten rusak menyumbang 0 dan tidak pernah
  * melempar: penghitungan yang gagal tidak boleh menggagalkan membaca.
@@ -91,6 +93,9 @@ export function countMaterialWords(blocks: readonly MaterialBlockLike[]): number
       case "gambar":
       case "video":
         total += countWordsInText(stringField(content, "caption"));
+        break;
+      case "interaktif":
+        total += countWordsInText(stringField(content, "title"));
         break;
       default:
         break;

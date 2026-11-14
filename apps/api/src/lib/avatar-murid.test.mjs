@@ -128,10 +128,10 @@ check(
 const journal = JSON.parse(
   readFileSync(new URL("../../../../packages/db/migrations/meta/_journal.json", import.meta.url), "utf8"),
 );
-const lastEntry = journal.entries.at(-1);
+const entry0017 = journal.entries.find((entry) => entry.tag === "0017_avatar_murid");
 check(
-  "jurnal migrasi berakhir di 0017_avatar_murid (18 entri)",
-  journal.entries.length === 18 && lastEntry.idx === 17 && lastEntry.tag === "0017_avatar_murid",
+  "entri jurnal 0017_avatar_murid tetap di idx 17 (dicari per tag; entri sesudahnya boleh menyusul)",
+  entry0017?.idx === 17,
 );
 
 // --- Wiring routes avatar ------------------------------------------------------

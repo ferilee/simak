@@ -41,7 +41,50 @@ export const moduleBlockContentSchema = z.discriminatedUnion("type", [
     type: z.literal("sub_bab"),
     title: z.string().min(1).max(200),
   }),
-]);
+  // Media Interaktif (H5P v1): konten interaktif dari luar SIMAK, dua
+  // sumber — berkas HTML mandiri hasil ekspor Lumi yang diunggah guru
+  // (source "unggah", fileKey menunjuk objek di penyimpanan di bawah
+  // awalan interaktif/) atau tautan embed pemain H5P/Moodle milik guru
+  // (source "embed"). title adalah keterangan yang tampil di bawah
+  // bingkai, sejajar caption gambar/video. Syarat per sumber (unggah
+  // wajib fileKey; embed wajib url https) ditegakkan superRefine pada
+  // union di bawah, bukan pada anggota ini, agar bentuk infer union
+  // tetap presisi bagi pemakai skema.
+  z.object({
+    type: z.literal("interaktif"),
+    source: z.enum(["unggah", "embed"]),
+    title: z.string().max(500).optional(),
+    fileKey: z.string().min(1).max(512).optional(),
+    fileName: z.string().min(1).max(255).optional(),
+    url: z.string().url().optional(),
+  }),
+]).superRefine((value, ctx) => {
+  if (value.type !== "interaktif") return;
+  if (value.source === "unggah" && !value.fileKey) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["fileKey"],
+      message: "Blok media interaktif unggahan wajib mempunyai berkas HTML.",
+    });
+  }
+  if (value.source === "embed") {
+    if (!value.url) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["url"],
+        message: "Blok media interaktif tautan wajib mempunyai URL embed.",
+      });
+    } else if (!value.url.startsWith("https://")) {
+      // http ditolak: halaman materi tidak boleh membingkai konten tak
+      // terenkripsi, dan pemain tertanam harus seaman halamannya.
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["url"],
+        message: "URL embed media interaktif harus diawali https://.",
+      });
+    }
+  }
+});
 export type ModuleBlockContent = z.infer<typeof moduleBlockContentSchema>;
 
 // ---------- Opsi butir LKPD (disimpan di worksheet_items.options_json) ----------
@@ -186,6 +229,21 @@ export const presignUploadSchema = z.object({
   filename: z.string().trim().min(1).max(255),
   contentType: z.enum(["image/jpeg", "image/png", "image/webp", "application/pdf"]),
   size: z.number().int().positive().max(10 * 1024 * 1024),
+});
+
+// Presign unggah berkas HTML mandiri untuk blok Media Interaktif: hanya
+// .html/.htm bertipe text/html. Batasnya 25 MB (di atas batas lampiran
+// biasa 10 MB) karena ekspor Lumi memuat seluruh pustaka H5P di dalam
+// satu berkas. Isi berkas diperiksa lagi saat disajikan (kepala berkas
+// harus HTML) — presign hanya melihat nama/tipe/ukuran.
+export const presignInteraktifUploadSchema = z.object({
+  moduleId: z.number().int().positive(),
+  filename: z.string().trim().min(1).max(255).refine(
+    (name) => /\.html?$/i.test(name),
+    "Berkas media interaktif harus berakhiran .html atau .htm.",
+  ),
+  contentType: z.literal("text/html"),
+  size: z.number().int().positive().max(25 * 1024 * 1024),
 });
 
 // Presign unggah foto jawaban LKPD oleh murid — hanya berkas gambar.

@@ -236,8 +236,8 @@ const journal = JSON.parse(
   readFileSync(new URL("../../../../packages/db/migrations/meta/_journal.json", import.meta.url), "utf8"),
 );
 check(
-  "paket tanpa migrasi: jurnal tetap 18 entri berakhir di 0017_avatar_murid",
-  journal.entries.length === 18 && journal.entries[17].tag === "0017_avatar_murid",
+  "paket tanpa migrasi: entri 0017_avatar_murid tetap di idx 17 (jurnal kini 19 entri)",
+  journal.entries.length === 19 && journal.entries[17].tag === "0017_avatar_murid",
 );
 
 console.log(`\nAPI baca-wajar: ${passed} passed, ${failed} failed`);

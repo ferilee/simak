@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type CSSProperties } from "react";
 import { apiRequest } from "../lib/api";
+import { InteractiveBlock } from "./InteractiveBlock";
 import { MarkdownHtml, MathHtml, MathText } from "./MathContent";
 
 // Perender blok modul untuk PRATINJAU guru (hanya-baca). Dipakai bersama
@@ -13,7 +14,7 @@ import { MarkdownHtml, MathHtml, MathText } from "./MathContent";
 export type ModulePreviewBlockData = {
   id: number;
   sort_order: number;
-  type: "teks" | "gambar" | "video" | "berkas" | "sub_bab";
+  type: "teks" | "gambar" | "video" | "berkas" | "sub_bab" | "interaktif";
   content: Record<string, unknown>;
   attachment_key: string | null;
 };
@@ -39,6 +40,9 @@ export function ModuleBlockPreview({ block, moduleId }: { block: ModulePreviewBl
   }
   if (block.type === "video") {
     return <PreviewVideoBlock block={block} />;
+  }
+  if (block.type === "interaktif") {
+    return <InteractiveBlock block={block} moduleId={moduleId} />;
   }
   if (block.type === "gambar" || block.type === "berkas") {
     return <PreviewAttachmentBlock block={block} moduleId={moduleId} />;

@@ -46,7 +46,7 @@ const readRepo = (rel) => readFileSync(new URL(`../../../../${rel}`, import.meta
 // ---------------------------------------------------------------------------
 {
   const journal = JSON.parse(readRepo("packages/db/migrations/meta/_journal.json"));
-  check("journal has exactly 18 entries (0013 persetujuan-berbagi menyusul 0012)", journal.entries.length === 18, `got ${journal.entries.length}`);
+  check("journal has exactly 19 entries (0013 persetujuan-berbagi menyusul 0012)", journal.entries.length === 19, `got ${journal.entries.length}`);
   const entry0012 = journal.entries[12];
   const entry0011 = journal.entries[11];
   check("journal entry idx 12 is 0012_perpustakaan_bersama", entry0012.tag === "0012_perpustakaan_bersama" && entry0012.idx === 12);

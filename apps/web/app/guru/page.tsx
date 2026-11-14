@@ -91,7 +91,7 @@ type ModulesResponse = { ok: true; data: ModuleSummary[] };
 type ModuleBlock = {
   id: number;
   sort_order: number;
-  type: "teks" | "gambar" | "video" | "berkas" | "sub_bab";
+  type: "teks" | "gambar" | "video" | "berkas" | "sub_bab" | "interaktif";
   content: Record<string, unknown>;
   attachment_key: string | null;
 };
@@ -361,7 +361,7 @@ export default function GuruPage() {
   // termuat, jadi permintaannya dicatat di sini lalu diterapkan oleh
   // loadModules berikutnya dengan logika yang sama seperti tautan dalam.
   const pendingCopiedDraftRef = useRef<{ kind: "module" | "worksheet"; id: number } | null>(null);
-  const [blockType, setBlockType] = useState<"teks" | "sub_bab" | "video" | "lampiran">("teks");
+  const [blockType, setBlockType] = useState<"teks" | "sub_bab" | "video" | "lampiran" | "interaktif">("teks");
   const [attachment, setAttachment] = useState<File | null>(null);
   const [moduleBlocks, setModuleBlocks] = useState<ModuleBlock[]>([]);
   const [worksheetItems, setWorksheetItems] = useState<WorksheetPreviewItem[]>([]);
@@ -408,6 +408,15 @@ export default function GuruPage() {
   const [subBabTitle, setSubBabTitle] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
   const [videoCaption, setVideoCaption] = useState("");
+  // Blok Media Interaktif: mode sumber + berkas/URL + keterangan.
+  // interaktifExisting mengingat berkas tersimpan saat menyunting blok
+  // unggahan, agar simpan tanpa berkas baru mempertahankan berkas lama
+  // (pola yang sama seperti lampiran).
+  const [interaktifMode, setInteraktifMode] = useState<"unggah" | "embed">("unggah");
+  const [interaktifFile, setInteraktifFile] = useState<File | null>(null);
+  const [interaktifUrl, setInteraktifUrl] = useState("");
+  const [interaktifTitle, setInteraktifTitle] = useState("");
+  const [interaktifExisting, setInteraktifExisting] = useState<{ fileKey: string; fileName: string } | null>(null);
   const [assignmentTitle, setAssignmentTitle] = useState("");
   const [assignmentInstructions, setAssignmentInstructions] = useState("");
   const [assignmentOpensAt, setAssignmentOpensAt] = useState(() => toDateTimeLocal(new Date()));
@@ -1619,7 +1628,9 @@ export default function GuruPage() {
           ? await addSubBabBlock(event)
           : blockType === "video"
             ? await addVideoBlock(event)
-            : await addAttachmentBlock(event);
+            : blockType === "interaktif"
+              ? await addInteraktifBlock(event)
+              : await addAttachmentBlock(event);
     if (saved) {
       if (selectedId) await loadModuleBlocks(selectedId);
       blockFirstFieldRef.current?.focus();
@@ -1633,7 +1644,9 @@ export default function GuruPage() {
         ? await updateSubBabBlock()
         : blockType === "video"
           ? await updateVideoBlock()
-          : await updateAttachmentBlock();
+          : blockType === "interaktif"
+            ? await updateInteraktifBlock()
+            : await updateAttachmentBlock();
   }
 
   async function updateTextBlock() {
@@ -1693,6 +1706,131 @@ export default function GuruPage() {
       });
       setVideoUrl("");
       setVideoCaption("");
+      setEditingBlock(null);
+      setMessage("Blok materi diperbarui.");
+      return true;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Blok belum dapat diperbarui.");
+      return false;
+    }
+  }
+
+  function resetInteraktifEditor() {
+    setInteraktifMode("unggah");
+    setInteraktifFile(null);
+    setInteraktifUrl("");
+    setInteraktifTitle("");
+    setInteraktifExisting(null);
+  }
+
+  // Unggah berkas HTML mandiri Media Interaktif lewat presign khususnya:
+  // berkas dikirim apa adanya (tidak ada konversi gambar), kuncinya
+  // hidup di bawah awalan interaktif/ dan hanya tersaji lewat route
+  // penyajian sandbox API.
+  async function uploadInteraktifFile(moduleId: number, file: File): Promise<string> {
+    if (!/\.html?$/i.test(file.name)) throw new Error("Berkas media interaktif harus berakhiran .html atau .htm (hasil ekspor Lumi).");
+    if (file.size > 25 * 1024 * 1024) throw new Error("Ukuran berkas HTML maksimal 25 MB.");
+    const presign = await apiRequest<{
+      ok: true;
+      data: { upload_url: string; attachment_key: string; content_type: string };
+    }>("/uploads/presign-interaktif", {
+      method: "POST",
+      body: JSON.stringify({
+        moduleId,
+        filename: file.name,
+        contentType: "text/html",
+        size: file.size,
+      }),
+    });
+    const upload = await fetch(presign.data.upload_url, {
+      method: "PUT",
+      headers: { "Content-Type": presign.data.content_type },
+      body: file,
+    });
+    if (!upload.ok) throw new Error("Berkas HTML gagal diunggah ke penyimpanan.");
+    return presign.data.attachment_key;
+  }
+
+  // Susun isi blok interaktif dari keadaan formulir. Mode embed hanya
+  // butuh URL https; mode unggah memakai berkas baru bila dipilih,
+  // selain itu (saat menyunting) berkas tersimpan yang diingat.
+  async function interaktifBlockContent(): Promise<
+    | { content: Record<string, unknown>; attachmentKey?: string }
+    | { error: string }
+  > {
+    const title = interaktifTitle.trim();
+    if (interaktifMode === "embed") {
+      const url = interaktifUrl.trim();
+      if (!url.startsWith("https://")) return { error: "URL embed harus diawali https://." };
+      return { content: { type: "interaktif", source: "embed", url, ...(title ? { title } : {}) } };
+    }
+    if (interaktifFile) {
+      if (!selectedId) return { error: "Pilih modul terlebih dahulu." };
+      const key = await uploadInteraktifFile(selectedId, interaktifFile);
+      return {
+        content: { type: "interaktif", source: "unggah", fileKey: key, fileName: interaktifFile.name, ...(title ? { title } : {}) },
+        attachmentKey: key,
+      };
+    }
+    if (interaktifExisting) {
+      return {
+        content: {
+          type: "interaktif",
+          source: "unggah",
+          fileKey: interaktifExisting.fileKey,
+          fileName: interaktifExisting.fileName,
+          ...(title ? { title } : {}),
+        },
+        attachmentKey: interaktifExisting.fileKey,
+      };
+    }
+    return { error: "Pilih berkas HTML hasil ekspor Lumi terlebih dahulu." };
+  }
+
+  async function addInteraktifBlock(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedId) return false;
+    const form = event.currentTarget;
+    try {
+      const built = await interaktifBlockContent();
+      if ("error" in built) {
+        setMessage(built.error);
+        return false;
+      }
+      await apiRequest(`/modules/${selectedId}/blocks`, {
+        method: "POST",
+        body: JSON.stringify({
+          content: built.content,
+          ...(built.attachmentKey ? { attachmentKey: built.attachmentKey } : {}),
+          sortOrder: 0,
+        }),
+      });
+      resetInteraktifEditor();
+      form.reset();
+      setMessage("Media interaktif ditambahkan.");
+      return true;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Media interaktif belum dapat ditambahkan.");
+      return false;
+    }
+  }
+
+  async function updateInteraktifBlock() {
+    if (!selectedId || !editingBlock) return false;
+    try {
+      const built = await interaktifBlockContent();
+      if ("error" in built) {
+        setMessage(built.error);
+        return false;
+      }
+      await apiRequest(`/modules/${selectedId}/blocks/${editingBlock.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          content: built.content,
+          ...(built.attachmentKey ? { attachmentKey: built.attachmentKey } : {}),
+        }),
+      });
+      resetInteraktifEditor();
       setEditingBlock(null);
       setMessage("Blok materi diperbarui.");
       return true;
@@ -1862,6 +2000,21 @@ export default function GuruPage() {
       setBlockType("video");
       setVideoUrl(typeof block.content.youtubeUrl === "string" ? block.content.youtubeUrl : "");
       setVideoCaption(typeof block.content.caption === "string" ? block.content.caption : "");
+    } else if (block.type === "interaktif") {
+      setBlockType("interaktif");
+      const source = block.content.source === "embed" ? "embed" : "unggah";
+      setInteraktifMode(source);
+      setInteraktifFile(null);
+      setInteraktifUrl(typeof block.content.url === "string" ? block.content.url : "");
+      setInteraktifTitle(typeof block.content.title === "string" ? block.content.title : "");
+      setInteraktifExisting(
+        source === "unggah" && typeof block.content.fileKey === "string"
+          ? {
+              fileKey: block.content.fileKey,
+              fileName: typeof block.content.fileName === "string" ? block.content.fileName : "Berkas HTML saat ini",
+            }
+          : null,
+      );
     } else {
       setBlockType("lampiran");
     }
@@ -1875,6 +2028,7 @@ export default function GuruPage() {
     setVideoUrl("");
     setVideoCaption("");
     setAttachment(null);
+    resetInteraktifEditor();
   }
 
   async function moveBlock(blockId: number, direction: -1 | 1) {
@@ -3456,6 +3610,7 @@ export default function GuruPage() {
               { value: "sub_bab", label: "Sub-bab" },
               { value: "video", label: "Video" },
               { value: "lampiran", label: "Lampiran" },
+              { value: "interaktif", label: "Media Interaktif" },
             ] as const).map((option) => (
               <button
                 key={option.value}
@@ -3542,6 +3697,64 @@ export default function GuruPage() {
                 />
               </>
             ) : null}
+            {blockType === "interaktif" ? (
+              <>
+                <div style={styles.blockTypeRow} role="group" aria-label="Sumber media interaktif">
+                  {([
+                    { value: "unggah", label: "Unggah HTML Lumi" },
+                    { value: "embed", label: "Tautan embed" },
+                  ] as const).map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={interaktifMode === option.value}
+                      onClick={() => setInteraktifMode(option.value)}
+                      style={interaktifMode === option.value ? styles.blockTypeButtonActive : styles.blockTypeButton}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                {interaktifMode === "unggah" ? (
+                  <>
+                    <div style={styles.filePickerRow}>
+                      <label ref={setBlockFirstField} htmlFor="module-interaktif-file" tabIndex={-1} style={styles.filePickerButton}>
+                        Pilih berkas HTML
+                      </label>
+                      <span style={styles.fileName}>{interaktifFile ? interaktifFile.name : interaktifExisting ? interaktifExisting.fileName : "Belum ada berkas dipilih"}</span>
+                      <input
+                        id="module-interaktif-file"
+                        required={!editingBlock}
+                        type="file"
+                        accept=".html,.htm,text/html"
+                        onChange={(event) => setInteraktifFile(event.target.files?.[0] ?? null)}
+                        style={styles.hiddenFileInput}
+                      />
+                    </div>
+                    <small style={styles.muted}>Berkas HTML mandiri hasil ekspor Lumi — satu berkas .html yang memuat konten H5P-nya. Maksimal 25 MB. Isinya berjalan terkurung (sandbox) dan tidak dapat menyentuh akun SIMAK murid.</small>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      ref={setBlockFirstField}
+                      required
+                      type="url"
+                      value={interaktifUrl}
+                      onChange={(event) => setInteraktifUrl(event.target.value)}
+                      placeholder="https://… tautan embed H5P"
+                      style={styles.input}
+                    />
+                    <small style={styles.muted}>Tautan embed dari pemain H5P — mis. tautan embed H5P pada Moodle atau h5p.com. Harus diawali https://.</small>
+                  </>
+                )}
+                <input
+                  value={interaktifTitle}
+                  onChange={(event) => setInteraktifTitle(event.target.value)}
+                  placeholder="Keterangan (opsional)"
+                  style={styles.input}
+                />
+              </>
+            ) : null}
             {blockType === "lampiran" ? (
               <>
                 <div style={styles.filePickerRow}>
@@ -3563,7 +3776,7 @@ export default function GuruPage() {
             ) : null}
             <button type="submit" style={styles.primaryButton}>
               {editingBlock ? <span className="action-icon" aria-hidden="true">💾</span> : blockType === "lampiran" ? <span className="action-icon" aria-hidden="true">📥</span> : <span className="action-icon" aria-hidden="true">+</span>}
-              {editingBlock ? "Simpan perubahan" : blockType === "teks" ? "Tambahkan blok" : blockType === "sub_bab" ? "Tambahkan sub-bab" : blockType === "video" ? "Tambahkan video" : "Unggah lampiran"}
+              {editingBlock ? "Simpan perubahan" : blockType === "teks" ? "Tambahkan blok" : blockType === "sub_bab" ? "Tambahkan sub-bab" : blockType === "video" ? "Tambahkan video" : blockType === "interaktif" ? "Tambahkan media interaktif" : "Unggah lampiran"}
             </button>
             {editingBlock ? (
               <button type="button" onClick={cancelEditBlock} style={styles.secondaryButton}><span className="action-icon" aria-hidden="true">✕</span>Batal</button>
@@ -4649,6 +4862,7 @@ const BLOCK_TYPE_LABELS: Record<ModuleBlock["type"], string> = {
   video: "Video",
   gambar: "Gambar",
   berkas: "Berkas",
+  interaktif: "Media Interaktif",
 };
 
 function stripHtmlToText(html: string) {
@@ -4672,6 +4886,7 @@ function blockSnippet(block: ModuleBlock): string {
   if (block.type === "sub_bab") return blockStringField(block, "title") || "Sub-bab";
   if (block.type === "video") return blockStringField(block, "caption") || blockStringField(block, "youtubeUrl") || "Video";
   if (block.type === "gambar") return blockStringField(block, "caption") || "Gambar terlampir";
+  if (block.type === "interaktif") return blockStringField(block, "title") || blockStringField(block, "fileName") || blockStringField(block, "url") || "Media interaktif";
   return blockStringField(block, "label") || "Berkas terlampir";
 }
 

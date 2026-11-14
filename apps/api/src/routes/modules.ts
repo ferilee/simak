@@ -62,6 +62,19 @@ function serializeModule(
   };
 }
 
+/**
+ * Kunci lampiran yang tertanam di isi blok, bila ada: attachmentKey pada
+ * blok gambar/berkas, atau fileKey pada blok interaktif mode unggah.
+ * Dipakai menyelaraskan kolom attachment_key tingkat blok dengan isinya.
+ */
+function blockContentAttachmentKey(content: unknown): string | undefined {
+  if (typeof content !== "object" || content === null) return undefined;
+  const record = content as Record<string, unknown>;
+  if (typeof record.attachmentKey === "string") return record.attachmentKey;
+  if (record.type === "interaktif" && typeof record.fileKey === "string") return record.fileKey;
+  return undefined;
+}
+
 function serializeBlock(block: typeof moduleBlocks.$inferSelect) {
   return {
     id: block.id,
@@ -284,7 +297,9 @@ moduleRoutes.post("/:id/blocks", requireRole("guru"), zValidator("json", createM
       sortOrder: input.sortOrder ?? 0,
       type: input.content.type,
       contentJson: input.content,
-      attachmentKey: input.attachmentKey,
+      // Kolom attachment_key mengikuti lampiran pada isi blok: eksplisit
+      // dari body, atau fileKey blok interaktif mode unggah.
+      attachmentKey: input.attachmentKey ?? blockContentAttachmentKey(input.content),
     })
     .$returningId();
   const [block] = await db.select().from(moduleBlocks).where(eq(moduleBlocks.id, created!.id)).limit(1);
@@ -339,9 +354,9 @@ moduleRoutes.patch("/:id/blocks/:blockId", requireRole("guru"), zValidator("json
   const update: Partial<typeof moduleBlocks.$inferInsert> = { contentJson: input.content };
   if (input.sortOrder !== undefined) update.sortOrder = input.sortOrder;
   // Kolom attachment_key tingkat blok mengikuti lampiran pada isi blok
-  // (gambar/berkas) bila body tidak mengirimkannya secara eksplisit.
-  const contentAttachmentKey = "attachmentKey" in input.content ? input.content.attachmentKey : undefined;
-  const attachmentKey = input.attachmentKey ?? contentAttachmentKey;
+  // (gambar/berkas, atau fileKey blok interaktif mode unggah) bila body
+  // tidak mengirimkannya secara eksplisit.
+  const attachmentKey = input.attachmentKey ?? blockContentAttachmentKey(input.content);
   if (attachmentKey !== undefined) update.attachmentKey = attachmentKey;
   await db.update(moduleBlocks).set(update).where(eq(moduleBlocks.id, blockId));
   const [updated] = await db.select().from(moduleBlocks).where(eq(moduleBlocks.id, blockId)).limit(1);

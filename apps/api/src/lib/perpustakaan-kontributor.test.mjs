@@ -174,7 +174,7 @@ const readRepo = (rel) => readFileSync(new URL(`../../../../${rel}`, import.meta
     listSegment.includes("pending_count: pendingCount,") && listSegment.includes("contributors,"));
 
   const journal = JSON.parse(readRepo("packages/db/migrations/meta/_journal.json"));
-  check("journal has exactly 18 entries (no new migration)", journal.entries.length === 18, `got ${journal.entries.length}`);
+  check("journal has exactly 19 entries (no new migration)", journal.entries.length === 19, `got ${journal.entries.length}`);
 }
 
 console.log(`\nperpustakaan-kontributor: ${passed} passed, ${failed} failed`);

@@ -1,0 +1,1 @@
+ALTER TABLE `module_blocks` MODIFY COLUMN `type` enum('teks','gambar','video','berkas','sub_bab','interaktif') NOT NULL;

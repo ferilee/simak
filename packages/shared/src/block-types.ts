@@ -4,7 +4,7 @@
 export const ROLES = ["guru", "murid"] as const;
 export type Role = (typeof ROLES)[number];
 
-export const MODULE_BLOCK_TYPES = ["teks", "gambar", "video", "berkas", "sub_bab"] as const;
+export const MODULE_BLOCK_TYPES = ["teks", "gambar", "video", "berkas", "sub_bab", "interaktif"] as const;
 export type ModuleBlockType = (typeof MODULE_BLOCK_TYPES)[number];
 
 export const WORKSHEET_ITEM_TYPES = [

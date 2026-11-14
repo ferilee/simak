@@ -53,7 +53,7 @@ export const moduleBlocks = mysqlTable(
       .notNull()
       .references(() => modules.id, { onDelete: "cascade" }),
     sortOrder: int("sort_order").notNull().default(0),
-    type: mysqlEnum("type", ["teks", "gambar", "video", "berkas", "sub_bab"]).notNull(),
+    type: mysqlEnum("type", ["teks", "gambar", "video", "berkas", "sub_bab", "interaktif"]).notNull(),
     // Isi terstruktur per jenis blok; divalidasi Zod (packages/shared) sebelum disimpan.
     contentJson: json("content_json").$type<Record<string, unknown>>().notNull(),
     attachmentKey: varchar("attachment_key", { length: 512 }),

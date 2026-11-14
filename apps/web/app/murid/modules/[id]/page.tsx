@@ -6,13 +6,14 @@ import { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "../../../../lib/api";
 import { planTableOfContents, tocAnchorForBlock, tocHeadingPrefix, type TocEntry } from "../../../../lib/daftar-isi";
 import { ReadingProgress } from "../../../../components/ReadingProgress";
+import { InteractiveBlock } from "../../../../components/InteractiveBlock";
 import { Toast } from "../../../../components/Toast";
 import { MarkdownHtml, MathHtml, MathText } from "../../../../components/MathContent";
 
 type Block = {
   id: number;
   sort_order: number;
-  type: "teks" | "gambar" | "video" | "berkas" | "sub_bab";
+  type: "teks" | "gambar" | "video" | "berkas" | "sub_bab" | "interaktif";
   content: Record<string, unknown>;
   attachment_key: string | null;
 };
@@ -112,6 +113,9 @@ function ModuleBlock({ block, moduleId }: { block: Block; moduleId: number }) {
   }
   if (block.type === "video") {
     return <VideoBlock block={block} />;
+  }
+  if (block.type === "interaktif") {
+    return <InteractiveBlock block={block} moduleId={moduleId} />;
   }
   if (block.type === "gambar" || block.type === "berkas") {
     return <AttachmentBlock block={block} moduleId={moduleId} />;

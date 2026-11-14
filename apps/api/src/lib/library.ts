@@ -613,7 +613,7 @@ export function moduleCopyValues(source: ModuleSource, copierId: number, ownerNa
 
 export type ModuleBlockSource = {
   sortOrder: number;
-  type: "teks" | "gambar" | "video" | "berkas" | "sub_bab";
+  type: "teks" | "gambar" | "video" | "berkas" | "sub_bab" | "interaktif";
   contentJson: Record<string, unknown>;
   attachmentKey: string | null;
 };

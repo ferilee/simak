@@ -17,7 +17,7 @@
 
 export type TocBlockInput = {
   id: number;
-  type: "teks" | "gambar" | "video" | "berkas" | "sub_bab";
+  type: "teks" | "gambar" | "video" | "berkas" | "sub_bab" | "interaktif";
   content: Record<string, unknown>;
 };
 

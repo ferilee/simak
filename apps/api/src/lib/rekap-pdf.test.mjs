@@ -200,7 +200,7 @@ check("warna kepala lama tetap bawaan pdfRect (PDF lain tak berubah)", reports.i
 
 // --- Tanpa migrasi --------------------------------------------------------------
 const journal = JSON.parse(readFileSync(new URL("../../../../packages/db/migrations/meta/_journal.json", import.meta.url), "utf8"));
-check("paket tanpa migrasi: jurnal tetap 18 entri berakhir di 0017_avatar_murid", journal.entries.length === 18 && journal.entries[17].tag === "0017_avatar_murid");
+check("paket tanpa migrasi: entri 0017 avatar-murid tetap di idx 17 (jurnal kini 19 entri)", journal.entries.length === 19 && journal.entries[17].tag === "0017_avatar_murid");
 
 console.log(`\nAPI rekap-pdf: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

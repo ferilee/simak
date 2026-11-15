@@ -10,6 +10,7 @@ import { XP_EARN_WAYS, XP_INFO_NOTE, XP_INFO_TITLE, xpProgressLabel, type XpSumm
 import { avatarImagePath, priceLabel, stateLabel, type AvatarCatalogItem, type AvatarsResponse } from "../../lib/avatar";
 import { allStepsDone, planAssignmentSteps, planReminderLevel, worksheetStatusFromProgress } from "../../lib/pengingat";
 import { circleAriaLabel, initialPagerIndex, planCircle } from "../../lib/navigasi-tugas";
+import { ARCHIVE_GROUP_NAME, MATERIAL_FILTERS, guidedGroupName, planGuidedMaterials, shouldShowHero, type GuidedModule, type GuidedMaterialsPlan, type MaterialFilter } from "../../lib/materi-terpandu";
 import { submissionStatusLabel } from "../lib/labels";
 import { Toast } from "../../components/Toast";
 import { Modal } from "../../components/Modal";
@@ -25,6 +26,9 @@ type ModuleSummary = {
   id: number;
   title: string;
   subject: string;
+  // Kelompok materi mentah (modules.topic_group) — dasar pengelompokan
+  // daftar materi terpandu (v1.0.65); null = belum berkelompok.
+  topic_group: string | null;
   description: string | null;
   cover_key: string | null;
   status: "terbit";
@@ -34,6 +38,25 @@ type ModuleSummary = {
   // menjadi sasaran murid terkunci; locked_by_title = penghambatnya.
   locked: boolean;
   locked_by_title: string | null;
+  // Penanda tuntas per modul dari server (catatan baca_materi_tuntas
+  // murid ini untuk modul ini) — dasar hero, progres kelompok, dan
+  // arsip "Sudah tuntas" pada daftar materi terpandu.
+  material_completed: boolean;
+};
+
+// Bentuk masukan perencana daftar materi terpandu (lib/materi-
+// terpandu): field payload di atas diterjemahkan sekali di sini,
+// field gambar kartu (deskripsi + sampul) ikut terbawa apa adanya.
+type MaterialCardData = {
+  id: number;
+  title: string;
+  subject: string;
+  description: string | null;
+  cover_key: string | null;
+  topicGroup: string | null;
+  materialCompleted: boolean;
+  locked: boolean;
+  lockedByTitle: string | null;
 };
 type AssignmentSummary = {
   id: number;
@@ -225,6 +248,43 @@ export default function MuridPage() {
     ? -1
     : Math.max(0, Math.min(pagerIndex ?? defaultPagerIndex, pagerAssignments.length - 1));
   const currentAssignment = currentPagerIndex >= 0 ? pagerAssignments[currentPagerIndex] : undefined;
+
+  // Daftar materi TERPANDU (v1.0.65): rencana gambar dihitung murni
+  // oleh lib/materi-terpandu dari daftar modul server — hero "Materi
+  // berikutnya untukmu", pengelompokan per kelompok materi + progres,
+  // arsip "Sudah tuntas", saringan, dan pencarian semuanya sisi klien
+  // di atas data yang sudah dimuat. Urutan daftar dari server TIDAK
+  // diubah dan keadaan per modul (tuntas/terkunci) TIDAK dihitung
+  // ulang di sini — server satu-satunya sumber kebenaran.
+  const [materialFilter, setMaterialFilter] = useState<MaterialFilter>("semua");
+  const [materialQuery, setMaterialQuery] = useState("");
+  const [archiveOpenOverride, setArchiveOpenOverride] = useState<boolean | null>(null);
+  const materialInputs: MaterialCardData[] = data.modules.map((module) => ({
+    id: module.id,
+    title: module.title,
+    subject: module.subject,
+    description: module.description,
+    cover_key: module.cover_key,
+    topicGroup: module.topic_group,
+    materialCompleted: module.material_completed,
+    locked: module.locked,
+    lockedByTitle: module.locked_by_title,
+  }));
+  const guidedPlan = planGuidedMaterials(materialInputs, materialFilter, materialQuery);
+  const archiveOpen = archiveOpenOverride ?? guidedPlan.archiveOpenByDefault;
+
+  // Mengganti saringan/kata cari membatalkan timpaan buka-tutup arsip:
+  // keterbukaan arsip kembali mengikuti bawaan rencana (saringan
+  // "tuntas" atau pencarian yang berbuah di arsip membukanya).
+  function changeMaterialFilter(next: MaterialFilter) {
+    setMaterialFilter(next);
+    setArchiveOpenOverride(null);
+  }
+
+  function changeMaterialQuery(next: string) {
+    setMaterialQuery(next);
+    setArchiveOpenOverride(null);
+  }
 
   async function load() {
     try {
@@ -604,27 +664,93 @@ export default function MuridPage() {
               {data.modules.length === 0 ? (
                 <p className="empty-state">Belum ada materi terbit untuk kelas Anda.</p>
               ) : (
-                <div className="content-list">
-                  {data.modules.map((module) => module.locked ? (
-                    <article key={module.id} className="content-card assignment-card--locked">
-                      {module.cover_key ? <ModuleListCover moduleId={module.id} coverKey={module.cover_key} /> : null}
-                      <span className="content-label">{module.subject}</span>
-                      <strong>{module.title}</strong>
-                      <span className="content-muted">{module.description ?? "Materi pembelajaran SIMAK."}</span>
-                      <span className="assignment-locked-note">
-                        🔒 Terkunci{module.locked_by_title ? <> — selesaikan dulu: <strong>{module.locked_by_title}</strong></> : ""}
-                      </span>
-                    </article>
+                <>
+                  <div className="material-controls">
+                    <div className="material-filter-chips" role="group" aria-label="Saring materi menurut ketuntasan">
+                      {MATERIAL_FILTERS.map((item) => (
+                        <button
+                          key={item.key}
+                          type="button"
+                          className={`material-filter-chip${materialFilter === item.key ? " is-active" : ""}`}
+                          aria-pressed={materialFilter === item.key}
+                          onClick={() => changeMaterialFilter(item.key)}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      type="search"
+                      className="dashboard-input material-search"
+                      value={materialQuery}
+                      onChange={(event) => changeMaterialQuery(event.target.value)}
+                      placeholder="Cari judul materi…"
+                      aria-label="Cari judul materi"
+                    />
+                  </div>
+
+                  {shouldShowHero(guidedPlan, materialFilter, materialQuery) ? (
+                    <MaterialHero plan={guidedPlan} />
+                  ) : null}
+
+                  {guidedPlan.visibleTotal === 0 ? (
+                    <p className="empty-state">
+                      {materialQuery.trim()
+                        ? `Tidak ada materi yang cocok dengan “${materialQuery.trim()}”. Coba kata kunci lain atau longgarkan saringannya.`
+                        : "Tidak ada materi pada saringan ini. Coba saringan lain di atas."}
+                    </p>
                   ) : (
-                    <Link key={module.id} href={`/murid/modules/${module.id}`} className="content-card content-link">
-                      {module.cover_key ? <ModuleListCover moduleId={module.id} coverKey={module.cover_key} /> : null}
-                      <span className="content-label">{module.subject}</span>
-                      <strong>{module.title}</strong>
-                      <span className="content-muted">{module.description ?? "Materi pembelajaran SIMAK."}</span>
-                      <span className="content-action">Baca materi →</span>
-                    </Link>
-                  ))}
-                </div>
+                    <>
+                      {guidedPlan.groups.map((section) => {
+                        const progressPct = section.totalCount === 0 ? 0 : Math.round((section.completedCount / section.totalCount) * 100);
+                        return (
+                          <div key={section.key} className="material-group">
+                            <div className="material-group-head">
+                              <h4>{section.groupName}</h4>
+                              <span>{section.completedCount} dari {section.totalCount} tuntas</span>
+                            </div>
+                            <div
+                              className="material-progress-track"
+                              role="progressbar"
+                              aria-valuenow={progressPct}
+                              aria-valuemin={0}
+                              aria-valuemax={100}
+                              aria-label={`Progres kelompok ${section.groupName}: ${section.completedCount} dari ${section.totalCount} tuntas`}
+                            >
+                              <div className="material-progress-fill" style={{ width: `${progressPct}%` }} />
+                            </div>
+                            <div className="content-list">
+                              {section.modules.map((module) => (
+                                <GuidedModuleCard key={module.id} module={module} />
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {materialFilter !== "belum" && guidedPlan.archiveTotal > 0 && (guidedPlan.archive.length > 0 || !materialQuery.trim()) ? (
+                        <div className="material-archive">
+                          <button
+                            type="button"
+                            className="material-archive-toggle"
+                            aria-expanded={archiveOpen}
+                            onClick={() => setArchiveOpenOverride(!archiveOpen)}
+                          >
+                            <span>Sudah tuntas ({guidedPlan.archiveTotal})</span>
+                            <span aria-hidden="true">{archiveOpen ? "▾" : "▸"}</span>
+                          </button>
+                          {archiveOpen ? (
+                            <div className="content-list">
+                              {guidedPlan.archive.map((module) => (
+                                <GuidedModuleCard key={module.id} module={module} inArchive />
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </>
+                  )}
+                </>
               )}
             </section>
           ) : null}
@@ -668,6 +794,103 @@ function ModuleListCover({ moduleId, coverKey }: { moduleId: number; coverKey: s
       alt="Sampul materi"
       style={{ width: "100%", height: 130, objectFit: "cover", borderRadius: 8, display: "block" }}
     />
+  );
+}
+
+// Kartu hero daftar materi terpandu (v1.0.65): menunjuk SATU materi
+// yang memang giliran murid ini — modul belum-tuntas + tidak-terkunci
+// paling awal pada urutan server — agar murid tidak perlu memilih
+// sendiri dari daftar yang panjang. Bila semua materi terbuka sudah
+// tuntas, hero menjadi pesan ramah (tanpa tombol; materi terkunci
+// berikutnya hanya disebut sebagai info karena membukanya memang
+// akan ditolak server). Bila semuanya terkunci, hero menjelaskan
+// penghambatnya. Pilihan modulnya dari lib/materi-terpandu; komponen
+// ini hanya menggambar keadaannya.
+function MaterialHero({ plan }: { plan: GuidedMaterialsPlan<MaterialCardData> }) {
+  if (plan.heroState === "next" && plan.hero) {
+    const hero = plan.hero;
+    const groupName = guidedGroupName(hero.topicGroup);
+    const meta = [hero.atpLabel, groupName !== ARCHIVE_GROUP_NAME ? groupName : null, hero.subject]
+      .filter((part): part is string => part !== null && part !== "")
+      .join(" · ");
+    return (
+      <article className="material-hero">
+        <span className="material-hero-label">📖 Materi berikutnya untukmu</span>
+        <strong className="material-hero-title">{hero.title}</strong>
+        {meta ? <span className="material-hero-meta">{meta}</span> : null}
+        {hero.description ? <span className="content-muted">{hero.description}</span> : null}
+        <Link href={`/murid/modules/${hero.id}`} className="button material-hero-button">
+          Lanjutkan
+        </Link>
+      </article>
+    );
+  }
+  if (plan.heroState === "all-done") {
+    return (
+      <article className="material-hero material-hero--notice">
+        <span className="material-hero-label">🎉 Semua materi terbuka sudah tuntas</span>
+        <p className="assignment-locked-note">
+          Kerja bagus — semua materi yang bisa kamu baca sudah kamu tuntaskan. Materi yang sudah
+          tuntas tetap bisa dibaca ulang dari bagian Sudah tuntas di bawah.
+        </p>
+        {plan.nextLocked ? (
+          <p className="assignment-locked-note">
+            Materi berikutnya, <strong>{plan.nextLocked.title}</strong>, masih terkunci — selesaikan
+            dulu: <strong>{plan.nextLocked.lockedByTitle ?? "penugasan sebelumnya"}</strong>.
+          </p>
+        ) : null}
+      </article>
+    );
+  }
+  if (plan.heroState === "all-locked") {
+    return (
+      <article className="material-hero material-hero--notice">
+        <span className="material-hero-label">🔒 Semua materi masih terkunci</span>
+        <p className="assignment-locked-note">
+          Selesaikan dulu: <strong>{plan.nextLocked?.lockedByTitle ?? "penugasan sebelumnya"}</strong>,
+          baru materi terbuka satu per satu mengikuti urutannya.
+        </p>
+      </article>
+    );
+  }
+  return null;
+}
+
+// Satu kartu modul pada daftar materi terpandu. Modul terkunci
+// digambar sebagai kartu bertanda kunci BUKAN tautan (penegakan
+// server v1.0.63 menolak bukanya juga); modul tuntas hanya tinggal di
+// arsip (redup + lencana Tuntas, tetap tautan untuk dibaca ulang —
+// dan tetap tunduk pada kunci bila ternyata terkunci); modul isi
+// hero berlencana "Giliranmu" juga di sini. Penanda status dibatasi
+// keadaan yang datanya ada: Tuntas / Terkunci / Giliranmu / tanpa
+// penanda (belum mulai).
+function GuidedModuleCard({ module, inArchive = false }: { module: GuidedModule<MaterialCardData>; inArchive?: boolean }) {
+  return module.locked ? (
+    <article className="content-card assignment-card--locked">
+      {module.cover_key ? <ModuleListCover moduleId={module.id} coverKey={module.cover_key} /> : null}
+      <span className="content-label">{module.subject}</span>
+      <strong>{module.title}</strong>
+      <span className="content-muted">{module.description ?? "Materi pembelajaran SIMAK."}</span>
+      {module.materialCompleted ? <span className="material-done-badge">✓ Sudah tuntas</span> : null}
+      <span className="assignment-locked-note">
+        🔒 Terkunci{module.lockedByTitle ? <> — selesaikan dulu: <strong>{module.lockedByTitle}</strong></> : ""}
+      </span>
+    </article>
+  ) : (
+    <Link href={`/murid/modules/${module.id}`} className={`content-card content-link${inArchive ? " material-card--completed" : ""}`}>
+      {module.cover_key ? <ModuleListCover moduleId={module.id} coverKey={module.cover_key} /> : null}
+      <span className="content-label">{module.subject}</span>
+      <strong>{module.title}</strong>
+      <span className="content-muted">{module.description ?? "Materi pembelajaran SIMAK."}</span>
+      {module.atpLabel || module.isHero || inArchive ? (
+        <span className="material-card-badges">
+          {module.atpLabel ? <span className="material-atp-badge">{module.atpLabel}</span> : null}
+          {module.isHero ? <span className="material-turn-badge">Giliranmu</span> : null}
+          {inArchive ? <span className="material-done-badge">✓ Tuntas</span> : null}
+        </span>
+      ) : null}
+      <span className="content-action">{inArchive ? "Baca lagi →" : "Baca materi →"}</span>
+    </Link>
   );
 }
 

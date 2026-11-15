@@ -81,7 +81,11 @@ console.log("Kasus C: wiring beranda murid");
   );
   check(
     "materi terkunci digambar sebagai kartu bertanda kunci, bukan tautan",
-    page.includes("module.locked ? (") && page.includes("assignment-card--locked") && page.includes("module.locked_by_title"),
+    // Sejak daftar materi terpandu (v1.0.65) kartu digambar oleh
+    // GuidedModuleCard dari field terpandu (lockedByTitle); maksud
+    // kuncinya sama: varian terkunci bukan tautan + menyebut
+    // penghambatnya.
+    page.includes("module.locked ? (") && page.includes("assignment-card--locked") && page.includes("module.lockedByTitle"),
   );
   check("tipe payload membawa field rencana server", ["position: number | null", "atp_label: string | null", "chain_key: string | null", "completed: boolean", "locked: boolean", "locked_by_title: string | null"].every((needle) => page.includes(needle)));
 }

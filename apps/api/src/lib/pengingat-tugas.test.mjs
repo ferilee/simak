@@ -50,7 +50,13 @@ check(
 );
 check(
   "ketuntasan materi: satu query activity_logs baca_materi_tuntas dengan inArray moduleId",
-  today.includes('eq(activityLogs.event, "baca_materi_tuntas"), inArray(activityLogs.moduleId, assignmentModuleIds)'),
+  // Sejak daftar materi terpandu (v1.0.65) himpunannya adalah
+  // materialSignalModuleIds — GABUNGAN modul penugasan + modul terbit
+  // yang terlihat — agar penanda tuntas per modul pada daftar materi
+  // membaca query yang sama. Maksud kuncinya utuh: tetap SATU query
+  // baca_materi_tuntas dengan inArray atas himpunan id modul, dan
+  // checklist kartu tetap membaca himpunan hasilnya.
+  today.includes('eq(activityLogs.event, "baca_materi_tuntas"), inArray(activityLogs.moduleId, materialSignalModuleIds)'),
 );
 check(
   "ketuntasan materi terikat murid yang meminta",

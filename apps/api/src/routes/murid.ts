@@ -479,13 +479,22 @@ muridRoutes.get("/today", async (c) => {
   // sinyal beranda lain: kegagalan → himpunan kosong (langkah tampil
   // belum selesai) dan tidak pernah menggagalkan ringkasan beranda.
   const assignmentModuleIds = [...new Set(uniqueAssignments.flatMap((assignment) => (assignment.moduleId === null ? [] : [assignment.moduleId])))];
+  // Himpunan sinyal tuntas membaca mencakup SEMUA modul pada daftar
+  // materi murid (gabungan modul penugasan + modul terbit yang
+  // terlihat), bukan hanya modul penugasan: penanda tuntas per modul
+  // pada payload daftar materi (daftar materi terpandu v1.0.65) juga
+  // membaca himpunan ini, dan modul yang hanya tertaut penugasan
+  // ditutup pun bisa sudah dituntaskan murid. Konsumen lama (checklist
+  // kartu penugasan + masukan perencana rantai) hanya menanyakan id
+  // modul penugasan, jadi gabungan ini tidak mengubah hasil mereka.
+  const materialSignalModuleIds = [...new Set([...assignmentModuleIds, ...publishedModules.map((module) => module.id)])];
   let completedMaterialModuleIds = new Set<number>();
   try {
-    if (assignmentModuleIds.length > 0) {
+    if (materialSignalModuleIds.length > 0) {
       const rows = await db
         .select({ moduleId: activityLogs.moduleId })
         .from(activityLogs)
-        .where(and(eq(activityLogs.studentId, user.userId), eq(activityLogs.event, "baca_materi_tuntas"), inArray(activityLogs.moduleId, assignmentModuleIds)));
+        .where(and(eq(activityLogs.studentId, user.userId), eq(activityLogs.event, "baca_materi_tuntas"), inArray(activityLogs.moduleId, materialSignalModuleIds)));
       completedMaterialModuleIds = new Set(rows.flatMap((row) => (row.moduleId === null ? [] : [row.moduleId])));
     }
   } catch {
@@ -560,7 +569,12 @@ muridRoutes.get("/today", async (c) => {
       // urutan muatan lama (updatedAt menaik dari query). Penanda
       // terkunci memakai aturan modul yang sama dengan penegakan
       // GET /murid/modules/:id (terkunci hanya bila semua penugasan
-      // bermodul itu terkunci).
+      // bermodul itu terkunci). Dua field tambahan untuk daftar materi
+      // terpandu (v1.0.65) bersifat ADITIF: topic_group (dasar
+      // pengelompokan per kelompok materi di web) dan material_completed
+      // (penanda tuntas per modul dari himpunan baca_materi_tuntas di
+      // atas — predikat yang sama dengan langkah materi kartu
+      // penugasan, hanya cakupannya per modul daftar ini).
       modules: publishedModules
         .map((module, index) => ({
           module,
@@ -578,12 +592,14 @@ muridRoutes.get("/today", async (c) => {
           id: module.id,
           title: module.title,
           subject: module.subject,
+          topic_group: module.topicGroup,
           description: module.description,
           cover_key: module.coverKey,
           status: module.status,
           updated_at: module.updatedAt,
           locked: lock.locked,
           locked_by_title: lock.lockedByTitle,
+          material_completed: completedMaterialModuleIds.has(module.id),
         })),
       // Daftar penugasan terkirim dalam URUTAN GLOBAL rencana (rantai
       // menurut ATP, bebas terakhir) — klien tidak mengurutkan ulang.

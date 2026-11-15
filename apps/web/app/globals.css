@@ -4539,3 +4539,171 @@ button.wizard-library-link {
   aspect-ratio: auto;
   border-radius: 0;
 }
+
+/* Daftar materi murid TERPANDU (v1.0.65): kontrol saring + cari,
+   kartu hero "Materi berikutnya untukmu", bagian per kelompok materi
+   dengan bar progres, lencana status kartu, dan arsip "Sudah tuntas".
+   Semua mengikuti palet yang sama dengan kartu konten + kartu XP. */
+.material-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.material-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.material-filter-chip {
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 6px 14px;
+  background: var(--color-surface);
+  color: var(--color-muted);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.material-filter-chip:hover {
+  border-color: #98a2b3;
+  color: var(--color-ink);
+}
+.material-filter-chip.is-active {
+  border-color: var(--color-brand-700);
+  background: var(--color-brand-700);
+  color: #fff;
+}
+.material-search {
+  flex: 1 1 200px;
+  min-width: 160px;
+}
+
+.material-hero {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #b2ccff;
+  border-radius: var(--radius-md);
+  padding: 18px;
+  margin-bottom: 16px;
+  background: #eff4ff;
+  box-shadow: 0 2px 8px rgba(16, 24, 40, 0.04);
+}
+.material-hero--notice {
+  border-color: var(--color-border-soft);
+  background: var(--color-surface-subtle);
+}
+.material-hero-label {
+  color: var(--color-brand-700);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+.material-hero--notice .material-hero-label {
+  color: var(--color-ink);
+}
+.material-hero-title {
+  font-size: 19px;
+  line-height: 1.35;
+}
+.material-hero-meta {
+  color: #475467;
+  font-size: 13.5px;
+  font-weight: 650;
+}
+.material-hero-button {
+  justify-self: start;
+  margin-top: 6px;
+  text-decoration: none;
+}
+
+.material-group {
+  margin-bottom: 20px;
+}
+.material-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.material-group-head h4 {
+  margin: 0;
+  font-size: 16px;
+}
+.material-group-head span {
+  color: var(--color-muted);
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+.material-progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #eaecf0;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+.material-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-success);
+  transition: width 240ms ease;
+}
+
+.material-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.material-atp-badge,
+.material-turn-badge,
+.material-done-badge {
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.material-atp-badge {
+  background: #eff4ff;
+  color: var(--color-brand-700);
+}
+.material-turn-badge {
+  background: #fdf3d7;
+  color: #93370d;
+}
+.material-done-badge {
+  justify-self: start;
+  background: var(--color-success-surface);
+  color: var(--color-success);
+}
+.material-card--completed {
+  opacity: 0.78;
+}
+
+.material-archive {
+  margin-top: 4px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-subtle);
+  overflow: hidden;
+}
+.material-archive-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  padding: 14px 16px;
+  background: transparent;
+  color: var(--color-ink);
+  font: inherit;
+  font-weight: 750;
+  text-align: left;
+  cursor: pointer;
+}
+.material-archive .content-list {
+  padding: 0 12px 12px;
+}

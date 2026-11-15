@@ -38,6 +38,11 @@ function serializeAssignment(
     title: assignment.title,
     instructions: assignment.instructions,
     ruas_quiz_url: assignment.ruasQuizUrl,
+    // Pemetaan topik RUAS pilihan guru (Hub Murid Tahap 2) — mentah apa
+    // adanya; pemetaan efektif (urai tautan didahulukan) dihitung
+    // pemakai lewat lib/ruas-hub.ts.
+    ruas_topic_id: assignment.ruasTopicId,
+    ruas_subject_id: assignment.ruasSubjectId,
     work_mode: assignment.workMode,
     group_size: assignment.groupSize,
     target_type: assignment.targetType,
@@ -248,6 +253,8 @@ assignmentRoutes.post("/", zValidator("json", createAssignmentSchema), async (c)
       title: input.title,
       instructions: input.instructions,
       ruasQuizUrl: input.ruasQuizUrl,
+      ruasTopicId: input.ruasTopicId ?? null,
+      ruasSubjectId: input.ruasSubjectId ?? null,
       workMode: input.workMode,
       groupSize: input.workMode === "kelompok" ? (input.groupSize ?? 4) : (input.groupSize ?? null),
       targetType: input.targetType,
@@ -286,7 +293,7 @@ assignmentRoutes.patch("/:id", zValidator("json", updateAssignmentSchema), async
   // field status, karena UI membuka kembali penugasan ditutup lewat tombol
   // "Terbitkan" yang mengirim body { status } saja.
   if (current.status === "ditutup") {
-    const contentKeys = ["moduleId", "worksheetId", "title", "instructions", "ruasQuizUrl", "workMode", "groupSize", "opensAt", "dueAt", "classIds", "targetType", "studentIds"] as const;
+    const contentKeys = ["moduleId", "worksheetId", "title", "instructions", "ruasQuizUrl", "ruasTopicId", "ruasSubjectId", "workMode", "groupSize", "opensAt", "dueAt", "classIds", "targetType", "studentIds"] as const;
     if (contentKeys.some((key) => input[key] !== undefined)) {
       return c.json({ ok: false, message: "Penugasan yang sudah ditutup tidak dapat diubah." }, 409);
     }

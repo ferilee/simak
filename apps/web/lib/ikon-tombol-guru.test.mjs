@@ -164,8 +164,8 @@ check(
 // Total rentang ikon dikunci persis — tambahan ikon di luar daftar paket
 // ini (termasuk di navigasi) akan mengubah hitungannya dan harus disengaja.
 check(
-  "total rentang .action-icon terkunci (halaman guru 55, panel perpustakaan 11)",
-  count(page, 'className="action-icon"') === 55 && count(lib, 'className="action-icon"') === 11,
+  "total rentang .action-icon terkunci (halaman guru 57, panel perpustakaan 11)",
+  count(page, 'className="action-icon"') === 57 && count(lib, 'className="action-icon"') === 11,
   `guru=${count(page, 'className="action-icon"')} lib=${count(lib, 'className="action-icon"')}`,
 );
 check(

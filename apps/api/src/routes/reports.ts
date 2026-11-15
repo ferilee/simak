@@ -6,6 +6,7 @@ import { mapGroupAttemptsToStudents, pickEffectiveAttempt, resolveEffectiveMembe
 import { loadAssignmentSubject } from "../lib/assignment-target";
 import { loadTeacherClassMemberships, resolveStudentClass } from "../lib/student-class";
 import { REKAP_HEADER_PDF_COLOR, materialReadingText, measurePdfText, planMaterialReadingState, planRekapColumnWidths, planRekapRowFills, rekapFillPdfColor, type MaterialReadingState, type RekapCellFill } from "../lib/rekap-pdf";
+import { fetchRuasScores, resolveEffectiveRuasTarget, summarizeRuasPull } from "../lib/ruas-hub";
 
 // Rekap bukti = agregasi activity_logs + worksheet_attempts + exit_tickets.
 // Format laporan: JSON (default), CSV yang dapat dibuka di Excel, atau PDF.
@@ -217,12 +218,59 @@ reportRoutes.post("/ruas-import", async (c) => {
     const score = typeof row.score === "string" ? Number(row.score.replace(",", ".")) : Number(row.score);
     const duplicate = !identifier || seen.has(key); seen.add(key); const student = duplicate ? undefined : byIdentifier.get(key);
     const matchStatus: "cocok" | "tidak_ditemukan" | "duplikat" = duplicate ? "duplikat" : student ? "cocok" : "tidak_ditemukan";
-    return { assignmentId, teacherId: user.userId, studentId: student?.id ?? null, identifier: identifier || "(kosong)", studentName: String(row.studentName ?? "").trim() || null, score: score.toFixed(2), matchStatus, note: !Number.isFinite(score) || score < 0 || score > 100 ? "Nilai harus berada pada rentang 0-100." : student ? null : duplicate ? "Identifier muncul lebih dari sekali." : "Identifier tidak ditemukan di kelas tujuan." };
+    return { assignmentId, teacherId: user.userId, studentId: student?.id ?? null, identifier: identifier || "(kosong)", studentName: String(row.studentName ?? "").trim() || null, score: score.toFixed(2), matchStatus, source: "csv" as const, pulledAt: null, note: !Number.isFinite(score) || score < 0 || score > 100 ? "Nilai harus berada pada rentang 0-100." : student ? null : duplicate ? "Identifier muncul lebih dari sekali." : "Identifier tidak ditemukan di kelas tujuan." };
   });
   const invalid = rows.find((row) => !Number.isFinite(Number(row.score)) || Number(row.score) < 0 || Number(row.score) > 100);
   if (invalid) return c.json({ ok: false, message: `Nilai untuk identifier ${invalid.identifier} harus berupa angka 0-100.` }, 400);
   await db.transaction(async (tx) => { await tx.delete(ruasScores).where(eq(ruasScores.assignmentId, assignmentId)); await tx.insert(ruasScores).values(rows); });
   return c.json({ ok: true, data: { assignment_id: assignmentId, total: rows.length, cocok: rows.filter((row) => row.matchStatus === "cocok").length, tidak_ditemukan: rows.filter((row) => row.matchStatus === "tidak_ditemukan").length, duplikat: rows.filter((row) => row.matchStatus === "duplikat").length, unmatched: rows.filter((row) => row.matchStatus !== "cocok").map((row) => ({ identifier: row.identifier, student_name: row.studentName, score: Number(row.score), match_status: row.matchStatus, note: row.note })) } });
+});
+
+// Tarik nilai RUAS otomatis (Hub Murid Tahap 2): nilai attempt selesai
+// TERAKHIR tiap murid sasaran ditarik dari RUAS lewat endpoint internal
+// dan ditulis ke ruas_scores yang sama dengan impor CSV — Rekap/PDF
+// tidak berubah sama sekali. Semantik penulisannya meniru impor CSV
+// persis: seluruh baris lama penugasan ini diganti hasil tarikan
+// (baris baru bertanda source "tarik" + pulled_at), jadi tarik dan
+// impor adalah dua cara mengisi snapshot yang sama dan yang terakhir
+// dijalankan yang berlaku. Pencocokan murid memakai USERNAME (akun
+// SIMAK adalah akun RUAS) — tidak ada tebakan NIS/nama seperti CSV.
+// Penugasan tanpa pemetaan efektif ditolak dengan petunjuk, dan
+// jembatan yang belum disetel/tak terjangkau menjawab 503 — ini aksi
+// guru yang memang harus tahu tarikannya gagal, bukan sinyal latar.
+reportRoutes.post("/ruas-pull", async (c) => {
+  const user = c.get("user")!;
+  let input: { assignmentId?: number };
+  try { input = await c.req.json(); } catch { return c.json({ ok: false, message: "Isi permintaan harus berupa JSON yang valid." }, 400); }
+  const assignmentId = Number(input.assignmentId);
+  if (!Number.isInteger(assignmentId) || assignmentId <= 0) return c.json({ ok: false, message: "assignmentId wajib berupa ID positif." }, 400);
+  const pullAssignment = await ownedAssignment(user.userId, assignmentId);
+  if (!pullAssignment) return c.json({ ok: false, message: "Penugasan tidak ditemukan." }, 404);
+  const target = resolveEffectiveRuasTarget(pullAssignment);
+  if (!target) return c.json({ ok: false, message: "Penugasan ini belum terpetakan ke topik RUAS. Isi tautan kuis RUAS atau pilih topik RUAS pada formulir penugasan terlebih dahulu." }, 400);
+  const students = await getTargetStudents(pullAssignment);
+  if (students.length === 0) return c.json({ ok: false, message: "Penugasan ini belum mempunyai murid sasaran." }, 400);
+  const scores = await fetchRuasScores(target, students.map((student) => student.username));
+  if (scores === null) return c.json({ ok: false, message: "Nilai RUAS belum dapat ditarik. Jembatan internal RUAS belum disetel atau RUAS sedang tidak terjangkau — coba lagi nanti, atau gunakan impor CSV." }, 503);
+  const summary = summarizeRuasPull(students, scores);
+  const pulledAt = new Date();
+  const rows = summary.rows.map((row) => ({
+    assignmentId,
+    teacherId: user.userId,
+    studentId: row.studentId,
+    identifier: row.username,
+    studentName: row.studentName,
+    score: row.score.toFixed(2),
+    matchStatus: "cocok" as const,
+    source: "tarik" as const,
+    pulledAt,
+    note: null,
+  }));
+  await db.transaction(async (tx) => {
+    await tx.delete(ruasScores).where(eq(ruasScores.assignmentId, assignmentId));
+    if (rows.length > 0) await tx.insert(ruasScores).values(rows);
+  });
+  return c.json({ ok: true, data: { assignment_id: assignmentId, terbarui: summary.terbarui, belum_ada_skor: summary.belumAdaSkor, tidak_dikenal: summary.tidakDikenal, pulled_at: pulledAt } });
 });
 
 function respondSessionReport(c: any, data: SessionReportData, format: string | undefined, filename: string) {

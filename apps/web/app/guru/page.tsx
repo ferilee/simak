@@ -56,6 +56,7 @@ import { KurikulumPanel } from "../../components/KurikulumPanel";
 import { PemilihCepat } from "../../components/PemilihCepat";
 import { groupModulesForPicker, orderWorksheetsForPairing } from "../../lib/pemilih-cepat";
 import { filterAssignmentsByClass, planAssignmentCounts } from "../../lib/hitungan-penugasan";
+import { parseRuasQuizUrl, resolveEffectiveRuasTarget, ruasTopicLabel, type RuasTopicOption } from "../../lib/ruas-pemetaan";
 import {
   assignmentGrading,
   countAssignmentsNeedingGrading,
@@ -148,6 +149,10 @@ type AssignmentSummary = {
   title: string;
   instructions: string | null;
   ruas_quiz_url: string | null;
+  // Pemetaan topik RUAS pilihan guru (Hub Murid Tahap 2); pemetaan
+  // efektif tetap mendahulukan urai tautan kuis (lib/ruas-pemetaan).
+  ruas_topic_id: number | null;
+  ruas_subject_id: number | null;
   work_mode: "individu" | "kelompok";
   group_size: number | null;
   target_type: "kelas" | "siswa";
@@ -269,6 +274,8 @@ type RangeReport = {
 };
 type RangeReportResponse = { ok: true; data: RangeReport };
 type RuasImportResponse = { ok: true; data: { assignment_id: number; total: number; cocok: number; tidak_ditemukan: number; duplikat: number; unmatched: { identifier: string; student_name: string | null; score: number; match_status: string; note: string | null }[] } };
+type RuasTopicsResponse = { ok: true; data: { available: boolean; topics: RuasTopicOption[] } };
+type RuasPullResponse = { ok: true; data: { assignment_id: number; terbarui: number; belum_ada_skor: number; tidak_dikenal: number; pulled_at: string } };
 type IntegrityAlert = {
   assignment_id: number;
   assignment_title: string;
@@ -455,6 +462,13 @@ export default function GuruPage() {
   const [assignmentStudentIds, setAssignmentStudentIds] = useState<number[]>([]);
   const [assignmentStudentQuery, setAssignmentStudentQuery] = useState("");
   const [assignmentRuasUrl, setAssignmentRuasUrl] = useState("");
+  // Pemetaan topik RUAS pilihan guru pada formulir penugasan (Hub
+  // Murid Tahap 2): hanya bermakna bila tautan kuis tidak terurai.
+  // ruasTopics adalah daftar topik dari RUAS lewat endpoint guru —
+  // available:false berarti jembatan belum aktif dan pemilihnya mati.
+  const [assignmentRuasTopicId, setAssignmentRuasTopicId] = useState<number | null>(null);
+  const [assignmentRuasSubjectId, setAssignmentRuasSubjectId] = useState<number | null>(null);
+  const [ruasTopics, setRuasTopics] = useState<RuasTopicsResponse["data"]>({ available: false, topics: [] });
   const [assignmentWorkMode, setAssignmentWorkMode] = useState<"individu" | "kelompok">("individu");
   const [assignmentGroupSize, setAssignmentGroupSize] = useState("4");
   const [selectedGroupAssignmentId, setSelectedGroupAssignmentId] = useState<number | null>(null);
@@ -476,6 +490,8 @@ export default function GuruPage() {
     opensAt: string;
     dueAt: string;
     ruasUrl: string;
+    ruasTopicId: number | null;
+    ruasSubjectId: number | null;
     workMode: "individu" | "kelompok";
     groupSize: string;
     classIds: number[];
@@ -497,6 +513,8 @@ export default function GuruPage() {
     opensAt: string;
     dueAt: string;
     ruasUrl: string;
+    ruasTopicId: number | null;
+    ruasSubjectId: number | null;
     workMode: "individu" | "kelompok";
     groupSize: string;
     classIds: number[];
@@ -562,6 +580,8 @@ export default function GuruPage() {
   const [ruasImportText, setRuasImportText] = useState("");
   const [ruasImportLoading, setRuasImportLoading] = useState(false);
   const [ruasImportResult, setRuasImportResult] = useState<RuasImportResponse["data"] | null>(null);
+  const [ruasPullLoading, setRuasPullLoading] = useState(false);
+  const [ruasPullResult, setRuasPullResult] = useState<RuasPullResponse["data"] | null>(null);
   const [integrityAlerts, setIntegrityAlerts] = useState<IntegrityAlert[]>([]);
   // Langkah 5 ("Pantau hasil") tampil satu seksi per tab; tab aktif menentukan
   // panel mana yang terlihat agar halaman tidak menjadi satu guliran panjang.
@@ -1091,6 +1111,21 @@ export default function GuruPage() {
     void loadModules();
   }, []);
 
+  // Daftar topik RUAS untuk pemilih pemetaan penugasan (Hub Murid
+  // Tahap 2): dimuat sekali saat halaman dibuka; kegagalan/jembatan
+  // belum aktif membiarkan available:false dan pemilihnya nonaktif.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await apiRequest<RuasTopicsResponse>("/guru/ruas-topics");
+        setRuasTopics(response.data);
+      } catch {
+        // Pemilih topik hanya memperkaya formulir; tanpanya pemetaan
+        // tetap bisa lewat tautan kuis RUAS.
+      }
+    })();
+  }, []);
+
   useEffect(() => {
     void (async () => {
       try {
@@ -1302,6 +1337,31 @@ export default function GuruPage() {
       setMessage(error instanceof Error ? error.message : "Nilai RUAS belum dapat diimpor.");
     } finally {
       setRuasImportLoading(false);
+    }
+  }
+
+  // Tarik nilai RUAS otomatis (Hub Murid Tahap 2): memakai pilihan
+  // penugasan yang sama dengan impor CSV di tab Impor. Tombolnya mati
+  // bila penugasan belum terpetakan (pemetaan efektif dihitung dari
+  // tautan/pilihan tersimpan penugasan itu — cermin aturan server).
+  async function pullRuasScores() {
+    if (!ruasImportAssignmentId) {
+      setMessage("Pilih penugasan untuk menarik nilai RUAS.");
+      return;
+    }
+    setRuasPullLoading(true);
+    try {
+      const response = await apiRequest<RuasPullResponse>("/reports/ruas-pull", {
+        method: "POST",
+        body: JSON.stringify({ assignmentId: ruasImportAssignmentId }),
+      });
+      setRuasPullResult(response.data);
+      setMessage(`Nilai RUAS ditarik: ${response.data.terbarui} murid terbarui, ${response.data.belum_ada_skor} belum ada skor, ${response.data.tidak_dikenal} tidak dikenal.`);
+      if (selectedReportAssignmentId === ruasImportAssignmentId) await loadSessionReport(ruasImportAssignmentId);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Nilai RUAS belum dapat ditarik.");
+    } finally {
+      setRuasPullLoading(false);
     }
   }
 
@@ -2789,6 +2849,8 @@ export default function GuruPage() {
           opensAt: new Date(assignmentOpensAt).toISOString(),
           dueAt: new Date(assignmentDueAt).toISOString(),
           ruasQuizUrl: assignmentRuasUrl || undefined,
+          ruasTopicId: assignmentRuasTopicId ?? undefined,
+          ruasSubjectId: assignmentRuasSubjectId ?? undefined,
           workMode: assignmentWorkMode,
           groupSize: assignmentWorkMode === "kelompok" ? Number(assignmentGroupSize) || 4 : undefined,
           targetType: assignmentTargetType,
@@ -2799,6 +2861,8 @@ export default function GuruPage() {
       setAssignmentTitle("");
       setAssignmentInstructions("");
       setAssignmentRuasUrl("");
+      setAssignmentRuasTopicId(null);
+      setAssignmentRuasSubjectId(null);
       setAssignmentWorkMode("individu");
       setAssignmentGroupSize("4");
       setAssignmentTargetType("kelas");
@@ -2841,6 +2905,8 @@ export default function GuruPage() {
       opensAt: assignmentOpensAt,
       dueAt: assignmentDueAt,
       ruasUrl: assignmentRuasUrl,
+      ruasTopicId: assignmentRuasTopicId,
+      ruasSubjectId: assignmentRuasSubjectId,
       workMode: assignmentWorkMode,
       groupSize: assignmentGroupSize,
       classIds: assignmentClassIds,
@@ -2861,6 +2927,8 @@ export default function GuruPage() {
     setAssignmentOpensAt(toDateTimeLocal(new Date(assignment.opens_at)));
     setAssignmentDueAt(toDateTimeLocal(new Date(assignment.due_at)));
     setAssignmentRuasUrl(assignment.ruas_quiz_url ?? "");
+    setAssignmentRuasTopicId(assignment.ruas_topic_id);
+    setAssignmentRuasSubjectId(assignment.ruas_subject_id);
     // Garis dasar penanda kotor = nilai penugasan persis seperti yang
     // dimuat ke formulir di atas; berbeda dengan jepretan di awal fungsi
     // ini (yang menyimpan draf buat-baru untuk dipulihkan saat keluar).
@@ -2872,6 +2940,8 @@ export default function GuruPage() {
       opensAt: toDateTimeLocal(new Date(assignment.opens_at)),
       dueAt: toDateTimeLocal(new Date(assignment.due_at)),
       ruasUrl: assignment.ruas_quiz_url ?? "",
+      ruasTopicId: assignment.ruas_topic_id,
+      ruasSubjectId: assignment.ruas_subject_id,
       workMode: assignment.work_mode,
       groupSize: String(assignment.group_size ?? 4),
       classIds: assignment.classes.map((kelas) => kelas.id),
@@ -2890,6 +2960,8 @@ export default function GuruPage() {
       setAssignmentOpensAt(snapshot.opensAt);
       setAssignmentDueAt(snapshot.dueAt);
       setAssignmentRuasUrl(snapshot.ruasUrl);
+      setAssignmentRuasTopicId(snapshot.ruasTopicId);
+      setAssignmentRuasSubjectId(snapshot.ruasSubjectId);
       setAssignmentWorkMode(snapshot.workMode);
       setAssignmentGroupSize(snapshot.groupSize);
       setAssignmentClassIds(snapshot.classIds);
@@ -2920,6 +2992,10 @@ export default function GuruPage() {
           opensAt: new Date(assignmentOpensAt).toISOString(),
           dueAt: new Date(assignmentDueAt).toISOString(),
           ruasQuizUrl: assignmentRuasUrl || undefined,
+          // null dikirim apa adanya agar pilihan topik yang dikosongkan
+          // guru benar-benar terhapus di server (undefined = tak diubah).
+          ruasTopicId: assignmentRuasTopicId,
+          ruasSubjectId: assignmentRuasSubjectId,
           workMode: assignmentWorkMode,
           groupSize: assignmentWorkMode === "kelompok" ? Number(assignmentGroupSize) || 4 : undefined,
           targetType: assignmentTargetType,
@@ -3119,6 +3195,8 @@ export default function GuruPage() {
       || assignmentOpensAt !== assignmentBase.opensAt
       || assignmentDueAt !== assignmentBase.dueAt
       || assignmentRuasUrl !== assignmentBase.ruasUrl
+      || assignmentRuasTopicId !== assignmentBase.ruasTopicId
+      || assignmentRuasSubjectId !== assignmentBase.ruasSubjectId
       || assignmentWorkMode !== assignmentBase.workMode
       || assignmentGroupSize !== assignmentBase.groupSize
       || assignmentTargetType !== assignmentBase.targetType
@@ -3279,6 +3357,11 @@ export default function GuruPage() {
     const modulePickerGroups = groupModulesForPicker(modules, canonicalTopicOrder(topicGroups));
     const selectedModuleTitle = modules.find((module) => module.id === selectedId)?.title ?? null;
     const worksheetPickerGroups = orderWorksheetsForPairing(worksheets, selectedModuleTitle);
+    // Pemetaan RUAS formulir (Hub Murid Tahap 2): tautan yang terurai
+    // menampilkan catatan deteksi otomatis; yang tidak terurai memberi
+    // tempat pada pemilih topik di bawah kolom tautan.
+    const parsedRuasTarget = parseRuasQuizUrl(assignmentRuasUrl);
+    const parsedRuasTopic = parsedRuasTarget ? ruasTopics.topics.find((topic) => topic.id === parsedRuasTarget.topicId) : undefined;
     return (
       <form onSubmit={editingAssignment ? saveAssignmentEdit : createAssignment} style={styles.form}>
         <input required value={assignmentTitle} onChange={(event) => setAssignmentTitle(event.target.value)} placeholder="Judul penugasan" style={styles.input} />
@@ -3362,6 +3445,28 @@ export default function GuruPage() {
         <label style={styles.label}>Dibuka pada<input type="datetime-local" value={assignmentOpensAt} onChange={(event) => setAssignmentOpensAt(event.target.value)} style={styles.input} /></label>
         <label style={styles.label}>Batas pengumpulan<input type="datetime-local" value={assignmentDueAt} onChange={(event) => setAssignmentDueAt(event.target.value)} style={styles.input} /></label>
         <input type="url" value={assignmentRuasUrl} onChange={(event) => setAssignmentRuasUrl(event.target.value)} placeholder="Tautan kuis RUAS (opsional)" style={styles.input} />
+        {parsedRuasTarget ? (
+          <p style={styles.muted}>Topik RUAS terdeteksi otomatis dari tautan{parsedRuasTopic ? <>: <strong>{ruasTopicLabel(parsedRuasTopic)}</strong></> : <> (topik #{parsedRuasTarget.topicId})</>} — pemetaan ini yang dipakai hub murid dan tarik nilai RUAS.</p>
+        ) : (
+          <label style={styles.label}>Topik RUAS (untuk hub murid & tarik nilai)
+            <select
+              value={assignmentRuasTopicId ?? ""}
+              disabled={!ruasTopics.available}
+              onChange={(event) => {
+                const chosen = ruasTopics.topics.find((topic) => topic.id === Number(event.target.value));
+                setAssignmentRuasTopicId(chosen ? chosen.id : null);
+                setAssignmentRuasSubjectId(chosen ? chosen.subject_id : null);
+              }}
+              style={styles.input}
+            >
+              <option value="">Belum dipilih — isi bila penugasan ini punya asesmen RUAS</option>
+              {ruasTopics.topics.map((topic) => <option key={topic.id} value={topic.id}>{ruasTopicLabel(topic)}</option>)}
+            </select>
+            {ruasTopics.available
+              ? <span style={styles.muted}>Dipakai hanya bila tautan kuis RUAS di atas kosong atau tidak terurai menjadi topik.</span>
+              : <span style={styles.muted}>Daftar topik RUAS belum dapat dimuat (jembatan RUAS belum aktif) — pemilih nonaktif; pemetaan tetap bisa lewat tautan kuis RUAS.</span>}
+          </label>
+        )}
         {editingAssignment?.status === "terbit" ? <p style={styles.message}>Modul, LKPD, dan kelas tujuan terkunci bila sudah ada murid yang mengerjakan. Mode pengerjaan dan ukuran kelompok juga terkunci bila sudah ada murid atau kelompok yang mengerjakan.</p> : null}
         <button type="submit" style={styles.primaryButton}>{editingAssignment ? <><span className="action-icon" aria-hidden="true">💾</span>Simpan perubahan</> : <><span className="action-icon" aria-hidden="true">+</span>Buat draf penugasan</>}</button>
         {editingAssignment ? <button type="button" onClick={exitAssignmentEdit} style={styles.secondaryButton}><span className="action-icon" aria-hidden="true">✕</span>Batal</button> : null}
@@ -3389,6 +3494,15 @@ export default function GuruPage() {
   }));
   const exitTicketMatchedGroups = exitTicketClassSections.reduce((total, section) => total + section.groups.length, 0);
   const exitTicketVisibleStudents = exitTicketStudents.filter((student) => exitTicketStudentMatches(student, exitTicketQuery));
+
+  // Pemetaan efektif penugasan terpilih di tab Impor (Hub Murid
+  // Tahap 2): tombol Tarik hanya menyala untuk penugasan terpetakan —
+  // cermin aturan server (urai tautan didahulukan, pilihan guru
+  // sesudahnya) agar petunjuknya tidak pernah berbohong.
+  const ruasImportAssignment = assignments.find((assignment) => assignment.id === ruasImportAssignmentId) ?? null;
+  const ruasImportMappedTarget = ruasImportAssignment
+    ? resolveEffectiveRuasTarget({ ruasQuizUrl: ruasImportAssignment.ruas_quiz_url, ruasTopicId: ruasImportAssignment.ruas_topic_id, ruasSubjectId: ruasImportAssignment.ruas_subject_id })
+    : null;
 
   return (
     <main className="dashboard-shell">
@@ -4403,6 +4517,12 @@ export default function GuruPage() {
         </details>
         {ruasImportResult ? <p style={styles.muted}>Baris: {ruasImportResult.total} · cocok: {ruasImportResult.cocok} · tidak ditemukan: {ruasImportResult.tidak_ditemukan} · duplikat: {ruasImportResult.duplikat}</p> : null}
         {ruasImportResult?.unmatched.length ? <div style={styles.warningBox}>Baris yang perlu diperiksa: {ruasImportResult.unmatched.map((row) => `${row.identifier} (${row.match_status})`).join(", ")}</div> : null}
+        <div style={styles.form}>
+          <p style={styles.muted}><strong>Tarik nilai RUAS otomatis</strong> — ambil nilai attempt selesai terakhir tiap murid langsung dari RUAS untuk penugasan terpilih di atas, tanpa berkas CSV. Hasil tarikan menggantikan snapshot nilai RUAS penugasan ini, sama seperti impor.</p>
+          {ruasImportAssignmentId && !ruasImportMappedTarget ? <p style={styles.muted}>Penugasan ini belum terpetakan ke topik RUAS — isi tautan kuis RUAS atau pilih topiknya pada formulir penugasan agar nilainya bisa ditarik.</p> : null}
+          <button type="button" disabled={ruasPullLoading || !ruasImportAssignmentId || !ruasImportMappedTarget} onClick={() => void pullRuasScores()} style={styles.primaryButton}>{ruasPullLoading ? <><span className="action-icon" aria-hidden="true">🔄</span>Menarik...</> : <><span className="action-icon" aria-hidden="true">🔄</span>Tarik nilai RUAS</>}</button>
+          {ruasPullResult ? <p style={styles.muted}>Tarikan terakhir: {ruasPullResult.terbarui} terbarui · {ruasPullResult.belum_ada_skor} belum ada skor · {ruasPullResult.tidak_dikenal} tidak dikenal · {formatDate(ruasPullResult.pulled_at)}</p> : null}
+        </div>
       </section>
 
       <section className="wizard-step-panel compact-resource-section" data-active={langkahTampil && guruStep === 4 && hasilTab === "rekap"} style={styles.panel}>

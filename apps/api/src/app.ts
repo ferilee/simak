@@ -16,6 +16,7 @@ import { activityRoutes } from "./routes/activity";
 import { integrityRoutes } from "./routes/integrity";
 import { libraryRoutes } from "./routes/library";
 import { kurikulumRoutes } from "./routes/kurikulum";
+import { guruRoutes } from "./routes/guru";
 import { env } from "./lib/env";
 import { loadSession } from "./middleware/auth";
 
@@ -52,6 +53,7 @@ export function createApp() {
   v1.route("/integrity", integrityRoutes);
   v1.route("/library", libraryRoutes);
   v1.route("/kurikulum", kurikulumRoutes);
+  v1.route("/guru", guruRoutes);
 
   app.route("/api/v1", v1);
 

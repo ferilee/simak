@@ -324,6 +324,11 @@ export const createAssignmentSchema = z.object({
   title: z.string().min(1).max(200),
   instructions: z.string().max(5000).optional(),
   ruasQuizUrl: z.string().url().max(1024).optional(),
+  // Pemetaan eksplisit ke topik RUAS (Hub Murid Tahap 2): hanya bermakna
+  // bila ruasQuizUrl tidak terurai menjadi id topik; null/kosong berarti
+  // guru belum memilih. Pemetaan efektif dihitung di server.
+  ruasTopicId: z.number().int().positive().nullable().optional(),
+  ruasSubjectId: z.number().int().positive().nullable().optional(),
   // Mode pengerjaan LKPD: "kelompok" memakai kelompok acak otomatis dengan
   // target anggota per kelompok 2–10 (bawaan 4 ditegakkan di route/UI).
   workMode: z.enum(["individu", "kelompok"]).default("individu"),
@@ -362,6 +367,9 @@ export const updateAssignmentSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   instructions: z.string().max(5000).optional(),
   ruasQuizUrl: z.string().url().max(1024).optional(),
+  // Pemetaan topik RUAS pilihan guru: null berarti kosongkan pilihan.
+  ruasTopicId: z.number().int().positive().nullable().optional(),
+  ruasSubjectId: z.number().int().positive().nullable().optional(),
   workMode: z.enum(["individu", "kelompok"]).optional(),
   groupSize: z.number().int().min(2).max(10).nullable().optional(),
   targetType: z.enum(["kelas", "siswa"]).optional(),

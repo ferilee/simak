@@ -11,6 +11,7 @@ import { avatarImagePath, priceLabel, stateLabel, type AvatarCatalogItem, type A
 import { allStepsDone, planAssignmentSteps, planReminderLevel, worksheetStatusFromProgress } from "../../lib/pengingat";
 import { circleAriaLabel, initialPagerIndex, planCircle } from "../../lib/navigasi-tugas";
 import { ARCHIVE_GROUP_NAME, MATERIAL_FILTERS, guidedGroupName, planGuidedMaterials, shouldShowHero, type GuidedModule, type GuidedMaterialsPlan, type MaterialFilter } from "../../lib/materi-terpandu";
+import { assessmentStatusLabel, type AssessmentCardData, type HubData } from "../../lib/hub-murid";
 import { submissionStatusLabel } from "../lib/labels";
 import { Toast } from "../../components/Toast";
 import { Modal } from "../../components/Modal";
@@ -109,6 +110,14 @@ type NilaiDotResponse = {
   data: { grades: { assignment_id: number; graded_at: string }[] };
 };
 
+// Ringkasan hub beranda (Hub Murid Tahap 2): kartu asesmen RUAS +
+// progres per rantai dari GET /murid/asesmen. XP tidak ikut di sini —
+// kartu XP sidebar membaca ringkasan dari /murid/today seperti biasa.
+type HubResponse = {
+  ok: true;
+  data: HubData;
+};
+
 export default function MuridPage() {
   const router = useRouter();
   const [user, setUser] = useState<MeResponse["user"] | null>(null);
@@ -127,6 +136,11 @@ export default function MuridPage() {
   const [joinOpen, setJoinOpen] = useState(false);
   const [studentStep, setStudentStep] = useState(0);
   const [hasNewGrades, setHasNewGrades] = useState(false);
+  // Hub Tahap 2: null = belum termuat/gagal muat (bagian tampil sebagai
+  // catatan lembut); available:false dari server = jembatan RUAS belum
+  // aktif. Keduanya tidak pernah menghalangi beranda.
+  const [hub, setHub] = useState<HubData | null>(null);
+  const [handoffBusy, setHandoffBusy] = useState<string | null>(null);
 
   const studentSteps = [
     { title: "Kelas saya", description: "Gabung dan lihat kelas aktif" },
@@ -296,6 +310,11 @@ export default function MuridPage() {
       }
       const today = await apiRequest<TodayResponse>("/murid/today");
       setData(today.data);
+      // Ringkasan hub (asesmen + progres) dimuat menyusul dan gagal-
+      // lembut: kegagalannya hanya mengosongkan kedua bagian hub.
+      void apiRequest<HubResponse>("/murid/asesmen")
+        .then((response) => setHub(response.data))
+        .catch(() => setHub(null));
       // Sambutan pertama: server yang memutuskan (penanda welcomed_at),
       // jadi modal ini tampil tepat sekali untuk akun ini di perangkat
       // mana pun.
@@ -326,6 +345,25 @@ export default function MuridPage() {
   async function logout() {
     await apiRequest("/auth/logout", { method: "POST" }).catch(() => undefined);
     router.replace("/login");
+  }
+
+  // Serah-terima ke RUAS: server menerbitkan URL penukaran sekali
+  // pakai, peramban dialihkan ke sana dan murid mendarat di RUAS sudah
+  // masuk. Kartu asesmen membawa target topiknya (langsung ke halaman
+  // asesmen); tanpa kartu, targetnya dashboard RUAS. Kegagalan apa pun
+  // berakhir pada satu pesan ramah yang sama — tanpa rincian teknis.
+  async function openRuas(card?: AssessmentCardData) {
+    setHandoffBusy(card ? `topik-${card.topic_id}` : "dashboard");
+    try {
+      const response = await apiRequest<{ ok: true; data: { url: string } }>("/murid/handoff", {
+        method: "POST",
+        body: JSON.stringify(card ? { topic_id: card.topic_id, ...(card.subject_id !== null ? { subject_id: card.subject_id } : {}) } : {}),
+      });
+      window.location.href = response.data.url;
+    } catch {
+      setMessage("RUAS belum bisa dibuka otomatis — buka RUAS seperti biasa.");
+      setHandoffBusy(null);
+    }
   }
 
   useEffect(() => {
@@ -608,6 +646,87 @@ export default function MuridPage() {
                       <article key={kelas.id} className="content-card">
                         <strong>{kelas.name}</strong>
                         <span className="content-muted">{kelas.subject} · {kelas.academic_year}</span>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              <section className="dashboard-section wizard-inner-section">
+                <div className="dashboard-section-heading">
+                  <div>
+                    <h3>Progres belajar</h3>
+                    <span>{hub ? `${hub.progress.length} rangkaian materi` : "Memuat progres..."}</span>
+                  </div>
+                </div>
+                {data.xp ? (
+                  <p className="content-muted">⭐ {data.xp.total} XP · Level {data.xp.levelName}</p>
+                ) : null}
+                {!hub || hub.progress.length === 0 ? (
+                  <p className="empty-state">Belum ada rangkaian materi yang berjalan. Progres belajarmu tampil di sini mengikuti penugasan dari gurumu.</p>
+                ) : (
+                  <div className="content-list">
+                    {hub.progress.map((chain) => (
+                      <article key={chain.chain_key} className="content-card">
+                        <span className="content-label">{chain.subject}</span>
+                        <strong>{chain.topic_group}</strong>
+                        <div
+                          className="material-progress-track"
+                          role="progressbar"
+                          aria-valuenow={chain.materials_pct}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-label={`Progres materi ${chain.topic_group}: ${chain.materials_completed} dari ${chain.materials_total} tuntas`}
+                        >
+                          <div className="material-progress-fill" style={{ width: `${chain.materials_pct}%` }} />
+                        </div>
+                        <span className="content-muted">
+                          Materi {chain.materials_completed} dari {chain.materials_total} tuntas · LKPD {chain.lkpd_submitted} dari {chain.lkpd_total} terkumpul · {chain.lkpd_graded} dinilai
+                        </span>
+                        {chain.assessment ? (
+                          <span className="content-muted">
+                            Asesmen RUAS: {chain.assessment.title ?? `Topik #${chain.assessment.topic_id}`}
+                            {chain.assessment.status ? ` · ${assessmentStatusLabel(chain.assessment.status)}` : ""}
+                            {chain.assessment.score !== null ? ` · Skor ${chain.assessment.score}` : ""}
+                          </span>
+                        ) : null}
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              <section className="dashboard-section wizard-inner-section">
+                <div className="dashboard-section-heading">
+                  <div>
+                    <h3>Asesmen RUAS</h3>
+                    <span>{hub?.available ? `${hub.assessments.length} asesmen terpetakan` : "Belum terhubung"}</span>
+                  </div>
+                  {hub?.available ? (
+                    <button type="button" className="button button-secondary" disabled={handoffBusy !== null} onClick={() => void openRuas()}>
+                      Buka RUAS
+                    </button>
+                  ) : null}
+                </div>
+                {!hub || !hub.available ? (
+                  <p className="empty-state">Asesmen RUAS belum dapat dimuat dari sini. Kamu tetap bisa membuka RUAS seperti biasa dan masuk dengan akun yang sama.</p>
+                ) : hub.assessments.length === 0 ? (
+                  <p className="empty-state">Belum ada asesmen RUAS yang terpetakan ke penugasanmu.</p>
+                ) : (
+                  <div className="content-list">
+                    {hub.assessments.map((card) => (
+                      <article key={`${card.topic_id}-${card.subject_id ?? ""}`} className="content-card">
+                        <strong>{card.title}</strong>
+                        <span className="content-muted">{card.assignment_title}</span>
+                        <span className="content-muted">
+                          Status: {assessmentStatusLabel(card.status)}
+                          {card.score !== null ? ` · Skor ${card.score}` : ""}
+                        </span>
+                        <span>
+                          <button type="button" className="button" disabled={handoffBusy !== null} onClick={() => void openRuas(card)}>
+                            Buka di RUAS →
+                          </button>
+                        </span>
                       </article>
                     ))}
                   </div>

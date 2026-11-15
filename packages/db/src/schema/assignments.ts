@@ -16,6 +16,13 @@ export const assignments = mysqlTable(
     title: varchar("title", { length: 200 }).notNull(),
     instructions: text("instructions"),
     ruasQuizUrl: varchar("ruas_quiz_url", { length: 1024 }),
+    // Pemetaan eksplisit penugasan → topik RUAS (Hub Murid Tahap 2,
+    // migrasi 0020): diisi guru lewat pemilih topik pada formulir
+    // penugasan HANYA bila tautan kuis di atas tidak terurai menjadi id
+    // topik. Pemetaan efektif selalu mendahulukan hasil urai tautan;
+    // kedua kolom ini cadangan pilihannya (lihat lib/ruas-hub.ts di API).
+    ruasTopicId: int("ruas_topic_id"),
+    ruasSubjectId: int("ruas_subject_id"),
     // Mode pengerjaan LKPD: individu (bawaan, perilaku lama) atau kelompok
     // (satu attempt bersama per kelompok — lihat schema/groups.ts).
     workMode: mysqlEnum("work_mode", ["individu", "kelompok"]).notNull().default("individu"),

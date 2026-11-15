@@ -18,7 +18,7 @@
 //    users dan gagal-lembut (basis data tak terjangkau → null); logout
 //    DELETE baris; cookie diterbitkan ulang saat sentuh; routes/auth +
 //    middleware meng-await fungsi sesi yang kini async.
-//  - Migrasi: jurnal 20 entri, terakhir 0019_sesi_persisten di idx 19;
+//  - Migrasi: 0019_sesi_persisten di idx 19 pada jurnal;
 //    SQL 0019 membuat tabel sessions (token_hash varchar(64) PK,
 //    user_id FK ke users, indeks expires); skema Drizzle mengekspor
 //    tabel sessions dengan kolom yang sama.
@@ -133,9 +133,9 @@ check("middleware loadSession meng-await getSessionFromRequest", middlewareSrc.i
 const journal = JSON.parse(
   readFileSync(new URL("../../../../packages/db/migrations/meta/_journal.json", import.meta.url), "utf8"),
 );
-check("jurnal migrasi 20 entri", journal.entries.length === 20, `got ${journal.entries.length}`);
-const lastEntry = journal.entries[journal.entries.length - 1];
-check("entri terakhir 0019_sesi_persisten di idx 19", lastEntry.tag === "0019_sesi_persisten" && lastEntry.idx === 19, JSON.stringify(lastEntry));
+check("jurnal migrasi 21 entri", journal.entries.length === 21, `got ${journal.entries.length}`);
+const entry0019 = journal.entries[19];
+check("entri 0019_sesi_persisten tetap di idx 19", entry0019.tag === "0019_sesi_persisten" && entry0019.idx === 19, JSON.stringify(entry0019));
 
 const migrationSql = readFileSync(
   new URL("../../../../packages/db/migrations/0019_sesi_persisten.sql", import.meta.url),

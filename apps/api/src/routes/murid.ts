@@ -17,6 +17,7 @@ import { awardXp, summarizeXp, XP_POINTS, type XpSummary } from "../lib/xp";
 import { countMaterialWords, minReadingSeconds } from "../lib/baca-wajar";
 import { avatarBySlug } from "../lib/avatar";
 import { assignmentLockedMessage, loadStudentAssignmentPlan, moduleLockedMessage, planAssignmentChains, planForAssignment, planModuleLock, planModuleRepresentative } from "../lib/rantai-penugasan";
+import { collectMappedTopics, fetchStudentAssessments, planAssessmentCards, planChainProgress, requestRuasHandoff, resolveEffectiveRuasTarget, ruasBridgeConfigured, type ChainProgressInput } from "../lib/ruas-hub";
 
 // Beranda murid + detail penugasan — halaman paling ringan adalah prioritas.
 export const muridRoutes = new Hono();
@@ -1350,6 +1351,142 @@ muridRoutes.put("/worksheets/:id/contribution-ratings", zValidator("json", contr
       .onDuplicateKeyUpdate({ set: { score } });
   }
   return c.json({ ok: true, data: await contributionRatingsState(user.userId, context) });
+});
+
+// Hub Murid Tahap 2 — ringkasan hub beranda: kartu ASESMEN RUAS murid
+// ini (hanya topik yang terpetakan ke penugasannya — keputusan pemilik)
+// + PROGRES per rantai (mapel + kelompok materi) dari data SIMAK,
+// dengan status/skor asesmen terpetakan ditempel pada rantainya.
+// Semuanya gagal-lembut mengikuti pola sinyal beranda /today: jembatan
+// RUAS belum disetel atau tak terjangkau → available:false dan bagian
+// Asesmen tampil sebagai catatan lembut; beranda tidak pernah gagal.
+muridRoutes.get("/asesmen", async (c) => {
+  const user = c.get("user")!;
+  // Himpunan penugasan murid ini persis /today: terbit + sasaran (kelas
+  // tak terarsip atau sasaran langsung), baris utuh agar kolom pemetaan
+  // RUAS (tautan + pilihan guru) ikut terbaca.
+  const memberships = await db
+    .select({ id: classes.id })
+    .from(classMembers)
+    .innerJoin(classes, eq(classes.id, classMembers.classId))
+    .where(and(eq(classMembers.studentId, user.userId), eq(classes.isArchived, false)));
+  const classIds = memberships.map((membership) => membership.id);
+  const assignmentRows = classIds.length
+    ? await db
+        .select()
+        .from(assignments)
+        .innerJoin(assignmentClasses, eq(assignmentClasses.assignmentId, assignments.id))
+        .where(and(eq(assignments.status, "terbit"), inArray(assignmentClasses.classId, classIds)))
+    : [];
+  const directRows = await db
+    .select()
+    .from(assignments)
+    .innerJoin(assignmentStudents, eq(assignmentStudents.assignmentId, assignments.id))
+    .where(and(eq(assignments.status, "terbit"), eq(assignmentStudents.studentId, user.userId)));
+  const uniqueAssignments = [...new Map([...assignmentRows, ...directRows].map((row) => [row.assignments.id, row.assignments])).values()];
+  const assignmentById = new Map(uniqueAssignments.map((assignment) => [assignment.id, assignment]));
+
+  // Rencana rantai (urutan global + ketuntasan) dari pemuat yang sama
+  // dengan penegakan kunci — progres tidak menghitung ulang aturannya.
+  const plan = await loadStudentAssignmentPlan(user.userId);
+
+  // Topik terpetakan mengikuti urutan rencana agar kartu asesmen tampil
+  // sejalan urutan belajar murid.
+  const mapped = collectMappedTopics(plan.flatMap((item) => {
+    const assignment = assignmentById.get(item.id);
+    return assignment ? [assignment] : [];
+  }));
+
+  const configured = ruasBridgeConfigured();
+  const entries = configured && mapped.length > 0
+    ? await fetchStudentAssessments(user.username, mapped)
+    : null;
+  const available = configured && (mapped.length === 0 || entries !== null);
+  const cards = entries !== null ? planAssessmentCards(mapped, entries) : [];
+
+  // Status attempt efektif per penugasan untuk hitungan LKPD progres —
+  // resolusi yang sama dengan /today (individu + kelompok murid ini,
+  // dipilih pickEffectiveAttempt).
+  const worksheetIds = [...new Set(plan.flatMap((item) => (item.worksheetId === null ? [] : [item.worksheetId])))];
+  const individualAttempts = worksheetIds.length
+    ? await db
+        .select({ worksheetId: worksheetAttempts.worksheetId, status: worksheetAttempts.status, submittedAt: worksheetAttempts.submittedAt })
+        .from(worksheetAttempts)
+        .where(and(eq(worksheetAttempts.studentId, user.userId), inArray(worksheetAttempts.worksheetId, worksheetIds)))
+    : [];
+  const individualByWorksheet = new Map(individualAttempts.map((attempt) => [attempt.worksheetId, attempt]));
+  const groupAttemptByAssignment = new Map<number, AttemptSnapshot>();
+  await Promise.all(plan.filter((item) => assignmentById.get(item.id)?.workMode === "kelompok").map(async (item) => {
+    if (item.worksheetId === null) return;
+    const group = await loadStudentGroup(item.id, user.userId);
+    if (!group) return;
+    const [groupAttempt] = await db
+      .select({ status: worksheetAttempts.status, submittedAt: worksheetAttempts.submittedAt, totalScore: worksheetAttempts.totalScore })
+      .from(worksheetAttempts)
+      .where(and(eq(worksheetAttempts.worksheetId, item.worksheetId), eq(worksheetAttempts.groupId, group.id)))
+      .limit(1);
+    if (groupAttempt) groupAttemptByAssignment.set(item.id, groupAttempt);
+  }));
+
+  const progressInputs: ChainProgressInput[] = plan.map((item) => {
+    const assignment = assignmentById.get(item.id);
+    const individual = item.worksheetId === null ? undefined : individualByWorksheet.get(item.worksheetId);
+    const individualSnapshot = individual ? { status: individual.status, submittedAt: individual.submittedAt, totalScore: null } : undefined;
+    const effective = assignment?.workMode === "kelompok"
+      ? pickEffectiveAttempt(individualSnapshot, groupAttemptByAssignment.get(item.id))
+      : individualSnapshot;
+    return {
+      assignmentId: item.id,
+      chainKey: item.chainKey,
+      subject: item.moduleSubject,
+      topicGroup: item.topicGroup,
+      moduleId: item.moduleId,
+      materialCompleted: item.materialCompleted,
+      worksheetId: item.worksheetId,
+      attemptStatus: item.worksheetId === null ? null : (effective?.status ?? "belum"),
+      ruasTarget: assignment ? resolveEffectiveRuasTarget(assignment) : null,
+    };
+  });
+  const progress = planChainProgress(progressInputs, entries !== null ? cards : null);
+
+  // Ringkasan XP yang sama dengan /today (gagal-aman: null → bagian
+  // progres tampil tanpa angka XP).
+  let xpSummary: XpSummary | null = null;
+  try {
+    const [row] = await db
+      .select({
+        lifetime: sql<number>`coalesce(sum(case when ${xpLedger.points} > 0 then ${xpLedger.points} else 0 end), 0)`,
+        balance: sql<number>`coalesce(sum(${xpLedger.points}), 0)`,
+      })
+      .from(xpLedger)
+      .where(eq(xpLedger.studentId, user.userId));
+    xpSummary = summarizeXp(Number(row?.lifetime ?? 0), Number(row?.balance ?? 0));
+  } catch {
+    // Abaikan — progres tampil tanpa XP.
+  }
+
+  return c.json({ ok: true, data: { available, assessments: cards, progress, xp: xpSummary } });
+});
+
+// Serah-terima ke RUAS (Hub Murid Tahap 2): server meminta URL
+// penukaran sekali pakai ke endpoint internal RUAS untuk murid ini,
+// lalu web mengalihkan peramban ke URL itu — murid mendarat di RUAS
+// sudah masuk, tanpa mengetik sandi. Target topik membawa murid
+// langsung ke halaman asesmennya (keputusan pemilik); tanpa topik,
+// targetnya dashboard RUAS. Kegagalan apa pun menjawab pesan ramah
+// yang sama — murid selalu bisa membuka RUAS seperti biasa.
+muridRoutes.post("/handoff", async (c) => {
+  const user = c.get("user")!;
+  let input: { topic_id?: unknown; subject_id?: unknown } = {};
+  try { input = await c.req.json(); } catch { /* isi kosong/invalid = target dashboard */ }
+  const topicId = typeof input.topic_id === "number" && Number.isInteger(input.topic_id) && input.topic_id > 0 ? input.topic_id : null;
+  const subjectId = typeof input.subject_id === "number" && Number.isInteger(input.subject_id) && input.subject_id > 0 ? input.subject_id : null;
+  const url = await requestRuasHandoff(
+    user.username,
+    topicId !== null ? { type: "topic", topicId, subjectId } : { type: "dashboard" },
+  );
+  if (!url) return c.json({ ok: false, message: "RUAS belum bisa dibuka otomatis — buka RUAS seperti biasa." }, 503);
+  return c.json({ ok: true, data: { url } });
 });
 
 muridRoutes.get("/assignments/:id", (c) => c.json({ ok: true, data: null }));

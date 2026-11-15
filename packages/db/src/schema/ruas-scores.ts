@@ -20,6 +20,12 @@ export const ruasScores = mysqlTable(
     score: decimal("score", { precision: 8, scale: 2 }).notNull(),
     matchStatus: mysqlEnum("match_status", ["cocok", "tidak_ditemukan", "duplikat"]).notNull(),
     note: varchar("note", { length: 255 }),
+    // Asal baris (Hub Murid Tahap 2, migrasi 0020): "csv" = impor CSV
+    // manual guru (termasuk semua baris lama — nilai bawaan kolom),
+    // "tarik" = ditarik otomatis dari RUAS lewat endpoint internal.
+    // pulled_at hanya terisi untuk baris "tarik" (waktu penarikan).
+    source: mysqlEnum("source", ["csv", "tarik"]).notNull().default("csv"),
+    pulledAt: timestamp("pulled_at"),
     importedAt: timestamp("imported_at").notNull().defaultNow(),
   },
   (t) => [

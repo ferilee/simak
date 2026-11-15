@@ -155,9 +155,9 @@ console.log("Case 6: route aktivitas selaras — tuntas baca memakai aturan yang
 console.log("Case 7: Jalur — tidak ada migrasi melampaui 0013 (Persetujuan Berbagi)");
 {
   const files = readdirSync(new URL("../../../../packages/db/migrations/", import.meta.url)).filter((name) => name.endsWith(".sql"));
-  check("tidak ada berkas migrasi 0021+", !files.some((name) => /^002[1-9]/.test(name)), files.join(","));
+  check("tidak ada berkas migrasi 0022+", !files.some((name) => /^002[2-9]/.test(name)), files.join(","));
   const journal = JSON.parse(read("../../../../packages/db/migrations/meta/_journal.json"));
-  check("jurnal 21 entri (idx terakhir 20, 0020 pemetaan-ruas)", journal.entries.length === 21 && journal.entries[journal.entries.length - 1].idx === 20);
+  check("jurnal 22 entri (idx terakhir 21, 0021 jurnal-belajar)", journal.entries.length === 22 && journal.entries[journal.entries.length - 1].idx === 21);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

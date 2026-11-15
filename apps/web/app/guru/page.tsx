@@ -53,6 +53,7 @@ import { markdownToHtml, htmlToMarkdown } from "../../components/markdown";
 import { RichTextEditor, sanitizeBlockHtml } from "../../components/RichTextEditor";
 import { LibraryPanel } from "../../components/LibraryPanel";
 import { KurikulumPanel } from "../../components/KurikulumPanel";
+import { JurnalGuruPanel } from "../../components/JurnalGuruPanel";
 import { PemilihCepat } from "../../components/PemilihCepat";
 import { groupModulesForPicker, orderWorksheetsForPairing } from "../../lib/pemilih-cepat";
 import { filterAssignmentsByClass, planAssignmentCounts } from "../../lib/hitungan-penugasan";
@@ -599,10 +600,10 @@ export default function GuruPage() {
   const [loading, setLoading] = useState(true);
   const [guruStep, setGuruStep] = useState(0);
   // Tampilan bilah kanan cangkang: lima langkah wizard, Perpustakaan
-  // Bersama, atau daftar CP & ATP. Berpindah tampilan tidak mengubah
-  // guruStep, jadi kembali ke langkah menampilkan keadaan terakhir
-  // langkah itu persis.
-  const [guruView, setGuruView] = useState<"langkah" | "perpustakaan" | "kurikulum">("langkah");
+  // Bersama, daftar CP & ATP, atau Jurnal Belajar murid. Berpindah
+  // tampilan tidak mengubah guruStep, jadi kembali ke langkah
+  // menampilkan keadaan terakhir langkah itu persis.
+  const [guruView, setGuruView] = useState<"langkah" | "perpustakaan" | "kurikulum" | "jurnal">("langkah");
   const langkahTampil = guruView === "langkah";
   // Panel perpustakaan dipasang malas pada kunjungan pertama, lalu tidak
   // pernah dilepas (disembunyikan lewat data-active seperti panel langkah)
@@ -611,6 +612,9 @@ export default function GuruPage() {
   // Panel CP & ATP bernasib sama: dipasang malas pada kunjungan pertama
   // dan tidak dilepas, agar pilihan mapel/kelas/semesternya utuh.
   const [kurikulumMounted, setKurikulumMounted] = useState(false);
+  // Panel Jurnal Belajar (Hub Murid Tahap 3) juga dipasang malas:
+  // daftar murid + pilihan bacaan guru utuh saat bolak-balik tampilan.
+  const [jurnalMounted, setJurnalMounted] = useState(false);
   const [previewModule, setPreviewModule] = useState<ModuleSummary | null>(null);
   const [previewBlocks, setPreviewBlocks] = useState<ModuleBlock[] | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -1030,6 +1034,13 @@ export default function GuruPage() {
   function openCurriculumView() {
     setKurikulumMounted(true);
     setGuruView("kurikulum");
+  }
+
+  // Jurnal Belajar dibuka dengan cara yang sama pula (Hub Murid
+  // Tahap 3): panel baca jurnal murid dipasang pada kunjungan pertama.
+  function openJournalView() {
+    setJurnalMounted(true);
+    setGuruView("jurnal");
   }
 
   // Callback panel Perpustakaan Bersama sesudah guru menyalin: catat
@@ -3579,6 +3590,20 @@ export default function GuruPage() {
               <small>Capaian &amp; alur tujuan pembelajaran</small>
             </span>
           </button>
+          <button
+            type="button"
+            className={`wizard-library-link${guruView === "jurnal" ? " is-active" : ""}`}
+            onClick={openJournalView}
+            aria-current={guruView === "jurnal" ? "page" : undefined}
+          >
+            <span className="wizard-library-icon" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>
+            </span>
+            <span>
+              <strong>Jurnal Belajar</strong>
+              <small>Refleksi harian murid (baca saja)</small>
+            </span>
+          </button>
           <p className="wizard-side-note">Mulai dari materi, lanjutkan ke LKPD dan kelas, lalu pantau hasil belajar murid.</p>
         </aside>
 
@@ -3596,6 +3621,12 @@ export default function GuruPage() {
                   <p className="eyebrow">CP &amp; ATP</p>
                   <h2>Daftar CP &amp; ATP</h2>
                   <p>Capaian pembelajaran dan alur tujuan pembelajaran tiap mapel, kelas, dan semester.</p>
+                </>
+              ) : guruView === "jurnal" ? (
+                <>
+                  <p className="eyebrow">Jurnal Belajar</p>
+                  <h2>Jurnal Belajar Murid</h2>
+                  <p>Refleksi harian murid di kelas sasaran penugasan Anda — untuk dibaca dan dibimbing, bukan dinilai.</p>
                 </>
               ) : (
                 <>
@@ -4783,6 +4814,12 @@ export default function GuruPage() {
       {kurikulumMounted ? (
         <section className="wizard-step-panel" data-active={guruView === "kurikulum"} style={styles.panel} aria-label="Daftar CP dan ATP">
           <KurikulumPanel />
+        </section>
+      ) : null}
+
+      {jurnalMounted ? (
+        <section className="wizard-step-panel" data-active={guruView === "jurnal"} style={styles.panel} aria-label="Jurnal Belajar Murid">
+          <JurnalGuruPanel />
         </section>
       ) : null}
           </div>

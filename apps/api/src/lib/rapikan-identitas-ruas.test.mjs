@@ -219,7 +219,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     && upsertSegment.includes("username: identity.username,"));
 
   const journal = JSON.parse(readRepo("packages/db/migrations/meta/_journal.json"));
-  check("journal has exactly 21 entries (no migration in this package)", journal.entries.length === 21,
+  check("journal has exactly 22 entries (no migration in this package)", journal.entries.length === 22,
     `got ${journal.entries.length}`);
 }
 

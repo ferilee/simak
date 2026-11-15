@@ -134,7 +134,7 @@ check("helper kunci membaca fileKey khusus interaktif", modulesRoute.includes('r
 
 // --- Migrasi 0018 -----------------------------------------------------------------------
 const journal = JSON.parse(readFileSync(new URL("../../../../packages/db/migrations/meta/_journal.json", import.meta.url), "utf8"));
-check("jurnal migrasi 21 entri", journal.entries.length === 21, `got ${journal.entries.length}`);
+check("jurnal migrasi 22 entri", journal.entries.length === 22, `got ${journal.entries.length}`);
 check("entri terakhir jurnal adalah 0018_blok_interaktif (idx 18)", journal.entries[18]?.tag === "0018_blok_interaktif" && journal.entries[18]?.idx === 18);
 const migration = readFileSync(new URL("../../../../packages/db/migrations/0018_blok_interaktif.sql", import.meta.url), "utf8");
 check(

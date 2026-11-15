@@ -195,7 +195,7 @@ console.log("Case 11: buildUnansweredMessage — format persis");
 console.log("Case 12: Jalur — jurnal migrasi sesuai rantai paket (terakhir 0013 persetujuan-berbagi)");
 {
   const journal = readFileSync(new URL("../../../../packages/db/migrations/meta/_journal.json", import.meta.url), "utf8");
-  check("jurnal migrasi 21 entri", (journal.match(/"idx":/g) ?? []).length === 21);
+  check("jurnal migrasi 22 entri", (journal.match(/"idx":/g) ?? []).length === 22);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

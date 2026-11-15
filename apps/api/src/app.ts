@@ -17,6 +17,7 @@ import { integrityRoutes } from "./routes/integrity";
 import { libraryRoutes } from "./routes/library";
 import { kurikulumRoutes } from "./routes/kurikulum";
 import { guruRoutes } from "./routes/guru";
+import { guruJurnalRoutes, muridJurnalRoutes } from "./routes/jurnal";
 import { env } from "./lib/env";
 import { loadSession } from "./middleware/auth";
 
@@ -54,6 +55,11 @@ export function createApp() {
   v1.route("/library", libraryRoutes);
   v1.route("/kurikulum", kurikulumRoutes);
   v1.route("/guru", guruRoutes);
+  // Jurnal Belajar (Hub Murid Tahap 3) berbagi awalan dengan router
+  // pemilik peran yang sama: sisi murid /murid/jurnal* (tulis milik
+  // sendiri) dan sisi guru /guru/jurnal* (hanya-baca).
+  v1.route("/murid", muridJurnalRoutes);
+  v1.route("/guru", guruJurnalRoutes);
 
   app.route("/api/v1", v1);
 

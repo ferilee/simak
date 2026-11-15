@@ -4776,3 +4776,125 @@ button.wizard-library-link {
 .material-archive .content-list {
   padding: 0 12px 12px;
 }
+
+/* Panel "Jurnal Belajar" guru (Hub Murid Tahap 3): daftar kelas →
+   murid beserta jumlah entri + entri terakhir, lalu entri per murid.
+   Murni baca — tidak ada kontrol penilaian di panel ini. */
+.jurnal-guru-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.jurnal-guru-note {
+  margin: 0;
+  font-size: 14px;
+  opacity: 0.8;
+  line-height: 1.55;
+}
+
+.jurnal-guru-loading {
+  margin: 0;
+  font-size: 14px;
+  opacity: 0.75;
+}
+
+.jurnal-guru-error {
+  margin: 0;
+  font-size: 14px;
+  color: #b3261e;
+}
+
+.jurnal-guru-class {
+  display: grid;
+  gap: 10px;
+}
+
+.jurnal-guru-class-title {
+  margin: 0;
+  font-size: 16px;
+}
+
+.jurnal-guru-students {
+  display: grid;
+  gap: 8px;
+}
+
+.jurnal-guru-student {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  border: 1px solid var(--wizard-accent-ring);
+  border-radius: 12px;
+  padding: 10px 14px;
+  background: #fff;
+  color: var(--color-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.jurnal-guru-student:hover {
+  background: var(--wizard-accent-soft);
+}
+
+.jurnal-guru-student.is-active {
+  border-color: var(--wizard-accent);
+  background: var(--wizard-accent-soft);
+}
+
+.jurnal-guru-student-name {
+  font-weight: 650;
+}
+
+.jurnal-guru-student-meta {
+  font-size: 13px;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+.jurnal-guru-entries {
+  display: grid;
+  gap: 10px;
+}
+
+.jurnal-guru-entry {
+  border: 1px solid var(--wizard-accent-ring);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: #fff;
+  display: grid;
+  gap: 6px;
+}
+
+.jurnal-guru-entry-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.jurnal-guru-entry-prompt {
+  color: var(--wizard-accent);
+  font-weight: 600;
+}
+
+.jurnal-guru-entry-body {
+  margin: 0;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.jurnal-guru-entry-meta {
+  margin: 0;
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+.jurnal-guru-back {
+  justify-self: start;
+}

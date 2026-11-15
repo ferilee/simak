@@ -148,6 +148,13 @@
       "when": 1794733895940,
       "tag": "0020_pemetaan_ruas",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "5",
+      "when": 1794738062780,
+      "tag": "0021_jurnal_belajar",
+      "breakpoints": true
     }
   ]
 }

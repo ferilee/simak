@@ -11,4 +11,5 @@ export * from "./activity";
 export * from "./xp";
 export * from "./integrity";
 export * from "./ruas-scores";
+export * from "./journal";
 export * from "./relations";

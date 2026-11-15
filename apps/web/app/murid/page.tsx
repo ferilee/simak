@@ -12,6 +12,7 @@ import { allStepsDone, planAssignmentSteps, planReminderLevel, worksheetStatusFr
 import { circleAriaLabel, initialPagerIndex, planCircle } from "../../lib/navigasi-tugas";
 import { ARCHIVE_GROUP_NAME, MATERIAL_FILTERS, guidedGroupName, planGuidedMaterials, shouldShowHero, type GuidedModule, type GuidedMaterialsPlan, type MaterialFilter } from "../../lib/materi-terpandu";
 import { assessmentStatusLabel, type AssessmentCardData, type HubData } from "../../lib/hub-murid";
+import { journalDateLabel, type JournalEntry, type JournalListData } from "../../lib/jurnal";
 import { submissionStatusLabel } from "../lib/labels";
 import { Toast } from "../../components/Toast";
 import { Modal } from "../../components/Modal";
@@ -118,6 +119,14 @@ type HubResponse = {
   data: HubData;
 };
 
+// Ringkasan jurnal beranda (Hub Murid Tahap 3): jumlah entri + entri
+// terakhir murid dari GET /murid/jurnal?limit=1 — cukup untuk kartu
+// ajakan menulis; isi lengkapnya di halaman /murid/jurnal.
+type JournalSummaryResponse = {
+  ok: true;
+  data: JournalListData;
+};
+
 export default function MuridPage() {
   const router = useRouter();
   const [user, setUser] = useState<MeResponse["user"] | null>(null);
@@ -141,6 +150,9 @@ export default function MuridPage() {
   // aktif. Keduanya tidak pernah menghalangi beranda.
   const [hub, setHub] = useState<HubData | null>(null);
   const [handoffBusy, setHandoffBusy] = useState<string | null>(null);
+  // Jurnal Tahap 3: null = belum termuat/gagal muat (bagian tampil
+  // sebagai ajakan umum); terisi = jumlah entri + entri terakhir.
+  const [journal, setJournal] = useState<{ total: number; latest: JournalEntry | null } | null>(null);
 
   const studentSteps = [
     { title: "Kelas saya", description: "Gabung dan lihat kelas aktif" },
@@ -315,6 +327,11 @@ export default function MuridPage() {
       void apiRequest<HubResponse>("/murid/asesmen")
         .then((response) => setHub(response.data))
         .catch(() => setHub(null));
+      // Ringkasan jurnal juga menyusul dan gagal-lembut: kegagalannya
+      // hanya membuat bagian Jurnal tampil sebagai ajakan umum.
+      void apiRequest<JournalSummaryResponse>("/murid/jurnal?limit=1")
+        .then((response) => setJournal({ total: response.data.total, latest: response.data.entries[0] ?? null }))
+        .catch(() => setJournal(null));
       // Sambutan pertama: server yang memutuskan (penanda welcomed_at),
       // jadi modal ini tampil tepat sekali untuk akun ini di perangkat
       // mana pun.
@@ -730,6 +747,32 @@ export default function MuridPage() {
                       </article>
                     ))}
                   </div>
+                )}
+              </section>
+
+              <section className="dashboard-section wizard-inner-section">
+                <div className="dashboard-section-heading">
+                  <div>
+                    <h3>Jurnal belajar</h3>
+                    <span>{journal ? `${journal.total} entri refleksi` : "Refleksi harianmu"}</span>
+                  </div>
+                  <Link href="/murid/jurnal" className="button button-secondary">
+                    Buka jurnal
+                  </Link>
+                </div>
+                {journal && journal.latest ? (
+                  <article className="content-card">
+                    <span className="content-label">Terakhir menulis · {journalDateLabel(journal.latest.entry_date)}</span>
+                    <span className="content-muted">
+                      {journal.latest.body.length > 140 ? `${journal.latest.body.slice(0, 140)}…` : journal.latest.body}
+                    </span>
+                    <span className="content-muted">Lanjutkan refleksimu hari ini — dua kalimat pun cukup.</span>
+                  </article>
+                ) : (
+                  <p className="empty-state">
+                    Tulis refleksi belajarmu: apa yang berubah dari pemahamanmu, bagian yang masih membingungkan,
+                    dan strategi yang berhasil. Jurnal tidak dinilai — gurumu membacanya untuk membantumu.
+                  </p>
                 )}
               </section>
             </div>

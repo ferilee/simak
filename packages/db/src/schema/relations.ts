@@ -11,6 +11,7 @@ import { activityLogs, exitTickets } from "./activity";
 import { xpLedger } from "./xp";
 import { integrityEvents } from "./integrity";
 import { ruasScores } from "./ruas-scores";
+import { journalEntries } from "./journal";
 
 export const usersRelations = relations(users, ({ many }) => ({
   taughtClasses: many(classes),
@@ -22,6 +23,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   xpLedger: many(xpLedger),
   integrityEvents: many(integrityEvents),
   ruasScores: many(ruasScores),
+  journalEntries: many(journalEntries),
 }));
 
 export const classesRelations = relations(classes, ({ one, many }) => ({
@@ -147,4 +149,9 @@ export const ruasScoresRelations = relations(ruasScores, ({ one }) => ({
   assignment: one(assignments, { fields: [ruasScores.assignmentId], references: [assignments.id] }),
   teacher: one(users, { fields: [ruasScores.teacherId], references: [users.id] }),
   student: one(users, { fields: [ruasScores.studentId], references: [users.id] }),
+}));
+
+export const journalEntriesRelations = relations(journalEntries, ({ one }) => ({
+  student: one(users, { fields: [journalEntries.studentId], references: [users.id] }),
+  linkedModule: one(modules, { fields: [journalEntries.linkedModuleId], references: [modules.id] }),
 }));

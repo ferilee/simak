@@ -18,11 +18,19 @@ import { libraryRoutes } from "./routes/library";
 import { kurikulumRoutes } from "./routes/kurikulum";
 import { guruRoutes } from "./routes/guru";
 import { guruJurnalRoutes, muridJurnalRoutes } from "./routes/jurnal";
+import { masukRuasRoutes, ruasInternalRoutes } from "./routes/serah-terima";
 import { env } from "./lib/env";
 import { loadSession } from "./middleware/auth";
 
 export function createApp() {
   const app = new Hono();
+
+  // Rute penukaran serah-terima (Hub Murid Tahap 4) dipasang SEBELUM
+  // logger akses: path-nya memuat token sekali pakai, dan token tidak
+  // boleh pernah tertulis di log (rancangan Bagian 6). Penangan rute
+  // yang cocok menjawab tanpa memanggil next(), jadi rantai berhenti
+  // di sini untuk path itu.
+  app.route("/", masukRuasRoutes);
 
   app.use("*", logger());
   app.use(
@@ -62,6 +70,10 @@ export function createApp() {
   v1.route("/guru", guruJurnalRoutes);
 
   app.route("/api/v1", v1);
+
+  // Endpoint internal untuk RUAS (Hub Murid Tahap 4): penerbitan token
+  // serah-terima masuk, dijaga rahasia bersama — bukan bagian dari v1.
+  app.route("/api/internal/ruas", ruasInternalRoutes);
 
   return app;
 }

@@ -155,6 +155,13 @@
       "when": 1794738062780,
       "tag": "0021_jurnal_belajar",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "5",
+      "when": 1794740816711,
+      "tag": "0022_token_serah_terima",
+      "breakpoints": true
     }
   ]
 }

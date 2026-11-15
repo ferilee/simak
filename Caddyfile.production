@@ -7,6 +7,12 @@
 		reverse_proxy api:3001
 	}
 
+	# Penukaran serah-terima RUAS -> SIMAK (Hub Murid Tahap 4): path
+	# bertoken sekali pakai yang dijawab API, bukan web.
+	handle /masuk-ruas/* {
+		reverse_proxy api:3001
+	}
+
 	handle {
 		reverse_proxy web:3000
 	}

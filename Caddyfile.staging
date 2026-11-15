@@ -5,6 +5,11 @@
 		reverse_proxy api:3001
 	}
 
+	# Penukaran serah-terima RUAS -> SIMAK (Hub Murid Tahap 4).
+	handle /masuk-ruas/* {
+		reverse_proxy api:3001
+	}
+
 	handle {
 		reverse_proxy web:3000
 	}
@@ -15,6 +20,11 @@
 	encode gzip
 
 	handle /api/* {
+		reverse_proxy api:3001
+	}
+
+	# Penukaran serah-terima RUAS -> SIMAK (Hub Murid Tahap 4).
+	handle /masuk-ruas/* {
 		reverse_proxy api:3001
 	}
 

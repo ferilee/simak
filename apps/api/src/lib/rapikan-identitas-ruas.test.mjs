@@ -174,7 +174,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 }
 
 // ---------------------------------------------------------------------------
-// Case 5 — wiring locks: both auth paths construct identities ONLY via
+// Case 5 — wiring locks: all identity paths construct identities ONLY via
 // normalizeIdentity (which trims), and upsertSimakProfile asks
 // planProfileSync over a candidate query that includes TRIM comparisons,
 // then writes the identity's values on sync (that write is the heal).
@@ -192,8 +192,8 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     normalizeSegment.includes("if (!username || !ruasUserId) return null;"));
   check("incident comment recorded at the normalization point",
     normalizeSegment.includes("profil hantu") && normalizeSegment.includes("berawalan spasi"));
-  check("both auth paths go through normalizeIdentity (endpoint + shared-db)",
-    (ruasAuth.match(/return normalizeIdentity\(\{/g) ?? []).length === 2);
+  check("all identity paths go through normalizeIdentity (endpoint + shared-db + pencarian serah-terima)",
+    (ruasAuth.match(/return normalizeIdentity\(\{/g) ?? []).length === 3);
 
   const profile = read("../services/user-profile.ts");
   const planSegment = profile.slice(
@@ -219,7 +219,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     && upsertSegment.includes("username: identity.username,"));
 
   const journal = JSON.parse(readRepo("packages/db/migrations/meta/_journal.json"));
-  check("journal has exactly 22 entries (no migration in this package)", journal.entries.length === 22,
+  check("journal has exactly 23 entries (no migration in this package)", journal.entries.length === 23,
     `got ${journal.entries.length}`);
 }
 

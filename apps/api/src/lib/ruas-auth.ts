@@ -189,3 +189,52 @@ export async function authenticateAgainstRuas(username: string, password: string
   return authenticateWithEndpoint(username, password);
 }
 
+type RuasIdentityRow = RowDataPacket & {
+  id: number;
+  username: string;
+  display_name: string;
+  role: RuasRole;
+  active: number;
+};
+
+/**
+ * Cari identitas RUAS dari username SAJA — tanpa kata sandi — untuk
+ * serah-terima masuk RUAS -> SIMAK (Hub Murid Tahap 4): RUAS meminta
+ * token ke endpoint internal SIMAK atas nama penggunanya yang sedang
+ * masuk di RUAS, dan SIMAK memastikan username itu benar ada, aktif,
+ * dan perannya terpetakan (participant -> murid, editor -> guru;
+ * admin RUAS tidak terpetakan) sebelum menerbitkan token.
+ *
+ * Jalurnya adalah jalur basis data bersama yang sama dengan login:
+ * baca baris users RUAS, tanpa pernah menyentuh hash kata sandi. Mode
+ * "internal-endpoint" tidak punya pencarian tanpa kredensial pada
+ * jalur yang ada, jadi mode itu melempar RuasAuthUnavailable —
+ * pemanggil menjawab 503 seperti pada login, bukan mengarang identitas.
+ * Username asing / tidak aktif / peran tak terpetakan -> null.
+ */
+export async function findRuasIdentityByUsername(username: string): Promise<RuasIdentity | null> {
+  if (env.RUAS_AUTH_MODE !== "shared-db") throw new RuasAuthUnavailable();
+
+  const pool = getRuasPool();
+  let rows: RuasIdentityRow[];
+  try {
+    const [result] = await pool.execute<RuasIdentityRow[]>(
+      "SELECT id, username, display_name, role, active FROM users WHERE username = ? LIMIT 1",
+      [username.trim()],
+    );
+    rows = result;
+  } catch {
+    throw new RuasAuthUnavailable();
+  }
+
+  const user = rows[0];
+  if (!user || !user.active) return null;
+
+  return normalizeIdentity({
+    username: user.username,
+    ruasUserId: user.id,
+    name: user.display_name,
+    role: user.role,
+  });
+}
+

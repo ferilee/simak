@@ -15,7 +15,7 @@
 //    modul penugasan + modul terbit yang terlihat
 //    (materialSignalModuleIds) — modul yang hanya tertaut penugasan
 //    ditutup pun penanda tuntasnya benar.
-//  - Tanpa migrasi: jurnal kini 22 entri, terakhir 0021 (paket jurnal belajar).
+//  - Tanpa migrasi: jurnal kini 23 entri, terakhir 0022 (paket serah-terima masuk).
 import { readFileSync } from "node:fs";
 
 let passed = 0;
@@ -73,8 +73,8 @@ console.log("Kasus D: tanpa migrasi");
   const journal = JSON.parse(
     readFileSync(new URL("../../../../packages/db/migrations/meta/_journal.json", import.meta.url), "utf8"),
   );
-  check("jurnal migrasi tetap 22 entri", journal.entries.length === 22, `got ${journal.entries.length}`);
-  check("entri terakhir kini 0021_jurnal_belajar", journal.entries[journal.entries.length - 1].tag === "0021_jurnal_belajar");
+  check("jurnal migrasi tetap 23 entri", journal.entries.length === 23, `got ${journal.entries.length}`);
+  check("entri terakhir kini 0022_token_serah_terima", journal.entries[journal.entries.length - 1].tag === "0022_token_serah_terima");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

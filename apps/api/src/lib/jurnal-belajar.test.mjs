@@ -21,7 +21,7 @@
 //    keterlihatan meniru Pantau Hasil (assignmentClasses +
 //    assignmentStudents + student-class) dan menjawab 403 di luar
 //    jangkauan. Jurnal tidak menyentuh XP (tidak ada awardXp/xpLedger).
-//  - Migrasi: jurnal 22 entri, terakhir 0021_jurnal_belajar di idx 21;
+//  - Migrasi: jurnal 23 entri; 0021_jurnal_belajar tetap di idx 21;
 //    SQL 0021 membuat journal_entries (FK student→users, linked module→
 //    modules, indeks student+date); skema Drizzle memuat kolom sama.
 import { readFileSync } from "node:fs";
@@ -221,9 +221,9 @@ check("jurnal tidak menyentuh XP (tanpa awardXp / xpLedger di lib + rute jurnal)
 const journal = JSON.parse(
   readFileSync(new URL("../../../../packages/db/migrations/meta/_journal.json", import.meta.url), "utf8"),
 );
-check("jurnal migrasi 22 entri", journal.entries.length === 22, `got ${journal.entries.length}`);
-const lastEntry = journal.entries[journal.entries.length - 1];
-check("entri terakhir 0021_jurnal_belajar di idx 21", lastEntry.tag === "0021_jurnal_belajar" && lastEntry.idx === 21, JSON.stringify(lastEntry));
+check("jurnal migrasi 23 entri", journal.entries.length === 23, `got ${journal.entries.length}`);
+const entry0021 = journal.entries[21];
+check("entri 0021_jurnal_belajar tetap di idx 21", entry0021.tag === "0021_jurnal_belajar" && entry0021.idx === 21, JSON.stringify(entry0021));
 
 const migrationSql = readFileSync(new URL("../../../../packages/db/migrations/0021_jurnal_belajar.sql", import.meta.url), "utf8");
 check("SQL 0021 membuat tabel journal_entries", migrationSql.includes("CREATE TABLE `journal_entries`"));

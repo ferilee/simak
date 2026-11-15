@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { apiRequest } from "../../lib/api";
 import { decideBaruMarkers, readNilaiSayaBaseline } from "../../lib/nilai-saya";
 import { quoteOfTheDay, salamForHour } from "../../lib/sapaan";
-import { xpProgressLabel, type XpSummary } from "../../lib/xp";
+import { XP_EARN_WAYS, XP_INFO_NOTE, XP_INFO_TITLE, xpProgressLabel, type XpSummary } from "../../lib/xp";
 import { avatarImagePath, priceLabel, stateLabel, type AvatarCatalogItem, type AvatarsResponse } from "../../lib/avatar";
 import { allStepsDone, planAssignmentSteps, planReminderLevel, worksheetStatusFromProgress } from "../../lib/pengingat";
 import { circleAriaLabel, initialPagerIndex, planCircle } from "../../lib/navigasi-tugas";
@@ -91,6 +91,7 @@ export default function MuridPage() {
   const [user, setUser] = useState<MeResponse["user"] | null>(null);
   const [data, setData] = useState<TodayResponse["data"]>({ classes: [], modules: [], assignments: [], has_viewed_material: false, needs_welcome: false, xp: null, avatar_slug: null });
   const [welcomeOpen, setWelcomeOpen] = useState(false);
+  const [xpInfoOpen, setXpInfoOpen] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [avatars, setAvatars] = useState<AvatarsResponse["data"] | null>(null);
   const [avatarError, setAvatarError] = useState("");
@@ -398,6 +399,39 @@ export default function MuridPage() {
           </div>
           {data.xp ? (
             <section className="xp-card" aria-label="Poin XP saya">
+              <button
+                type="button"
+                className="xp-info-button"
+                aria-label="Info cara mendapat XP"
+                aria-expanded={xpInfoOpen}
+                onClick={() => setXpInfoOpen((open) => !open)}
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+                  <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="2" />
+                  <path d="M12 11v5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  <circle cx="12" cy="8" r="1.4" fill="currentColor" />
+                </svg>
+              </button>
+              {xpInfoOpen ? (
+                <>
+                  <div className="xp-info-backdrop" onClick={() => setXpInfoOpen(false)} aria-hidden="true" />
+                  <div className="xp-info-popover" role="dialog" aria-label={XP_INFO_TITLE}>
+                    <div className="xp-info-popover-head">
+                      <strong>{XP_INFO_TITLE}</strong>
+                      <button type="button" className="xp-info-close" aria-label="Tutup info XP" onClick={() => setXpInfoOpen(false)}>×</button>
+                    </div>
+                    <ul className="xp-info-list">
+                      {XP_EARN_WAYS.map((way) => (
+                        <li key={way.event}>
+                          <span>{way.label}</span>
+                          <strong>+{way.points} XP</strong>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="xp-info-note">{XP_INFO_NOTE}</p>
+                  </div>
+                </>
+              ) : null}
               <div className="xp-card-top">
                 {data.avatar_slug ? (
                   <img

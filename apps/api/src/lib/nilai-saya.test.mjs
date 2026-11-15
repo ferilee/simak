@@ -163,6 +163,27 @@ console.log("Case 7: urutan terbaru lebih dulu");
 }
 
 // ---------------------------------------------------------------------------
+console.log("Case 7b: field aditif v1.0.64 — judul modul + komentar guru");
+{
+  const withExtras = row({
+    moduleTitle: "Bunga Tunggal dan Majemuk (ATP 2.1)",
+    chosen: { attempt: attempt({ teacherComment: "Kerja bagus, lanjutkan!" }), isGroup: false },
+  });
+  check("module_title terbawa dari masukan", withExtras?.module_title === "Bunga Tunggal dan Majemuk (ATP 2.1)");
+  check("teacher_comment terbawa dari attempt efektif", withExtras?.teacher_comment === "Kerja bagus, lanjutkan!");
+
+  const blankComment = row({
+    chosen: { attempt: attempt({ teacherComment: "   " }), isGroup: false },
+  });
+  check("komentar hanya spasi → null", blankComment?.teacher_comment === null);
+
+  const noExtras = row();
+  check("tanpa judul modul → module_title null/undefined (aditif, baris tetap tampil)", noExtras !== null && (noExtras.module_title ?? null) === null);
+  check("tanpa komentar → teacher_comment null", noExtras?.teacher_comment === null);
+  check("field lama tidak berubah oleh field aditif", noExtras?.score === 80 && noExtras?.score_adjusted === false);
+}
+
+// ---------------------------------------------------------------------------
 console.log("Case 8: kabel route — kepemilikan data + kelayakan sasaran");
 {
   const source = read("../routes/murid.ts");
@@ -178,6 +199,8 @@ console.log("Case 8: kabel route — kepemilikan data + kelayakan sasaran");
   check("attempt kelompok terlingkup kelompok murid itu", handler.includes("eq(worksheetAttempts.groupId, group.id)"));
   check("penyesuaian nilai terlingkup murid yang meminta", handler.includes("eq(worksheetAttemptMemberScores.studentId, user.userId)"));
   check("pemilihan attempt memakai helper bersama detail", handler.includes("chooseGradeAttempt") && handler.includes("buildStudentGradeRow"));
+  check("attempt memuat komentar guru (aditif v1.0.64)", handler.includes("teacherComment: worksheetAttempts.teacherComment"));
+  check("judul modul dimuat + diteruskan ke pembangun baris (aditif v1.0.64)", handler.includes("titleByModuleId") && handler.includes("moduleTitle,"));
   check("hasil diurutkan terbaru lebih dulu", handler.includes("sortGradeRows"));
   check("bentuk respons { ok, data: { grades } }", handler.includes("data: { grades:"));
 }

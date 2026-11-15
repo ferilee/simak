@@ -69,3 +69,44 @@ export function writeNilaiSayaBaseline(value: string): void {
     // Abaikan — tanpa penyimpanan, kunjungan berikutnya dianggap pertama.
   }
 }
+
+// ---------------------------------------------------------------------------
+// Rombak tampilan Nilai Saya (v1.0.64): helper murni untuk kepala ringkasan
+// dan perona angka nilai. Murni kosmetik — baris mana yang tampil tetap
+// diputuskan server (lib/nilai-saya di API); di sini hanya warna dan
+// rata-rata dari baris yang SUDAH diterima halaman.
+
+/** Nada warna angka nilai: ≥80 hijau, 60–79 kuning, <60 merah lembut. */
+export type GradeScoreTone = "hijau" | "kuning" | "merah";
+
+export function gradeScoreTone(score: number): GradeScoreTone {
+  if (score >= 80) return "hijau";
+  if (score >= 60) return "kuning";
+  return "merah";
+}
+
+export type GradeSummary = {
+  /** Banyaknya nilai terbit yang terhitung (baris berskor akhir). */
+  count: number;
+  /** Rata-rata nilai akhir, dibulatkan ke 1 desimal; null bila kosong. */
+  average: number | null;
+};
+
+/**
+ * Ringkasan kepala halaman Nilai Saya dari baris yang sudah diterima.
+ * Nilai akhir per kartu adalah `score` baris itu sendiri: untuk kartu
+ * kelompok bersesuaian guru, server sudah mengisi `score` dengan nilai
+ * penyesuaian murid ini; selain itu `score` adalah nilai LKPD / nilai
+ * kelompok kartu itu. Baris tanpa skor (tidak pernah diterbitkan server
+ * untuk halaman ini) dilewati dari hitungan maupun rata-rata.
+ */
+export function summarizeGrades(
+  rows: readonly { score: number | null }[],
+): GradeSummary {
+  const scores = rows
+    .map((row) => row.score)
+    .filter((score): score is number => typeof score === "number" && Number.isFinite(score));
+  if (scores.length === 0) return { count: 0, average: null };
+  const mean = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+  return { count: scores.length, average: Math.round(mean * 10) / 10 };
+}

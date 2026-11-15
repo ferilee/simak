@@ -19,6 +19,9 @@ export type GradeAttemptCandidate = {
   submittedAt: Date | null;
   totalScore: string | null;
   updatedAt: Date;
+  /** Komentar guru pada attempt (kolom teacher_comment); opsional agar
+   * pemanggil lama yang tidak memuatnya tetap sah. */
+  teacherComment?: string | null;
 };
 
 export type MemberScoreOverrideRow = {
@@ -37,6 +40,14 @@ export type StudentGradeRow = {
   group_score: number | null;
   score_adjusted: boolean;
   graded_at: Date;
+  /** Aditif (v1.0.64): judul modul sumber nilai (modul penugasan, lalu
+   * modul induk LKPD — preseden yang sama dengan subject_name) agar
+   * halaman bisa menurunkan label ATP dari judul modul. */
+  module_title: string | null;
+  /** Aditif (v1.0.64): komentar guru pada attempt efektif, dinormalkan
+   * (kosong/hanya spasi → null). Komentar yang sama yang tampil di
+   * halaman LKPD sesudah attempt dinilai. */
+  teacher_comment: string | null;
 };
 
 /**
@@ -95,6 +106,7 @@ export function buildStudentGradeRow(input: {
   assignmentTitle: string;
   worksheetTitle: string;
   subjectName: string | null;
+  moduleTitle: string | null;
   workMode: "individu" | "kelompok";
   groupName: string | null;
   chosen: { attempt: GradeAttemptCandidate; isGroup: boolean } | null;
@@ -103,12 +115,15 @@ export function buildStudentGradeRow(input: {
   const chosen = input.chosen;
   if (!chosen || !isGradedAttempt(chosen.attempt)) return null;
   const attempt = chosen.attempt;
+  const rawComment = attempt.teacherComment ?? null;
   const base = {
     assignment_id: input.assignmentId,
     assignment_title: input.assignmentTitle,
     worksheet_title: input.worksheetTitle,
     subject_name: input.subjectName,
     work_mode: input.workMode,
+    module_title: input.moduleTitle,
+    teacher_comment: rawComment !== null && rawComment.trim() !== "" ? rawComment : null,
   };
   if (input.workMode === "kelompok" && chosen.isGroup) {
     const groupScore = Number(attempt.totalScore);

@@ -3981,6 +3981,7 @@ button.wizard-library-link {
 
 /* Kartu poin XP murid (gamifikasi): total, level, bilah kemajuan. */
 .xp-card {
+  position: relative;
   margin: 16px 0 4px;
   padding: 14px 16px;
   display: grid;
@@ -3988,6 +3989,98 @@ button.wizard-library-link {
   border: 1px solid #f3d27a;
   border-radius: 12px;
   background: #fffaf0;
+}
+
+/* Tombol info XP di kepala kartu XP: membuka panel popover "Cara
+   Mendapat XP". Berbasis ketuk/klik (bukan hover) supaya berfungsi di
+   HP; panel tertutup lewat tombol × atau ketuk latar di luar panel. */
+.xp-info-button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #f3d27a;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #9a6200;
+  cursor: pointer;
+  padding: 0;
+}
+.xp-info-button:hover {
+  background: #fff3d6;
+}
+.xp-info-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: transparent;
+}
+.xp-info-popover {
+  position: absolute;
+  top: 42px;
+  right: 8px;
+  z-index: 41;
+  width: min(280px, calc(100vw - 40px));
+  background: #ffffff;
+  border: 1px solid #f3d27a;
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(16, 24, 40, 0.18);
+  padding: 14px 16px;
+  display: grid;
+  gap: 10px;
+  text-align: left;
+}
+.xp-info-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #7a4d00;
+  font-size: 15px;
+}
+.xp-info-close {
+  border: none;
+  background: transparent;
+  color: #9a6200;
+  font-size: 20px;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+}
+.xp-info-close:hover {
+  background: #fff3d6;
+}
+.xp-info-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.xp-info-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  color: #344054;
+}
+.xp-info-list li strong {
+  color: #067647;
+  white-space: nowrap;
+}
+.xp-info-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #7a5a17;
 }
 .xp-card-head {
   display: flex;

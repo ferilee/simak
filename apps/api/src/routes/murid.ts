@@ -685,9 +685,10 @@ muridRoutes.get("/nilai", async (c) => {
     ...worksheetRows.flatMap((row) => (row.moduleId === null ? [] : [row.moduleId])),
   ])];
   const moduleRows = moduleIds.length
-    ? await db.select({ id: modules.id, subject: modules.subject }).from(modules).where(inArray(modules.id, moduleIds))
+    ? await db.select({ id: modules.id, subject: modules.subject, title: modules.title }).from(modules).where(inArray(modules.id, moduleIds))
     : [];
   const subjectByModuleId = new Map(moduleRows.map((row) => [row.id, row.subject]));
+  const titleByModuleId = new Map(moduleRows.map((row) => [row.id, row.title]));
 
   const attemptFields = {
     id: worksheetAttempts.id,
@@ -695,6 +696,7 @@ muridRoutes.get("/nilai", async (c) => {
     submittedAt: worksheetAttempts.submittedAt,
     totalScore: worksheetAttempts.totalScore,
     updatedAt: worksheetAttempts.updatedAt,
+    teacherComment: worksheetAttempts.teacherComment,
   };
   const rows = await Promise.all(uniqueAssignments.map(async (assignment) => {
     const worksheetId = assignment.worksheetId!;
@@ -733,11 +735,17 @@ muridRoutes.get("/nilai", async (c) => {
     const subjectName = (assignment.moduleId !== null ? subjectByModuleId.get(assignment.moduleId) : undefined)
       ?? subjectByModuleId.get(worksheetById.get(worksheetId)?.moduleId ?? -1)
       ?? null;
+    // Judul modul mengikuti preseden mapel yang sama (modul penugasan
+    // lebih dulu, lalu modul induk LKPD) — aditif untuk label ATP.
+    const moduleTitle = (assignment.moduleId !== null ? titleByModuleId.get(assignment.moduleId) : undefined)
+      ?? titleByModuleId.get(worksheetById.get(worksheetId)?.moduleId ?? -1)
+      ?? null;
     return buildStudentGradeRow({
       assignmentId: assignment.id,
       assignmentTitle: assignment.title,
       worksheetTitle: worksheetById.get(worksheetId)?.title ?? "",
       subjectName,
+      moduleTitle,
       workMode: assignment.workMode,
       groupName: group?.name ?? null,
       chosen,

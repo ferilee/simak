@@ -3,7 +3,7 @@
 // static wiring of the page and the murid home dot.
 // Run with bun from apps/web:  bun lib/nilai-saya.test.mjs
 import { readFileSync } from "node:fs";
-import { decideBaruMarkers, NILAI_SAYA_LAST_VISIT_KEY } from "./nilai-saya.ts";
+import { decideBaruMarkers, gradeScoreTone, NILAI_SAYA_LAST_VISIT_KEY, summarizeGrades } from "./nilai-saya.ts";
 
 let passed = 0;
 let failed = 0;
@@ -77,6 +77,37 @@ console.log("Case 4: kabel halaman Nilai Saya");
   check("chip Baru dirender dari keputusan helper", page.includes("baruIds.has(row.assignment_id)") && page.includes(">Baru<"));
   check("baseline dibaca lalu dimajukan sesudah keputusan", page.includes("readNilaiSayaBaseline()") && page.includes("writeNilaiSayaBaseline(decision.nextBaseline)") && page.indexOf("decideBaruMarkers(") < page.indexOf("writeNilaiSayaBaseline(decision.nextBaseline)"));
   check("belum masuk → ke halaman login", page.includes('router.replace("/login")'));
+}
+
+// ---------------------------------------------------------------------------
+console.log("Case 4b: rombak tampilan v1.0.64 — perona rentang + ringkasan + kabel halaman");
+{
+  check("rentang: 100 dan 80 hijau", gradeScoreTone(100) === "hijau" && gradeScoreTone(80) === "hijau");
+  check("rentang: 79 dan 60 kuning", gradeScoreTone(79) === "kuning" && gradeScoreTone(60) === "kuning");
+  check("rentang: 59 dan 0 merah", gradeScoreTone(59) === "merah" && gradeScoreTone(0) === "merah");
+
+  const summary = summarizeGrades([{ score: 80 }, { score: 60 }, { score: 100 }]);
+  check("ringkasan: hitungan = baris berskor", summary.count === 3);
+  check("ringkasan: rata-rata nilai akhir", summary.average === 80);
+  const decimal = summarizeGrades([{ score: 85 }, { score: 82 }]);
+  check("ringkasan: rata-rata dibulatkan 1 desimal", decimal.average === 83.5);
+  const withNull = summarizeGrades([{ score: 90 }, { score: null }]);
+  check("ringkasan: baris tanpa skor dilewati", withNull.count === 1 && withNull.average === 90);
+  const empty = summarizeGrades([]);
+  check("ringkasan: kosong → count 0 + rata-rata null", empty.count === 0 && empty.average === null);
+
+  const page = read("../app/murid/nilai/page.tsx");
+  check("kepala hero memakai avatar terpasang (gagal-aman dari /murid/avatars)",
+    page.includes('"/murid/avatars"') && page.includes("avatarImagePath(avatarSlug)") && page.includes("equipped_slug"));
+  check("ringkasan hero dari helper murni", page.includes("summarizeGrades(rows)") && page.includes("summary.count") && page.includes("summary.average"));
+  check("angka nilai akhir besar berona menurut rentang",
+    page.includes("gradeScoreTone(row.score)") && page.includes("scoreToneStyles[tone]") && page.includes("Nilai akhir"));
+  check("label ATP diturunkan dari judul modul via parseAtpCode (dihilangkan bila tak ada)",
+    page.includes("parseAtpCode(row.module_title)") && page.includes("ATP {atpCode}"));
+  check("komentar guru tampil sebagai gelembung kutipan",
+    page.includes("row.teacher_comment") && page.includes("Komentar guru") && page.includes("commentBubble"));
+  check("keadaan kosong bergaya pemberitahuan: ilustrasi besar + tombol kembali ke beranda",
+    page.includes("NilaiIllustration") && page.includes("emptyPrimaryLink") && page.includes("Kembali ke beranda"));
 }
 
 // ---------------------------------------------------------------------------

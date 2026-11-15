@@ -118,11 +118,12 @@ console.log("Case 6: wiring di routes/murid.ts");
   );
   check(
     "tanpa parameter: kandidat dimuat lalu direncanakan",
-    resolver.includes("planRecoveredContext(await loadRecoveryCandidates(studentId, worksheetId))"),
+    resolver.includes("const candidates = await loadRecoveryCandidates(studentId, worksheetId);")
+      && resolver.includes("const recovery = planRecoveredContext(candidates);"),
   );
   check(
     "rencana yang terpilih diresolusi lewat jalur yang sama dengan parameter",
-    resolver.includes("accessibleAssignment(studentId, plan.assignmentId)") && resolver.includes("if (assignment) return resolveFromAssignment(studentId, worksheetId, assignment);"),
+    resolver.includes("accessibleAssignment(studentId, recovery.assignmentId)") && resolver.includes("if (assignment) return resolveFromAssignment(studentId, worksheetId, assignment);"),
   );
   check(
     "tanpa kandidat: jatuh ke attempt individu tanpa konteks (perilaku lama)",

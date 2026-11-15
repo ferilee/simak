@@ -9,6 +9,7 @@ import { quoteOfTheDay, salamForHour } from "../../lib/sapaan";
 import { xpProgressLabel, type XpSummary } from "../../lib/xp";
 import { avatarImagePath, priceLabel, stateLabel, type AvatarCatalogItem, type AvatarsResponse } from "../../lib/avatar";
 import { allStepsDone, planAssignmentSteps, planReminderLevel, worksheetStatusFromProgress } from "../../lib/pengingat";
+import { circleAriaLabel, initialPagerIndex, planCircle } from "../../lib/navigasi-tugas";
 import { submissionStatusLabel } from "../lib/labels";
 import { Toast } from "../../components/Toast";
 import { Modal } from "../../components/Modal";
@@ -28,6 +29,11 @@ type ModuleSummary = {
   cover_key: string | null;
   status: "terbit";
   updated_at: string;
+  // Penanda kunci berurutan dari server (aturan modul lib/rantai-
+  // penugasan): terkunci hanya bila semua penugasan bermodul ini yang
+  // menjadi sasaran murid terkunci; locked_by_title = penghambatnya.
+  locked: boolean;
+  locked_by_title: string | null;
 };
 type AssignmentSummary = {
   id: number;
@@ -51,6 +57,16 @@ type AssignmentSummary = {
   // sudah dikirim murid.
   material_completed: boolean;
   exit_ticket_submitted: boolean;
+  // Rencana urutan + kunci berurutan dari server (lib/rantai-penugasan
+  // di API): posisi pada urutan global daftar murid ini, label ATP
+  // modul, kunci rantai, keadaan selesai, dan keadaan kunci beserta
+  // judul penghambatnya. Klien hanya menggambar ulang field ini.
+  position: number | null;
+  atp_label: string | null;
+  chain_key: string | null;
+  completed: boolean;
+  locked: boolean;
+  locked_by_title: string | null;
 };
 
 type TodayResponse = {
@@ -194,12 +210,20 @@ export default function MuridPage() {
       setAvatarBusy(null);
     }
   }
-  const activeAssignments = data.assignments
-    .filter((assignment) => new Date(assignment.due_at).getTime() >= Date.now())
-    .sort((left, right) => new Date(left.due_at).getTime() - new Date(right.due_at).getTime());
-  const pastAssignments = data.assignments
-    .filter((assignment) => new Date(assignment.due_at).getTime() < Date.now())
-    .sort((left, right) => new Date(right.due_at).getTime() - new Date(left.due_at).getTime());
+  // Pager penugasan: daftar tampil PERSIS dalam urutan global dari
+  // server (rantai ATP + kunci berurutan) — klien tidak menyaring
+  // tenggat dan tidak mengurutkan ulang, karena penugasan penghambat
+  // yang sudah lewat tenggat pun harus tetap terjangkau lingkarannya
+  // agar murid bisa menyelesaikannya dan membuka tugas berikutnya.
+  // Pemisahan aktif/riwayat lama digantikan pager ini: tugas selesai
+  // tetap dapat dibuka dari lingkarannya untuk dibaca ulang.
+  const [pagerIndex, setPagerIndex] = useState<number | null>(null);
+  const pagerAssignments = data.assignments;
+  const defaultPagerIndex = initialPagerIndex(pagerAssignments);
+  const currentPagerIndex = pagerAssignments.length === 0
+    ? -1
+    : Math.max(0, Math.min(pagerIndex ?? defaultPagerIndex, pagerAssignments.length - 1));
+  const currentAssignment = currentPagerIndex >= 0 ? pagerAssignments[currentPagerIndex] : undefined;
 
   async function load() {
     try {
@@ -502,24 +526,38 @@ export default function MuridPage() {
             <section className="wizard-step-content">
               <div className="dashboard-section-heading">
                 <h3>Penugasan aktif</h3>
-                <span>{activeAssignments.length} penugasan</span>
+                <span>{pagerAssignments.length} penugasan</span>
               </div>
-              {activeAssignments.length > 0 ? (
-                <div className="content-list">
-                  {activeAssignments.map((assignment) => <AssignmentCard key={assignment.id} assignment={assignment} />)}
-                </div>
-              ) : <p className="empty-state">{pastAssignments.length > 0 ? "Tidak ada penugasan aktif saat ini." : "Belum ada penugasan untuk kelas Anda."}</p>}
-              {pastAssignments.length > 0 ? (
-                <details className="assignment-history">
-                  <summary>
-                    <strong>Riwayat penugasan</strong>
-                    <span>{pastAssignments.length} tugas</span>
-                  </summary>
-                  <div className="content-list">
-                    {pastAssignments.map((assignment) => <AssignmentCard key={assignment.id} assignment={assignment} />)}
-                  </div>
-                </details>
-              ) : null}
+              {currentAssignment ? (
+                <>
+                  {currentAssignment.locked ? (
+                    <LockedAssignmentCard assignment={currentAssignment} />
+                  ) : (
+                    <AssignmentCard assignment={currentAssignment} />
+                  )}
+                  {pagerAssignments.length > 1 ? (
+                    <nav className="assignment-pager" aria-label="Navigasi tugas">
+                      {pagerAssignments.map((assignment, index) => {
+                        const circle = planCircle(assignment, index === currentPagerIndex);
+                        const position = assignment.position ?? index + 1;
+                        return (
+                          <button
+                            key={assignment.id}
+                            type="button"
+                            className={`assignment-pager-dot tone-${circle.tone}${circle.current ? " is-current" : ""}`}
+                            onClick={() => setPagerIndex(index)}
+                            aria-label={circleAriaLabel(position, assignment.title, assignment)}
+                            aria-current={circle.current ? "true" : undefined}
+                            title={assignment.title}
+                          >
+                            {circle.glyph === "check" ? "✓" : circle.glyph === "lock" ? "🔒" : position}
+                          </button>
+                        );
+                      })}
+                    </nav>
+                  ) : null}
+                </>
+              ) : <p className="empty-state">Belum ada penugasan untuk kelas Anda.</p>}
             </section>
           ) : null}
 
@@ -533,7 +571,17 @@ export default function MuridPage() {
                 <p className="empty-state">Belum ada materi terbit untuk kelas Anda.</p>
               ) : (
                 <div className="content-list">
-                  {data.modules.map((module) => (
+                  {data.modules.map((module) => module.locked ? (
+                    <article key={module.id} className="content-card assignment-card--locked">
+                      {module.cover_key ? <ModuleListCover moduleId={module.id} coverKey={module.cover_key} /> : null}
+                      <span className="content-label">{module.subject}</span>
+                      <strong>{module.title}</strong>
+                      <span className="content-muted">{module.description ?? "Materi pembelajaran SIMAK."}</span>
+                      <span className="assignment-locked-note">
+                        🔒 Terkunci{module.locked_by_title ? <> — selesaikan dulu: <strong>{module.locked_by_title}</strong></> : ""}
+                      </span>
+                    </article>
+                  ) : (
                     <Link key={module.id} href={`/murid/modules/${module.id}`} className="content-card content-link">
                       {module.cover_key ? <ModuleListCover moduleId={module.id} coverKey={module.cover_key} /> : null}
                       <span className="content-label">{module.subject}</span>
@@ -586,6 +634,29 @@ function ModuleListCover({ moduleId, coverKey }: { moduleId: number; coverKey: s
       alt="Sampul materi"
       style={{ width: "100%", height: 130, objectFit: "cover", borderRadius: 8, display: "block" }}
     />
+  );
+}
+
+// Varian kartu untuk penugasan TERKUNCI (kunci berurutan): hanya
+// judul, label ATP, tenggat, dan penjelasan penghambatnya — sengaja
+// BUKAN tautan dan tanpa tombol buka materi/LKPD, karena server pun
+// menolak aksesnya sampai penghambat selesai. Murid berpindah ke
+// tugas penghambat lewat lingkaran navigasi di bawah kartu.
+function LockedAssignmentCard({ assignment }: { assignment: AssignmentSummary }) {
+  return (
+    <article className="content-card assignment-card--locked" aria-label={`Penugasan terkunci: ${assignment.title}`}>
+      <span className="assignment-locked-badge">🔒 Terkunci</span>
+      <strong>{assignment.title}</strong>
+      {assignment.atp_label ? <span className="content-label">{assignment.atp_label}</span> : null}
+      <span className="content-meta">Batas {formatDate(assignment.due_at)}</span>
+      <p className="assignment-locked-note">
+        {assignment.locked_by_title ? (
+          <>Selesaikan dulu: <strong>{assignment.locked_by_title}</strong>, baru tugas ini terbuka.</>
+        ) : (
+          "Selesaikan dulu penugasan sebelumnya, baru tugas ini terbuka."
+        )}
+      </p>
+    </article>
   );
 }
 

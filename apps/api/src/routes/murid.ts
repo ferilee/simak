@@ -16,6 +16,7 @@ import { needsWelcome } from "../lib/sapaan";
 import { awardXp, summarizeXp, XP_POINTS, type XpSummary } from "../lib/xp";
 import { countMaterialWords, minReadingSeconds } from "../lib/baca-wajar";
 import { avatarBySlug } from "../lib/avatar";
+import { assignmentLockedMessage, loadStudentAssignmentPlan, moduleLockedMessage, planAssignmentChains, planForAssignment, planModuleLock, planModuleRepresentative } from "../lib/rantai-penugasan";
 
 // Beranda murid + detail penugasan — halaman paling ringan adalah prioritas.
 export const muridRoutes = new Hono();
@@ -147,7 +148,7 @@ async function getOrCreateGroupAttempt(worksheetId: number, groupId: number) {
 type AttemptContext =
   | { kind: "ready"; attempt: typeof worksheetAttempts.$inferSelect; group: StudentGroupView | null; assignmentId: number | null }
   | { kind: "ungrouped"; assignmentId: number }
-  | { kind: "error"; status: 400 | 404; message: string };
+  | { kind: "error"; status: 400 | 403 | 404; message: string };
 
 type AccessibleAssignment = NonNullable<Awaited<ReturnType<typeof accessibleAssignment>>>;
 
@@ -203,8 +204,9 @@ async function loadRecoveryCandidates(studentId: number, worksheetId: number): P
 
 // Resolusi attempt untuk endpoint LKPD murid.
 //
-// Jalur parameter (?assignmentId=) tidak berubah: id diverifikasi lewat
-// accessibleAssignment lalu diresolusi dari penugasan itu.
+// Jalur parameter (?assignmentId=): id diverifikasi lewat
+// accessibleAssignment, lalu kunci berurutannya diperiksa, lalu
+// diresolusi dari penugasan itu.
 //
 // Tanpa parameter, konteks DIPULIHKAN dari server (lib/konteks-pulih.ts):
 // tautan LKPD dari halaman modul tidak membawa parameter, dan jatuh
@@ -215,6 +217,17 @@ async function loadRecoveryCandidates(studentId: number, worksheetId: number): P
 // tetap resolveFromAssignment). Tanpa kandidat apa pun — atau kandidatnya
 // berubah di antara dua pembacaan — perilakunya persis seperti sebelumnya:
 // attempt individu murid itu sendiri tanpa konteks penugasan.
+// Penegakan kunci berurutan pada resolusi attempt (lib/rantai-penugasan):
+// attempt tidak boleh dibuat/diisi untuk penugasan yang terkunci.
+// Rencana dimuat segar pada setiap resolusi karena keadaan selesai
+// berubah begitu penghambat dikumpulkan — kunci selalu dinilai dari
+// data terbaru, bukan dari potret saat halaman dimuat.
+async function lockedAttemptError(studentId: number, assignmentId: number): Promise<AttemptContext | null> {
+  const planned = planForAssignment(await loadStudentAssignmentPlan(studentId), assignmentId);
+  if (!planned || !planned.locked) return null;
+  return { kind: "error", status: 403, message: assignmentLockedMessage(planned.lockedByTitle) };
+}
+
 async function resolveAttemptContext(studentId: number, worksheetId: number, assignmentIdParam: string | null): Promise<AttemptContext> {
   if (assignmentIdParam) {
     const assignmentId = Number(assignmentIdParam);
@@ -225,12 +238,36 @@ async function resolveAttemptContext(studentId: number, worksheetId: number, ass
     if (!assignment) {
       return { kind: "error", status: 404, message: "Penugasan belum tersedia untuk kelas Anda." };
     }
+    const lockError = await lockedAttemptError(studentId, assignmentId);
+    if (lockError) return lockError;
     return resolveFromAssignment(studentId, worksheetId, assignment);
   }
-  const plan = planRecoveredContext(await loadRecoveryCandidates(studentId, worksheetId));
-  if (plan.kind !== "none") {
-    const assignment = await accessibleAssignment(studentId, plan.assignmentId);
-    if (assignment) return resolveFromAssignment(studentId, worksheetId, assignment);
+  const candidates = await loadRecoveryCandidates(studentId, worksheetId);
+  const recovery = planRecoveredContext(candidates);
+  if (recovery.kind !== "none") {
+    const chainPlan = await loadStudentAssignmentPlan(studentId);
+    const chosen = planForAssignment(chainPlan, recovery.assignmentId);
+    if (chosen?.locked) {
+      // Konteks terpilih terkunci: konteks kandidat lain yang TIDAK
+      // terkunci untuk LKPD yang sama tetap boleh dipakai (modul/LKPD
+      // yang sama bisa tertaut ke beberapa penugasan murid ini). Hanya
+      // bila semua kandidat terkunci resolusi ini ditolak 403.
+      const unlockedCandidates = candidates.filter((candidate) => {
+        const planned = planForAssignment(chainPlan, candidate.id);
+        return !planned || !planned.locked;
+      });
+      if (unlockedCandidates.length === 0) {
+        return { kind: "error", status: 403, message: assignmentLockedMessage(chosen.lockedByTitle) };
+      }
+      const replanned = planRecoveredContext(unlockedCandidates);
+      if (replanned.kind !== "none") {
+        const assignment = await accessibleAssignment(studentId, replanned.assignmentId);
+        if (assignment) return resolveFromAssignment(studentId, worksheetId, assignment);
+      }
+    } else {
+      const assignment = await accessibleAssignment(studentId, recovery.assignmentId);
+      if (assignment) return resolveFromAssignment(studentId, worksheetId, assignment);
+    }
   }
   return { kind: "ready", attempt: await getOrCreateAttempt(studentId, worksheetId), group: null, assignmentId: null };
 }
@@ -467,6 +504,43 @@ muridRoutes.get("/today", async (c) => {
     // Abaikan — langkah exit ticket tampil sebagai belum diisi.
   }
 
+  // Rencana urutan + kunci berurutan (lib/rantai-penugasan.ts): dibangun
+  // dari data yang SUDAH dimuat handler ini — daftar penugasan unik,
+  // attempt individu, attempt kelompok, dan himpunan ketuntasan materi —
+  // ditambah SATU query himpunan membaca judul/mapel/kelompok modul
+  // penugasan. Server mengirim posisi global, label ATP, keadaan
+  // selesai, dan keadaan kunci per penugasan; klien hanya menggambar
+  // ulang (pager lingkaran di beranda), tidak menghitung kunci sendiri.
+  const planModuleRows = assignmentModuleIds.length
+    ? await db
+        .select({ id: modules.id, title: modules.title, subject: modules.subject, topicGroup: modules.topicGroup })
+        .from(modules)
+        .where(inArray(modules.id, assignmentModuleIds))
+    : [];
+  const planModuleById = new Map(planModuleRows.map((row) => [row.id, row]));
+  const assignmentPlan = planAssignmentChains(uniqueAssignments.map((assignment) => {
+    const individual = assignment.worksheetId === null ? undefined : attemptsByWorksheet.get(assignment.worksheetId);
+    const individualSnapshot = individual ? { status: individual.status, submittedAt: individual.submittedAt, totalScore: null } : undefined;
+    const effective = assignment.workMode === "kelompok"
+      ? pickEffectiveAttempt(individualSnapshot, groupAttemptByAssignment.get(assignment.id))
+      : individualSnapshot;
+    const planModule = assignment.moduleId === null ? undefined : planModuleById.get(assignment.moduleId);
+    return {
+      id: assignment.id,
+      title: assignment.title,
+      moduleId: assignment.moduleId,
+      worksheetId: assignment.worksheetId,
+      moduleTitle: planModule?.title ?? null,
+      moduleSubject: planModule?.subject ?? null,
+      topicGroup: planModule?.topicGroup ?? null,
+      dueAtMs: assignment.dueAt.getTime(),
+      opensAtMs: assignment.opensAt.getTime(),
+      materialCompleted: assignment.moduleId !== null && completedMaterialModuleIds.has(assignment.moduleId),
+      attemptSubmitted: effective !== undefined && (effective.status === "terkumpul" || effective.status === "dinilai"),
+    };
+  }));
+  const planByAssignmentId = new Map(assignmentPlan.map((item) => [item.id, item]));
+
   return c.json({
     ok: true,
     data: {
@@ -479,16 +553,43 @@ muridRoutes.get("/today", async (c) => {
         subject: membership.subject,
         academic_year: membership.academicYear,
       })),
-      modules: publishedModules.map((module) => ({
-        id: module.id,
-        title: module.title,
-        subject: module.subject,
-        description: module.description,
-        cover_key: module.coverKey,
-        status: module.status,
-        updated_at: module.updatedAt,
-      })),
-      assignments: uniqueAssignments.map((assignment) => {
+      // Daftar materi mengikuti urutan penugasan (rantai + ATP, bebas
+      // terakhir): wakil tiap modul adalah penugasan bermodul itu yang
+      // posisinya terawal pada rencana; modul tanpa penugasan terbit
+      // pada daftar (hanya tertaut penugasan ditutup) sesudahnya dengan
+      // urutan muatan lama (updatedAt menaik dari query). Penanda
+      // terkunci memakai aturan modul yang sama dengan penegakan
+      // GET /murid/modules/:id (terkunci hanya bila semua penugasan
+      // bermodul itu terkunci).
+      modules: publishedModules
+        .map((module, index) => ({
+          module,
+          index,
+          representative: planModuleRepresentative(assignmentPlan, module.id),
+          lock: planModuleLock(assignmentPlan, module.id),
+        }))
+        .sort((a, b) => {
+          const aPosition = a.representative?.position ?? Number.POSITIVE_INFINITY;
+          const bPosition = b.representative?.position ?? Number.POSITIVE_INFINITY;
+          if (aPosition !== bPosition) return aPosition - bPosition;
+          return a.index - b.index;
+        })
+        .map(({ module, lock }) => ({
+          id: module.id,
+          title: module.title,
+          subject: module.subject,
+          description: module.description,
+          cover_key: module.coverKey,
+          status: module.status,
+          updated_at: module.updatedAt,
+          locked: lock.locked,
+          locked_by_title: lock.lockedByTitle,
+        })),
+      // Daftar penugasan terkirim dalam URUTAN GLOBAL rencana (rantai
+      // menurut ATP, bebas terakhir) — klien tidak mengurutkan ulang.
+      assignments: [...uniqueAssignments]
+        .sort((a, b) => (planByAssignmentId.get(a.id)?.position ?? Number.MAX_SAFE_INTEGER) - (planByAssignmentId.get(b.id)?.position ?? Number.MAX_SAFE_INTEGER))
+        .map((assignment) => {
         const individual = assignment.worksheetId === null ? undefined : attemptsByWorksheet.get(assignment.worksheetId);
         const effective = assignment.workMode === "kelompok"
           ? pickEffectiveAttempt(
@@ -496,6 +597,7 @@ muridRoutes.get("/today", async (c) => {
               groupAttemptByAssignment.get(assignment.id),
             )
           : individual;
+        const planned = planByAssignmentId.get(assignment.id);
         return {
           ...serializeAssignmentForStudent(
             assignment,
@@ -508,6 +610,17 @@ muridRoutes.get("/today", async (c) => {
           // menggambar langkah materinya.
           material_completed: assignment.moduleId !== null && completedMaterialModuleIds.has(assignment.moduleId),
           exit_ticket_submitted: submittedExitTicketAssignmentIds.has(assignment.id),
+          // Field rencana urutan + kunci berurutan (lib/rantai-penugasan):
+          // posisi urutan global daftar murid ini, label ATP modul,
+          // kunci rantai, keadaan selesai, dan keadaan kunci beserta
+          // judul penghambatnya. Server satu-satunya sumber kebenaran;
+          // pager lingkaran di web hanya menggambar ulang field ini.
+          position: planned?.position ?? null,
+          atp_label: planned?.atpLabel ?? null,
+          chain_key: planned?.chainKey ?? null,
+          completed: planned?.completed ?? false,
+          locked: planned?.locked ?? false,
+          locked_by_title: planned?.lockedByTitle ?? null,
         };
       }),
       has_viewed_material: hasViewedMaterial,
@@ -750,6 +863,15 @@ muridRoutes.get("/modules/:id", async (c) => {
   // dipetakan ke murid ini.
   if (!(await studentCanAccessModule(user.userId, moduleId))) {
     return c.json({ ok: false, message: "Materi ini belum tersedia untuk kelas Anda." }, 403);
+  }
+
+  // Kunci berurutan (lib/rantai-penugasan): akses modul langsung tanpa
+  // konteks penugasan — modul terkunci hanya bila SEMUA penugasan murid
+  // ini yang memuat modul itu terkunci. Bila salah satu penugasannya
+  // tidak terkunci, materi tetap bisa dibuka lewat penugasan itu.
+  const moduleLock = planModuleLock(await loadStudentAssignmentPlan(user.userId), moduleId);
+  if (moduleLock.locked) {
+    return c.json({ ok: false, message: moduleLockedMessage(moduleLock.lockedByTitle) }, 403);
   }
 
   // Catat pembukaan materi per modul untuk statistik penonton guru.

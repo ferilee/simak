@@ -5,6 +5,7 @@ import { db, schema } from "@simak/db";
 import { activitySchema } from "@simak/shared";
 import { requireRole } from "../middleware/auth";
 import { studentCanAccessModule, studentIsAssignmentTarget } from "../lib/assignment-target";
+import { loadModuleLock, moduleLockedMessage } from "../lib/rantai-penugasan";
 import { countMaterialWords, minReadingSeconds, planCompletion } from "../lib/baca-wajar";
 import { awardXp } from "../lib/xp";
 
@@ -33,6 +34,14 @@ activityRoutes.post("/", zValidator("json", activitySchema), async (c) => {
     if (!module) return c.json({ ok: false, message: "Materi tidak ditemukan." }, 404);
     if (!(await studentCanAccessModule(user.userId, moduleId))) {
       return c.json({ ok: false, message: "Materi ini belum tersedia untuk kelas Anda." }, 403);
+    }
+
+    // Kunci berurutan (lib/rantai-penugasan): ketuntasan baca tidak
+    // bisa dicatat untuk materi yang semua penugasan murid ini yang
+    // memuatnya masih terkunci — sama dengan gerbang halaman materinya.
+    const moduleLock = await loadModuleLock(user.userId, moduleId);
+    if (moduleLock.locked) {
+      return c.json({ ok: false, message: moduleLockedMessage(moduleLock.lockedByTitle) }, 403);
     }
 
     // Gerbang keplausiban (lib/baca-wajar): ketuntasan hanya dicatat

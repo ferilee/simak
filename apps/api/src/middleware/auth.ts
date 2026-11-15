@@ -19,7 +19,7 @@ declare module "hono" {
 }
 
 export async function loadSession(c: Context, next: Next) {
-  const user = getSessionFromRequest(c);
+  const user = await getSessionFromRequest(c);
   if (user) c.set("user", user);
   await next();
 }

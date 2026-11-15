@@ -1,4 +1,5 @@
 export * from "./users";
+export * from "./sessions";
 export * from "./classes";
 export * from "./modules";
 export * from "./worksheets";

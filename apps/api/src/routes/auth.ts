@@ -45,12 +45,13 @@ authRoutes.post("/login", zValidator("json", loginSchema), async (c) => {
 
   clearLoginAttempts(attemptKey);
   let user;
+  let session;
   try {
     user = await upsertSimakProfile(identity);
+    session = await createSession(user);
   } catch {
     return c.json({ ok: false, message: "Penyimpanan SIMAK sedang tidak tersedia." }, 503);
   }
-  const session = createSession(user);
   attachSessionCookie(c, session);
 
   return c.json({ ok: true, user: publicUser(user) });
@@ -58,13 +59,13 @@ authRoutes.post("/login", zValidator("json", loginSchema), async (c) => {
 
 authRoutes.post("/logout", async (c) => {
   const session = getCookie(c, SESSION_COOKIE);
-  revokeSession(session);
+  await revokeSession(session);
   clearSessionCookie(c);
   return c.json({ ok: true });
 });
 
 authRoutes.get("/me", async (c) => {
-  const user = getSessionFromRequest(c);
+  const user = await getSessionFromRequest(c);
   if (!user) return c.json({ ok: false, message: "Belum masuk." }, 401);
   return c.json({ ok: true, user: publicUser(user) });
 });

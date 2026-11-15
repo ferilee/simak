@@ -134,6 +134,13 @@
       "when": 1794639250437,
       "tag": "0018_blok_interaktif",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "5",
+      "when": 1794732260516,
+      "tag": "0019_sesi_persisten",
+      "breakpoints": true
     }
   ]
 }

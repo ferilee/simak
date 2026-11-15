@@ -22,7 +22,7 @@
 //  - Wiring modules: kunci lampiran blok interaktif diturunkan dari
 //    fileKey isi pada create + patch.
 //  - Migrasi 0018: tipe module_blocks adalah enum MySQL sehingga nilai
-//    "interaktif" ditambahkan lewat SATU pernyataan MODIFY; jurnal 19.
+//    "interaktif" ditambahkan lewat SATU pernyataan MODIFY; jurnal kini 20 (0019 menyusul).
 import { readFileSync } from "node:fs";
 import {
   MODULE_BLOCK_TYPES,
@@ -134,7 +134,7 @@ check("helper kunci membaca fileKey khusus interaktif", modulesRoute.includes('r
 
 // --- Migrasi 0018 -----------------------------------------------------------------------
 const journal = JSON.parse(readFileSync(new URL("../../../../packages/db/migrations/meta/_journal.json", import.meta.url), "utf8"));
-check("jurnal migrasi 19 entri", journal.entries.length === 19, `got ${journal.entries.length}`);
+check("jurnal migrasi 20 entri", journal.entries.length === 20, `got ${journal.entries.length}`);
 check("entri terakhir jurnal adalah 0018_blok_interaktif (idx 18)", journal.entries[18]?.tag === "0018_blok_interaktif" && journal.entries[18]?.idx === 18);
 const migration = readFileSync(new URL("../../../../packages/db/migrations/0018_blok_interaktif.sql", import.meta.url), "utf8");
 check(

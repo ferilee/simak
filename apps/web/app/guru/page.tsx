@@ -57,6 +57,19 @@ import { PemilihCepat } from "../../components/PemilihCepat";
 import { groupModulesForPicker, orderWorksheetsForPairing } from "../../lib/pemilih-cepat";
 import { filterAssignmentsByClass, planAssignmentCounts } from "../../lib/hitungan-penugasan";
 import {
+  assignmentGrading,
+  countAssignmentsNeedingGrading,
+  gradingBadge,
+  gradingBadgeVisible,
+  gradingForClassFilter,
+  gradingFractionLabel,
+  gradingProgressPercent,
+  matchesGradingFilter,
+  sortAssignmentsByGradingNeed,
+  type GradingFilter,
+  type GradingRollupLike,
+} from "../../lib/status-nilai";
+import {
   canonicalTopicOrder,
   groupsForSubject,
   matchesTopicFilter,
@@ -143,6 +156,22 @@ type AssignmentSummary = {
   status: "draf" | "terbit" | "ditutup";
   classes: { id: number; name: string; join_code: string }[];
   students: { id: number; name: string; username: string; class_name: string }[];
+  // Rollup status penilaian dari server (aditif, v1.0.66); opsional di
+  // tipe karena respons mutasi mengirim rollup kosong dan daftar selalu
+  // dimuat ulang dari GET /assignments.
+  grading?: {
+    submitted_count: number;
+    graded_count: number;
+    partial_count: number;
+    grading_status: "belum_ada_pengumpulan" | "belum_dinilai" | "sebagian" | "selesai";
+  };
+  grading_by_class?: {
+    class_id: number;
+    submitted_count: number;
+    graded_count: number;
+    partial_count: number;
+    grading_status: "belum_ada_pengumpulan" | "belum_dinilai" | "sebagian" | "selesai";
+  }[];
 };
 type AssignmentGroupMemberView = { id: number; name: string; username: string };
 type AssignmentClassGroups = {
@@ -493,6 +522,10 @@ export default function GuruPage() {
   const [integrityRiskFilter, setIntegrityRiskFilter] = useState("semua");
   const [integrityQuery, setIntegrityQuery] = useState("");
   const [rekapQuery, setRekapQuery] = useState("");
+  // Saringan status penilaian pada daftar Rekap (Pantau Hasil): chip
+  // Semua / Perlu dinilai / Selesai di atas urutan bawaan "yang belum
+  // selesai dinilai di atas" dari lib/status-nilai.
+  const [rekapGradingFilter, setRekapGradingFilter] = useState<GradingFilter>("semua");
   // Penanda bahwa perubahan selectedWorksheetId berasal dari klik baris pada
   // mode gabungan panel Pengumpulan: pemilih sumber tidak boleh ikut beralih
   // ke mode satu LKPD hanya karena rincian attempt dibuka dari daftar gabungan.
@@ -776,6 +809,36 @@ export default function GuruPage() {
     }
   }
 
+  // Lencana rollup penilaian pada baris penugasan (Langkah 4 + Rekap):
+  // status berwarna + pecahan "Dinilai X dari Y" + bar progres tipis +
+  // catatan cicilan. Rollupnya dari server; konteks kelas dipilih
+  // pemanggil lewat lib/status-nilai.
+  function renderGradingRollup(assignment: AssignmentSummary, rollup: GradingRollupLike) {
+    const badge = gradingBadge(rollup.grading_status);
+    const fraction = gradingFractionLabel(rollup, assignment.work_mode);
+    return (
+      <span className="grading-rollup">
+        <span className={`grading-badge is-${badge.tone}`}>{badge.label}</span>
+        {fraction ? (
+          <>
+            <span className="grading-fraction">{fraction}</span>
+            <span
+              className="grading-progress"
+              role="progressbar"
+              aria-label={fraction}
+              aria-valuemin={0}
+              aria-valuemax={rollup.submitted_count}
+              aria-valuenow={rollup.graded_count}
+            >
+              <span className="grading-progress-fill" style={{ width: `${gradingProgressPercent(rollup)}%` }} />
+            </span>
+          </>
+        ) : null}
+        {rollup.partial_count > 0 ? <span className="grading-partial-note">{rollup.partial_count} sedang dicicil</span> : null}
+      </span>
+    );
+  }
+
   function renderWorksheetRow(worksheet: WorksheetSummary, dimmed = false) {
     // Sama seperti modul: saklar mengikuti share_status, dan pengajuan
     // yang menunggu/ditolak mendapat lencana di samping saklarnya.
@@ -902,6 +965,15 @@ export default function GuruPage() {
   }));
   // Rekap penugasan: pencarian teks pada judul dan nama kelas.
   const visibleRekapAssignments = filterAssignmentsByQuery(assignments, rekapQuery);
+  // Daftar Rekap yang benar-benar digambar: himpunan pencarian yang sama,
+  // disaring status penilaian lalu diurutkan agar yang belum selesai
+  // dinilai selalu di atas. Ringkasan "N penugasan belum selesai dinilai"
+  // dihitung dari himpunan pencarian (sebelum saringan status) agar
+  // angkanya tidak berubah saat guru berpindah chip.
+  const rekapNeedingGradingCount = countAssignmentsNeedingGrading(visibleRekapAssignments);
+  const displayedRekapAssignments = sortAssignmentsByGradingNeed(
+    visibleRekapAssignments.filter((assignment) => matchesGradingFilter(assignment, rekapGradingFilter)),
+  );
 
   // Membuka satu draf (hasil salinan Perpustakaan Bersama) di langkahnya:
   // modul di Langkah 1, LKPD di Langkah 2, hanya bila drafnya memang ada
@@ -4027,7 +4099,7 @@ export default function GuruPage() {
         ) : null}
         {assignments.length === 0 ? <p style={styles.empty}>Belum ada penugasan.</p> : visibleAssignments.length === 0 ? (
           <p style={styles.empty}>{assignmentClassFilter !== "semua" ? "Tidak ada penugasan yang cocok dengan saringan kelas dan status saat ini." : `Tidak ada penugasan berstatus ${activeAssignmentFilterLabel}.`}</p>
-        ) : <div className="module-list">{visibleAssignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.target_type === "siswa" ? `${assignment.students.length} siswa tertentu` : assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}{assignment.work_mode === "kelompok" ? <> · <span className="group-mode-badge">👥 Kelompok · {assignment.group_size ?? 4} orang</span></> : null}{assignment.target_type === "siswa" ? <> · <span className="group-mode-badge">Siswa tertentu</span></> : null}</span></div><div className="resource-row-actions">{assignment.work_mode === "kelompok" ? <button type="button" onClick={() => toggleGroupsPanel(assignment)} className={`row-action-button is-outline${selectedGroupAssignmentId === assignment.id ? " is-active" : ""}`} aria-pressed={selectedGroupAssignmentId === assignment.id}><span className="action-icon" aria-hidden="true">👥</span>Kelompok</button> : null}{assignment.status !== "ditutup" ? <button type="button" onClick={() => startEditAssignment(assignment)} className="row-action-button is-outline"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>Edit</button> : null}<button type="button" onClick={() => void changeAssignmentStatus(assignment)} className={assignment.status === "terbit" ? "row-action-button is-outline" : "row-action-button is-primary"}>{assignment.status === "terbit" ? <><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>Tutup</> : <><span className="action-icon" aria-hidden="true">🚀</span>Terbitkan</>}</button>{assignment.status === "terbit" ? <a href={`https://wa.me/?text=${encodeURIComponent(buildWhatsAppShareMessage(assignment, typeof window !== "undefined" ? window.location.origin : ""))}`} target="_blank" rel="noreferrer" className="row-action-button is-whatsapp"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.6L3 21l1.9-5.6A8.5 8.5 0 1 1 21 11.5Z" /></svg>Bagikan WA</a> : null}</div></article>)}</div>}
+        ) : <div className="module-list">{visibleAssignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.target_type === "siswa" ? `${assignment.students.length} siswa tertentu` : assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}{assignment.work_mode === "kelompok" ? <> · <span className="group-mode-badge">👥 Kelompok · {assignment.group_size ?? 4} orang</span></> : null}{assignment.target_type === "siswa" ? <> · <span className="group-mode-badge">Siswa tertentu</span></> : null}</span>{gradingBadgeVisible(assignment) ? renderGradingRollup(assignment, gradingForClassFilter(assignment, assignmentClassFilter)) : null}</div><div className="resource-row-actions">{assignment.work_mode === "kelompok" ? <button type="button" onClick={() => toggleGroupsPanel(assignment)} className={`row-action-button is-outline${selectedGroupAssignmentId === assignment.id ? " is-active" : ""}`} aria-pressed={selectedGroupAssignmentId === assignment.id}><span className="action-icon" aria-hidden="true">👥</span>Kelompok</button> : null}{assignment.status !== "ditutup" ? <button type="button" onClick={() => startEditAssignment(assignment)} className="row-action-button is-outline"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>Edit</button> : null}<button type="button" onClick={() => void changeAssignmentStatus(assignment)} className={assignment.status === "terbit" ? "row-action-button is-outline" : "row-action-button is-primary"}>{assignment.status === "terbit" ? <><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>Tutup</> : <><span className="action-icon" aria-hidden="true">🚀</span>Terbitkan</>}</button>{assignment.status === "terbit" ? <a href={`https://wa.me/?text=${encodeURIComponent(buildWhatsAppShareMessage(assignment, typeof window !== "undefined" ? window.location.origin : ""))}`} target="_blank" rel="noreferrer" className="row-action-button is-whatsapp"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.6L3 21l1.9-5.6A8.5 8.5 0 1 1 21 11.5Z" /></svg>Bagikan WA</a> : null}</div></article>)}</div>}
       </section>
 
       {selectedGroupAssignmentId ? (
@@ -4352,7 +4424,29 @@ export default function GuruPage() {
             />
           </div>
         ) : null}
-        {assignments.length === 0 ? <p style={styles.empty}>Belum ada penugasan.</p> : visibleRekapAssignments.length === 0 ? <p style={styles.empty}>Tidak ada penugasan yang cocok dengan pencarian.</p> : <div className="module-list">{visibleRekapAssignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.target_type === "siswa" ? `${assignment.students.length} siswa tertentu` : assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}{assignment.target_type === "siswa" ? <> · <span className="group-mode-badge">Siswa tertentu</span></> : null}</span></div><div className="resource-row-actions"><button type="button" onClick={() => void loadSessionReport(assignment.id)} className={`row-action-button is-outline${selectedReportAssignmentId === assignment.id ? " is-active" : ""}`} aria-pressed={selectedReportAssignmentId === assignment.id} disabled={sessionReportLoading && selectedReportAssignmentId === assignment.id}><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18" /><path d="M10 10v10" /></svg>{sessionReportLoading && selectedReportAssignmentId === assignment.id ? "Memuat…" : selectedReportAssignmentId === assignment.id ? "Segarkan rekap" : "Lihat rekap"}</button><button type="button" onClick={() => void loadAssignmentSummary(assignment.id)} className={`row-action-button is-outline${selectedAssignmentId === assignment.id ? " is-active" : ""}`} aria-pressed={selectedAssignmentId === assignment.id} disabled={assignmentSummaryLoading && selectedAssignmentId === assignment.id}><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 8h6" /><path d="M9 12h6" /></svg>{assignmentSummaryLoading && selectedAssignmentId === assignment.id ? "Memuat…" : selectedAssignmentId === assignment.id ? "Segarkan exit ticket" : "Lihat exit ticket"}</button></div></article>)}</div>}
+        {assignments.length > 0 ? (
+          <>
+            <div style={styles.blockTypeRow} role="group" aria-label="Saring status penilaian penugasan">
+              {([
+                { value: "semua", label: "Semua" },
+                { value: "perlu_dinilai", label: "Perlu dinilai" },
+                { value: "selesai", label: "Selesai" },
+              ] as { value: GradingFilter; label: string }[]).map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`filter-chip${rekapGradingFilter === option.value ? " is-active" : ""}`}
+                  aria-pressed={rekapGradingFilter === option.value}
+                  onClick={() => setRekapGradingFilter(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <p style={styles.muted}>{rekapNeedingGradingCount > 0 ? `${rekapNeedingGradingCount} penugasan belum selesai dinilai` : "Tidak ada penugasan yang menunggu dinilai."}</p>
+          </>
+        ) : null}
+        {assignments.length === 0 ? <p style={styles.empty}>Belum ada penugasan.</p> : visibleRekapAssignments.length === 0 ? <p style={styles.empty}>Tidak ada penugasan yang cocok dengan pencarian.</p> : displayedRekapAssignments.length === 0 ? <p style={styles.empty}>Tidak ada penugasan pada saringan status penilaian ini.</p> : <div className="module-list">{displayedRekapAssignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.target_type === "siswa" ? `${assignment.students.length} siswa tertentu` : assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}{assignment.target_type === "siswa" ? <> · <span className="group-mode-badge">Siswa tertentu</span></> : null}</span>{gradingBadgeVisible(assignment) ? renderGradingRollup(assignment, assignmentGrading(assignment)) : null}</div><div className="resource-row-actions"><button type="button" onClick={() => void loadSessionReport(assignment.id)} className={`row-action-button is-outline${selectedReportAssignmentId === assignment.id ? " is-active" : ""}`} aria-pressed={selectedReportAssignmentId === assignment.id} disabled={sessionReportLoading && selectedReportAssignmentId === assignment.id}><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18" /><path d="M10 10v10" /></svg>{sessionReportLoading && selectedReportAssignmentId === assignment.id ? "Memuat…" : selectedReportAssignmentId === assignment.id ? "Segarkan rekap" : "Lihat rekap"}</button><button type="button" onClick={() => void loadAssignmentSummary(assignment.id)} className={`row-action-button is-outline${selectedAssignmentId === assignment.id ? " is-active" : ""}`} aria-pressed={selectedAssignmentId === assignment.id} disabled={assignmentSummaryLoading && selectedAssignmentId === assignment.id}><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 8h6" /><path d="M9 12h6" /></svg>{assignmentSummaryLoading && selectedAssignmentId === assignment.id ? "Memuat…" : selectedAssignmentId === assignment.id ? "Segarkan exit ticket" : "Lihat exit ticket"}</button></div></article>)}</div>}
       </section>
 
       {selectedReportAssignmentId ? (

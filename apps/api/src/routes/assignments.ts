@@ -5,6 +5,7 @@ import { db, schema } from "@simak/db";
 import { addAssignmentGroupMemberSchema, copyAssignmentGroupsSchema, createAssignmentSchema, shuffleAssignmentGroupsSchema, updateAssignmentSchema } from "@simak/shared";
 import { requireRole } from "../middleware/auth";
 import { assignmentTargetRuleError, loadAssignmentStudentsView } from "../lib/assignment-target";
+import { EMPTY_GRADING_ROLLUP, loadAssignmentGradingRollups, type AssignmentGradingView } from "../lib/grading-rollup";
 import { loadTeacherClassMemberships } from "../lib/student-class";
 import {
   assignmentHasGroupWork,
@@ -28,6 +29,7 @@ function serializeAssignment(
   assignment: typeof assignments.$inferSelect,
   linkedClasses: { id: number; name: string; joinCode: string }[] = [],
   linkedStudents: AssignmentStudentView[] = [],
+  gradingView?: AssignmentGradingView,
 ) {
   return {
     id: assignment.id,
@@ -46,6 +48,18 @@ function serializeAssignment(
     // Murid sasaran langsung — hanya terisi untuk target_type "siswa";
     // penugasan "kelas" selalu mengirim daftar kosong.
     students: linkedStudents,
+    // Rollup status penilaian (Pantau Hasil): hanya daftar GET / yang
+    // menghitungnya dari attempt efektif; respons mutasi mengirim
+    // rollup kosong dan daftar dimuat ulang klien sesudahnya.
+    grading: gradingView
+      ? {
+          submitted_count: gradingView.submitted_count,
+          graded_count: gradingView.graded_count,
+          partial_count: gradingView.partial_count,
+          grading_status: gradingView.grading_status,
+        }
+      : { ...EMPTY_GRADING_ROLLUP },
+    grading_by_class: gradingView?.by_class ?? [],
     created_at: assignment.createdAt,
     updated_at: assignment.updatedAt,
   };
@@ -198,9 +212,10 @@ assignmentRoutes.get("/", async (c) => {
       studentsByAssignment.set(row.id, await loadAssignmentStudentsView(row, membershipsByStudent));
     }
   }
+  const gradingByAssignment = await loadAssignmentGradingRollups(user.userId, rows);
   return c.json({
     ok: true,
-    data: rows.map((row) => serializeAssignment(row, classesByAssignment.get(row.id) ?? [], studentsByAssignment.get(row.id) ?? [])),
+    data: rows.map((row) => serializeAssignment(row, classesByAssignment.get(row.id) ?? [], studentsByAssignment.get(row.id) ?? [], gradingByAssignment.get(row.id))),
   });
 });
 

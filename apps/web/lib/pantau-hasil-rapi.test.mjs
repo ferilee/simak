@@ -166,7 +166,12 @@ check(
   "kotak pencarian rekap + daftar dari hasil pencarian",
   page.includes('aria-label="Cari penugasan pada rekap"') &&
     page.includes("const visibleRekapAssignments = filterAssignmentsByQuery(assignments, rekapQuery);") &&
-    page.includes("{visibleRekapAssignments.map((assignment) =>"),
+    // Sejak v1.0.66 daftar yang digambar adalah turunan hasil pencarian
+    // yang sama (disaring status penilaian + diurutkan perlu-dinilai
+    // dulu oleh lib/status-nilai); maksud kunci ini — daftar Rekap
+    // bersumber dari hasil pencarian, bukan himpunan lain — dipertahankan.
+    page.includes("visibleRekapAssignments.filter((assignment) => matchesGradingFilter(assignment, rekapGradingFilter))") &&
+    page.includes("{displayedRekapAssignments.map((assignment) =>"),
 );
 check(
   "keadaan kosong pencarian rekap persis seperti disetujui",

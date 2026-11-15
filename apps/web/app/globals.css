@@ -1470,6 +1470,75 @@ a {
   font-weight: 800;
 }
 
+/* Rollup status penilaian pada baris penugasan (Langkah 4 + Rekap
+   Pantau Hasil): lencana berwarna + pecahan + bar progres tipis +
+   catatan cicilan. Rona mengikuti lencana berbagi/integritas. */
+.grading-rollup {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.grading-badge {
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.grading-badge.is-danger {
+  background: #fef3f2;
+  color: #b42318;
+}
+
+.grading-badge.is-warning {
+  background: #fffaeb;
+  color: #b54708;
+}
+
+.grading-badge.is-success {
+  background: #ecfdf3;
+  color: #027a48;
+}
+
+.grading-badge.is-neutral {
+  background: #f2f4f7;
+  color: #344054;
+}
+
+.grading-fraction {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #475467;
+  white-space: nowrap;
+}
+
+.grading-progress {
+  display: inline-block;
+  width: 72px;
+  height: 6px;
+  border-radius: 999px;
+  background: #eaecf0;
+  overflow: hidden;
+}
+
+.grading-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: #12b76a;
+}
+
+.grading-partial-note {
+  font-size: 12px;
+  font-weight: 600;
+  color: #b54708;
+  white-space: nowrap;
+}
+
 /* Lencana mode kelompok pada baris penugasan + chip anggota kelompok. */
 .group-mode-badge {
   border-radius: 999px;

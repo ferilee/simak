@@ -2760,6 +2760,114 @@ button.wizard-library-link {
   letter-spacing: -0.02em;
 }
 
+/* Kartu bagian beranda murid (calon v1.0.74): empat bagian langkah
+   "Kelas saya" — Kelas saya, Progres belajar, Asesmen RUAS, Jurnal
+   belajar — masing-masing menjadi kartu identitas yang jelas
+   terpisah (dulu judul kecil + kotak putus-putus yang sama berat,
+   sehingga sering terlewat murid). Kepala kartu: ikon dalam
+   lingkaran berwarna khas per bagian (biru / kuning emas / ungu /
+   hijau, rona lembut palet yang sama dengan kartu XP dan lencana
+   status), judul lebih besar, dan chip status di sisi kanan yang
+   diturunkan dari data bagian itu sendiri (lib/beranda-murid).
+   Isi, urutan, dan perilaku tiap bagian tidak berubah. */
+.murid-home-card {
+  margin-top: 22px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.murid-home-card:first-child {
+  margin-top: 0;
+}
+
+.murid-home-card-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.murid-home-card-icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: 50%;
+}
+
+.murid-home-card-icon--kelas {
+  background: var(--color-brand-50);
+  color: var(--color-brand-700);
+}
+
+.murid-home-card-icon--progres {
+  background: #fff3d6;
+  color: #9a6200;
+}
+
+.murid-home-card-icon--asesmen {
+  background: #f4f3ff;
+  color: #6941c6;
+}
+
+.murid-home-card-icon--jurnal {
+  background: var(--color-success-surface);
+  color: var(--color-success);
+}
+
+.murid-home-card-titles {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.murid-home-card-titles h3 {
+  margin: 0;
+  font-size: 1.35rem;
+  letter-spacing: -0.025em;
+}
+
+.murid-home-card-titles span {
+  color: var(--color-muted);
+  font-size: 14px;
+}
+
+.murid-home-card-side {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.murid-home-chip {
+  border: 1px solid var(--color-border-soft);
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: var(--color-surface-subtle);
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.murid-home-chip--accent {
+  border-color: #fedf89;
+  background: #fffaeb;
+  color: #b54708;
+}
+
+.murid-home-chip--done {
+  border-color: #a6f4c5;
+  background: #ecfdf3;
+  color: #027a48;
+}
+
 .wizard-join-panel {
   width: 100%;
   box-shadow: none;

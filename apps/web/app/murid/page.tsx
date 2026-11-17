@@ -12,6 +12,7 @@ import { allStepsDone, planAssignmentSteps, planReminderLevel, worksheetStatusFr
 import { circleAriaLabel, initialPagerIndex, planCircle } from "../../lib/navigasi-tugas";
 import { ARCHIVE_GROUP_NAME, MATERIAL_FILTERS, guidedGroupName, planGuidedMaterials, shouldShowHero, type GuidedModule, type GuidedMaterialsPlan, type MaterialFilter } from "../../lib/materi-terpandu";
 import { assessmentStatusLabel, type AssessmentCardData, type HubData } from "../../lib/hub-murid";
+import { asesmenChip, jurnalChip, kelasChip, progresChip, type MuridSectionChip } from "../../lib/beranda-murid";
 import { journalDateLabel, type JournalEntry, type JournalListData } from "../../lib/jurnal";
 import { submissionStatusLabel } from "../lib/labels";
 import { Toast } from "../../components/Toast";
@@ -298,6 +299,14 @@ export default function MuridPage() {
   }));
   const guidedPlan = planGuidedMaterials(materialInputs, materialFilter, materialQuery);
   const archiveOpen = archiveOpenOverride ?? guidedPlan.archiveOpenByDefault;
+
+  // Chip status kepala kartu bagian beranda (calon v1.0.74,
+  // lib/beranda-murid): diturunkan dari data yang sudah dimuat tiap
+  // bagian itu sendiri — tanpa panggilan data baru.
+  const kelasSectionChip = kelasChip(data.classes.length);
+  const progresSectionChip = progresChip(data.xp?.total ?? null);
+  const asesmenSectionChip = asesmenChip(hub);
+  const jurnalSectionChip = jurnalChip(journal?.total ?? null);
 
   // Mengganti saringan/kata cari membatalkan timpaan buka-tutup arsip:
   // keterbukaan arsip kembali mengikuti bawaan rencana (saringan
@@ -619,17 +628,23 @@ export default function MuridPage() {
 
           {studentStep === 0 ? (
             <div className="wizard-step-content">
-              <section className="dashboard-section wizard-inner-section">
-                <div className="dashboard-section-heading">
-                  <div>
+              <section className="murid-home-card murid-home-card--kelas">
+                <div className="murid-home-card-head">
+                  <span className="murid-home-card-icon murid-home-card-icon--kelas" aria-hidden="true">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+                  </span>
+                  <div className="murid-home-card-titles">
                     <h3>Kelas saya</h3>
                     <span>{data.classes.length} kelas aktif</span>
                   </div>
-                  {data.classes.length > 0 && !joinOpen ? (
-                    <button type="button" className="button button-secondary join-class-trigger" onClick={() => setJoinOpen(true)}>
-                      + Gabung kelas
-                    </button>
-                  ) : null}
+                  <div className="murid-home-card-side">
+                    <MuridSectionChipPill chip={kelasSectionChip} />
+                    {data.classes.length > 0 && !joinOpen ? (
+                      <button type="button" className="button button-secondary join-class-trigger" onClick={() => setJoinOpen(true)}>
+                        + Gabung kelas
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
                 {joinOpen ? (
                   <form onSubmit={joinClass} className="join-panel wizard-join-panel">
@@ -669,11 +684,17 @@ export default function MuridPage() {
                 )}
               </section>
 
-              <section className="dashboard-section wizard-inner-section">
-                <div className="dashboard-section-heading">
-                  <div>
+              <section className="murid-home-card murid-home-card--progres">
+                <div className="murid-home-card-head">
+                  <span className="murid-home-card-icon murid-home-card-icon--progres" aria-hidden="true">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17" /><polyline points="16 7 22 7 22 13" /></svg>
+                  </span>
+                  <div className="murid-home-card-titles">
                     <h3>Progres belajar</h3>
                     <span>{hub ? `${hub.progress.length} rangkaian materi` : "Memuat progres..."}</span>
+                  </div>
+                  <div className="murid-home-card-side">
+                    <MuridSectionChipPill chip={progresSectionChip} />
                   </div>
                 </div>
                 {data.xp ? (
@@ -713,17 +734,23 @@ export default function MuridPage() {
                 )}
               </section>
 
-              <section className="dashboard-section wizard-inner-section">
-                <div className="dashboard-section-heading">
-                  <div>
+              <section className="murid-home-card murid-home-card--asesmen">
+                <div className="murid-home-card-head">
+                  <span className="murid-home-card-icon murid-home-card-icon--asesmen" aria-hidden="true">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="8" y="2" width="8" height="4" rx="1" ry="1" /><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><path d="m9 14 2 2 4-4" /></svg>
+                  </span>
+                  <div className="murid-home-card-titles">
                     <h3>Asesmen RUAS</h3>
                     <span>{hub?.available ? `${hub.assessments.length} asesmen terpetakan` : "Belum terhubung"}</span>
                   </div>
-                  {hub?.available ? (
-                    <button type="button" className="button button-secondary" disabled={handoffBusy !== null} onClick={() => void openRuas()}>
-                      Buka RUAS
-                    </button>
-                  ) : null}
+                  <div className="murid-home-card-side">
+                    <MuridSectionChipPill chip={asesmenSectionChip} />
+                    {hub?.available ? (
+                      <button type="button" className="button button-secondary" disabled={handoffBusy !== null} onClick={() => void openRuas()}>
+                        Buka RUAS
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
                 {!hub || !hub.available ? (
                   <p className="empty-state">Asesmen RUAS belum dapat dimuat dari sini. Kamu tetap bisa membuka RUAS seperti biasa dan masuk dengan akun yang sama.</p>
@@ -750,15 +777,21 @@ export default function MuridPage() {
                 )}
               </section>
 
-              <section className="dashboard-section wizard-inner-section">
-                <div className="dashboard-section-heading">
-                  <div>
+              <section className="murid-home-card murid-home-card--jurnal">
+                <div className="murid-home-card-head">
+                  <span className="murid-home-card-icon murid-home-card-icon--jurnal" aria-hidden="true">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>
+                  </span>
+                  <div className="murid-home-card-titles">
                     <h3>Jurnal belajar</h3>
                     <span>{journal ? `${journal.total} entri refleksi` : "Refleksi harianmu"}</span>
                   </div>
-                  <Link href="/murid/jurnal" className="button button-secondary">
-                    Buka jurnal
-                  </Link>
+                  <div className="murid-home-card-side">
+                    <MuridSectionChipPill chip={jurnalSectionChip} />
+                    <Link href="/murid/jurnal" className="button button-secondary">
+                      Buka jurnal
+                    </Link>
+                  </div>
                 </div>
                 {journal && journal.latest ? (
                   <article className="content-card">
@@ -925,6 +958,14 @@ export default function MuridPage() {
       </div>
     </main>
   );
+}
+
+// Pil chip status di kepala kartu bagian beranda (calon v1.0.74):
+// menggambar chip dari lib/beranda-murid apa adanya — chip null
+// (bagian belum termuat/belum terhubung) tidak merender apa pun.
+function MuridSectionChipPill({ chip }: { chip: MuridSectionChip | null }) {
+  if (!chip) return null;
+  return <span className={`murid-home-chip murid-home-chip--${chip.tone}`}>{chip.label}</span>;
 }
 
 // Thumbnail sampul pada kartu daftar materi: URL diterbitkan segar dari

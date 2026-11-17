@@ -4898,3 +4898,85 @@ button.wizard-library-link {
 .jurnal-guru-back {
   justify-self: start;
 }
+
+/* Lencana hitungan belum ditinjau di kepala panel — rona sama dengan
+   lencana integritas guru (kuning lembut, teks oranye tua). */
+.jurnal-guru-review-row {
+  margin: 0;
+}
+
+.jurnal-guru-review-badge {
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: #fffaeb;
+  color: #b54708;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.jurnal-guru-unreviewed {
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: #fffaeb;
+  color: #b54708;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+/* Blok tanggapan guru pada kartu entri: hijau lembut agar terbaca
+   sebagai catatan bimbingan, berbeda dari isi refleksi murid. */
+.jurnal-guru-response {
+  border: 1px solid #a6f4c5;
+  background: #ecfdf3;
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.jurnal-guru-response-head {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #067647;
+}
+
+.jurnal-guru-response-body {
+  margin: 0;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.jurnal-guru-response-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.jurnal-guru-response-delete {
+  color: #b42318;
+  border-color: #fecdca;
+}
+
+.jurnal-guru-response-form {
+  display: grid;
+  gap: 8px;
+}
+
+.jurnal-guru-response-label {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.jurnal-guru-response-textarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid #d0d5dd;
+  padding: 10px 12px;
+  font: inherit;
+  line-height: 1.6;
+  box-sizing: border-box;
+  resize: vertical;
+}

@@ -2,6 +2,9 @@
 // katalog prompt bawaan + mood, validasi entri buat/sunting, predikat
 // kepemilikan, tanggal WIB, pengelompokan riwayat, statistik + perencana
 // ringkasan guru — semuanya MURNI — plus pengkabelan rute dan migrasi 0021.
+// Diperluas untuk Tanggapan Guru + Penanda Ditinjau (migrasi 0023):
+// validasi tanggapan, semantik belum-ditinjau, dan jalur tulis guru
+// yang tunggal itu.
 // Run with bun from apps/api:  bun src/lib/jurnal-belajar.test.mjs
 //
 // Yang dikunci di sini:
@@ -17,19 +20,31 @@
 //    memeriksa keterlihatan modul tertaut lewat studentCanAccessModule.
 //  - todayWib: batas tengah malam WIB tepat (16:59:59Z masih tanggal
 //    yang sama, 17:00:00Z sudah tanggal berikutnya).
-//  - Sisi guru MURNI BACA: router guru jurnal hanya mendaftarkan GET;
-//    keterlihatan meniru Pantau Hasil (assignmentClasses +
+//  - Sisi guru: keterlihatan meniru Pantau Hasil (assignmentClasses +
 //    assignmentStudents + student-class) dan menjawab 403 di luar
-//    jangkauan. Jurnal tidak menyentuh XP (tidak ada awardXp/xpLedger).
-//  - Migrasi: jurnal 23 entri; 0021_jurnal_belajar tetap di idx 21;
+//    jangkauan pada baca; SATU-SATUNYA jalur tulis guru adalah PUT
+//    tanggapan per entri (di luar jangkauan → 404). Jurnal tidak
+//    menyentuh XP (tidak ada awardXp/xpLedger).
+//  - Tanggapan: teks ter-trim maks 500 karakter; kosong = hapus (null);
+//    bukan string ditolak. Murid tidak punya jalur tulis tanggapan /
+//    penanda ditinjau (jarum statis atas segmen rute murid).
+//  - Ditinjau: entri perlu ditinjau selama reviewed_at NULL; membuka
+//    detail menandai yang dikembalikan (helper murni + jarum rute);
+//    ringkasan guru membawa unreviewed_count + unreviewed_total.
+//  - Migrasi: jurnal 24 entri; 0021_jurnal_belajar tetap di idx 21;
 //    SQL 0021 membuat journal_entries (FK student→users, linked module→
-//    modules, indeks student+date); skema Drizzle memuat kolom sama.
+//    modules, indeks student+date); 0023 menambah kolom tanggapan +
+//    reviewed_at (FK penanggap→users ON DELETE SET NULL); skema
+//    Drizzle memuat kolom yang sama.
 import { readFileSync } from "node:fs";
 
 const {
   JOURNAL_MOODS,
   JOURNAL_PROMPTS,
+  JOURNAL_RESPONSE_MAX_LENGTH,
+  collectUnreviewedEntryIds,
   collectVisibleStudentIds,
+  countUnreviewedEntries,
   groupEntriesByDate,
   isJournalMoodKey,
   isJournalPromptKey,
@@ -41,6 +56,7 @@ const {
   todayWib,
   validateJournalCreate,
   validateJournalPatch,
+  validateJournalResponse,
 } = await import("./jurnal.ts");
 
 let passed = 0;
@@ -138,14 +154,16 @@ check("kelompok tanggal: kosong → kosong", groupEntriesByDate([]).length === 0
 
 // --- Statistik + ringkasan guru -------------------------------------------------------------------
 const stats = reduceJournalStats([
-  { studentId: 1, entryDate: "2026-11-14", createdAt: new Date("2026-11-14T03:00:00Z") },
-  { studentId: 1, entryDate: "2026-11-15", createdAt: new Date("2026-11-15T02:00:00Z") },
-  { studentId: 1, entryDate: "2026-11-15", createdAt: new Date("2026-11-15T05:00:00Z") },
-  { studentId: 2, entryDate: "2026-11-10", createdAt: new Date("2026-11-10T05:00:00Z") },
+  { studentId: 1, entryDate: "2026-11-14", createdAt: new Date("2026-11-14T03:00:00Z"), reviewedAt: new Date("2026-11-14T06:00:00Z") },
+  { studentId: 1, entryDate: "2026-11-15", createdAt: new Date("2026-11-15T02:00:00Z"), reviewedAt: null },
+  { studentId: 1, entryDate: "2026-11-15", createdAt: new Date("2026-11-15T05:00:00Z"), reviewedAt: null },
+  { studentId: 2, entryDate: "2026-11-10", createdAt: new Date("2026-11-10T05:00:00Z"), reviewedAt: null },
 ]);
 check("statistik: hitungan per murid", stats.get(1)?.entryCount === 3 && stats.get(2)?.entryCount === 1 && !stats.has(3));
 check("statistik: entri terakhir = tanggal terbaru, lalu createdAt terbaru",
   stats.get(1)?.lastEntryDate === "2026-11-15" && stats.get(1)?.lastEntryAt?.toISOString() === "2026-11-15T05:00:00.000Z");
+check("statistik: belum ditinjau = baris reviewedAt NULL per murid",
+  stats.get(1)?.unreviewedCount === 2 && stats.get(2)?.unreviewedCount === 1);
 
 check("jangkauan terlihat: gabungan anggota + sasaran langsung, tanpa duplikat",
   JSON.stringify(collectVisibleStudentIds(
@@ -183,6 +201,35 @@ check("ringkasan guru: statistik menempel (jumlah + entri terakhir); tanpa stati
   overview[0].students.find((student) => student.id === 3)?.last_entry_date === null);
 check("ringkasan guru: sasaran langsung teratasi ke kelas di luar sasaran tampil di kelasnya",
   overview[2].id === 5 && overview[2].students[0]?.id === 4);
+check("ringkasan guru: unreviewed_count menempel dari statistik; tanpa statistik → 0",
+  grupTkj?.students.find((student) => student.id === 1)?.unreviewed_count === 2 &&
+  grupTkj?.students.find((student) => student.id === 2)?.unreviewed_count === 1 &&
+  overview[0].students.find((student) => student.id === 3)?.unreviewed_count === 0);
+
+// --- Tanggapan guru: validasi -------------------------------------------------------------------------
+const tanggapanValid = validateJournalResponse({ response: "  Kerja bagus, lanjutkan!  " });
+check("tanggapan valid: teks ter-trim",
+  "response" in tanggapanValid && tanggapanValid.response === "Kerja bagus, lanjutkan!", JSON.stringify(tanggapanValid));
+check("tanggapan: batas tepat 500 karakter diterima",
+  JOURNAL_RESPONSE_MAX_LENGTH === 500 && "response" in validateJournalResponse({ response: "a".repeat(500) }));
+check("tanggapan: 501 karakter ditolak", "error" in validateJournalResponse({ response: "a".repeat(501) }));
+check("tanggapan: string kosong / hanya spasi = hapus (null)",
+  "response" in validateJournalResponse({ response: "" }) && validateJournalResponse({ response: "" }).response === null &&
+  validateJournalResponse({ response: "   \n " }).response === null);
+check("tanggapan: bukan string / tidak dikirim ditolak",
+  "error" in validateJournalResponse({ response: 42 }) && "error" in validateJournalResponse({ response: null }) &&
+  "error" in validateJournalResponse({}));
+
+// --- Penanda ditinjau: helper murni ---------------------------------------------------------------------
+check("belum ditinjau: hanya id dengan reviewedAt NULL yang dikumpulkan",
+  JSON.stringify(collectUnreviewedEntryIds([
+    { id: 1, reviewedAt: null },
+    { id: 2, reviewedAt: new Date("2026-11-15T01:00:00Z") },
+    { id: 3, reviewedAt: null },
+  ])) === JSON.stringify([1, 3]));
+check("belum ditinjau: hitungan total dari baris mentah",
+  countUnreviewedEntries([{ reviewedAt: null }, { reviewedAt: new Date() }, { reviewedAt: null }, { reviewedAt: null }]) === 3 &&
+  countUnreviewedEntries([]) === 0);
 
 // --- Pengkabelan rute ------------------------------------------------------------------------------
 const routesSrc = readFileSync(new URL("../routes/jurnal.ts", import.meta.url), "utf8");
@@ -195,11 +242,35 @@ check("sisi murid mendaftarkan GET/POST/PATCH/DELETE jurnal",
   routesSrc.includes('muridJurnalRoutes.get("/jurnal"') && routesSrc.includes('muridJurnalRoutes.post("/jurnal"') &&
   routesSrc.includes('muridJurnalRoutes.patch("/jurnal/:id"') && routesSrc.includes('muridJurnalRoutes.delete("/jurnal/:id"'));
 const guruSegment = routesSrc.slice(routesSrc.indexOf("export const guruJurnalRoutes"));
-check("sisi guru MURNI BACA: sesudah guruJurnalRoutes tidak ada metode tulis apa pun",
-  !guruSegment.includes(".post(") && !guruSegment.includes(".patch(") && !guruSegment.includes(".put(") && !guruSegment.includes(".delete("),
+check("sisi guru: SATU-SATUNYA jalur tulis adalah PUT tanggapan per entri",
+  guruSegment.includes('guruJurnalRoutes.put("/jurnal/entries/:id/tanggapan"') &&
+  (guruSegment.match(/guruJurnalRoutes\.put\(/g) ?? []).length === 1 &&
+  !guruSegment.includes(".post(") && !guruSegment.includes(".patch(") && !guruSegment.includes(".delete("),
 );
 check("sisi guru mendaftarkan ringkasan + entri per murid",
   guruSegment.includes('guruJurnalRoutes.get("/jurnal"') && guruSegment.includes('guruJurnalRoutes.get("/jurnal/entries"'));
+const tanggapanSegment = guruSegment.slice(guruSegment.indexOf('guruJurnalRoutes.put("/jurnal/entries/:id/tanggapan"'));
+check("tanggapan: entri di luar jangkauan guru → 404 seperti tidak ada (bukan 403)",
+  tanggapanSegment.includes("!visibleIds.includes(entry.studentId)") && tanggapanSegment.includes('"Entri jurnal tidak ditemukan." }, 404'));
+check("tanggapan: divalidasi validateJournalResponse + menyimpan penanggap & cap waktu",
+  tanggapanSegment.includes("validateJournalResponse(input)") &&
+  tanggapanSegment.includes("teacherRespondedBy: validated.response === null ? null : user.userId") &&
+  tanggapanSegment.includes("teacherResponseAt: validated.response === null ? null : now"));
+check("tanggapan: menyimpan tanggapan mengisi reviewed_at hanya bila masih NULL",
+  tanggapanSegment.includes("reviewedAt: entry.reviewedAt ?? now"));
+check("membuka detail menandai entri terkembalikan yang masih NULL sebagai ditinjau",
+  guruSegment.includes("collectUnreviewedEntryIds(rows.map((row) => row.entry))") &&
+  guruSegment.includes("isNull(journalEntries.reviewedAt)") && guruSegment.includes("justReviewed"));
+check("ringkasan guru membawa unreviewed_total dari baris statistik (reviewedAt ikut dipilih)",
+  guruSegment.includes("reviewedAt: journalEntries.reviewedAt") &&
+  guruSegment.includes("unreviewed_total: countUnreviewedEntries(statRows)"));
+check("serialisasi menyertakan tanggapan + nama penanggap + reviewed_at untuk kedua sisi",
+  routesSrc.includes("teacher_response: row.teacherResponse") && routesSrc.includes("teacher_responded_by_name") &&
+  routesSrc.includes("reviewed_at: row.reviewedAt"));
+const muridSegment = routesSrc.slice(0, routesSrc.indexOf("export const guruJurnalRoutes"));
+check("sisi murid TANPA jalur tulis tanggapan/ditinjau: tidak ada rute tanggapan, tidak ada set kolomnya",
+  !muridSegment.includes("/tanggapan") && !muridSegment.includes("teacherResponse:") &&
+  !muridSegment.includes("teacherRespondedBy:") && !muridSegment.includes("reviewedAt:"));
 check("kepemilikan diperiksa pada sunting + hapus (predikat dipakai ≥2 kali)",
   (routesSrc.match(/journalEntryOwnedBy\(existing\.entry\.studentId, user\.userId\)/g) ?? []).length === 2);
 check("kaitan materi diperiksa keterlihatannya saat buat + sunting (studentCanAccessModule ≥2 kali)",
@@ -221,7 +292,18 @@ check("jurnal tidak menyentuh XP (tanpa awardXp / xpLedger di lib + rute jurnal)
 const journal = JSON.parse(
   readFileSync(new URL("../../../../packages/db/migrations/meta/_journal.json", import.meta.url), "utf8"),
 );
-check("jurnal migrasi 23 entri", journal.entries.length === 23, `got ${journal.entries.length}`);
+check("jurnal migrasi 24 entri", journal.entries.length === 24, `got ${journal.entries.length}`);
+const entry0023 = journal.entries[23];
+check("entri 0023_jurnal_tanggapan di idx 23", entry0023.tag === "0023_jurnal_tanggapan" && entry0023.idx === 23, JSON.stringify(entry0023));
+
+const migration0023Sql = readFileSync(new URL("../../../../packages/db/migrations/0023_jurnal_tanggapan.sql", import.meta.url), "utf8");
+check("SQL 0023: menambah kolom tanggapan + reviewed_at ke journal_entries",
+  migration0023Sql.includes("ALTER TABLE `journal_entries` ADD `teacher_response` text") &&
+  migration0023Sql.includes("ALTER TABLE `journal_entries` ADD `teacher_response_at` timestamp") &&
+  migration0023Sql.includes("ALTER TABLE `journal_entries` ADD `teacher_responded_by` bigint") &&
+  migration0023Sql.includes("ALTER TABLE `journal_entries` ADD `reviewed_at` timestamp"));
+check("SQL 0023: FK penanggap → users ON DELETE set null",
+  migration0023Sql.includes("FOREIGN KEY (`teacher_responded_by`) REFERENCES `users`(`id`) ON DELETE set null"));
 const entry0021 = journal.entries[21];
 check("entri 0021_jurnal_belajar tetap di idx 21", entry0021.tag === "0021_jurnal_belajar" && entry0021.idx === 21, JSON.stringify(entry0021));
 
@@ -240,6 +322,10 @@ const schemaSrc = readFileSync(new URL("../../../../packages/db/src/schema/journ
 check("skema journalEntries memuat kolom yang sama (entryDate mode string)",
   schemaSrc.includes('date("entry_date", { mode: "string" })') && schemaSrc.includes('promptKey: varchar("prompt_key", { length: 64 })') &&
   schemaSrc.includes('mood: varchar("mood", { length: 32 })') && schemaSrc.includes('linkedModuleId: bigint("linked_module_id"'));
+check("skema journalEntries memuat kolom tanggapan + reviewed_at (FK penanggap set null)",
+  schemaSrc.includes('teacherResponse: text("teacher_response")') && schemaSrc.includes('teacherResponseAt: timestamp("teacher_response_at")') &&
+  schemaSrc.includes('teacherRespondedBy: bigint("teacher_responded_by"') && schemaSrc.includes('reviewedAt: timestamp("reviewed_at")') &&
+  schemaSrc.includes('onDelete: "set null"'));
 const schemaIndexSrc = readFileSync(new URL("../../../../packages/db/src/schema/index.ts", import.meta.url), "utf8");
 check("skema index mengekspor journal", schemaIndexSrc.includes('export * from "./journal";'));
 

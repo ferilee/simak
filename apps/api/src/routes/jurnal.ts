@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, schema } from "@simak/db";
 import { requireRole } from "../middleware/auth";
 import { loadAssignmentSubject, studentCanAccessModule } from "../lib/assignment-target";
@@ -7,7 +7,9 @@ import { loadTeacherClassMemberships, resolveStudentClass } from "../lib/student
 import {
   JOURNAL_MOODS,
   JOURNAL_PROMPTS,
+  collectUnreviewedEntryIds,
   collectVisibleStudentIds,
+  countUnreviewedEntries,
   journalEntryOwnedBy,
   journalMoodByKey,
   journalPromptText,
@@ -16,6 +18,7 @@ import {
   todayWib,
   validateJournalCreate,
   validateJournalPatch,
+  validateJournalResponse,
   type TeacherJournalDirectInput,
   type TeacherJournalMemberInput,
 } from "../lib/jurnal";
@@ -25,17 +28,20 @@ import {
 //   sunting/hapus entri MILIK SENDIRI. Kepemilikan diperiksa di server
 //   pada setiap operasi (predikat journalEntryOwnedBy); entri orang
 //   lain menjawab 404 yang sama dengan entri tidak ada — keberadaannya
-//   tidak dibocorkan.
-// - guruJurnalRoutes (peran guru, terpasang di /guru): HANYA GET.
-//   Guru membaca jurnal murid dalam jangkauannya menurut aturan
-//   Pantau Hasil/Rekap (penugasan guru → kelas sasaran → murid, plus
-//   sasaran langsung) — tidak ada jalur tulis, nilai, atau komentar.
+//   tidak dibocorkan. Murid TIDAK punya jalur tulis apa pun atas
+//   tanggapan guru maupun penanda ditinjau.
+// - guruJurnalRoutes (peran guru, terpasang di /guru): membaca jurnal
+//   murid dalam jangkauannya menurut aturan Pantau Hasil/Rekap
+//   (penugasan guru → kelas sasaran → murid, plus sasaran langsung),
+//   menandai entri yang dibuka sebagai sudah ditinjau, dan menyimpan
+//   SATU tanggapan singkat per entri (bimbingan satu arah — bukan
+//   diskusi, tanpa nilai). Itulah satu-satunya jalur tulis sisi guru.
 
 const { assignmentClasses, assignmentStudents, assignments, classes, classMembers, journalEntries, modules, users } = schema;
 
 type JournalEntryRow = typeof journalEntries.$inferSelect;
 
-function serializeEntry(row: JournalEntryRow, moduleTitle: string | null) {
+function serializeEntry(row: JournalEntryRow, moduleTitle: string | null, responderNames: ReadonlyMap<number, string>) {
   const mood = journalMoodByKey(row.mood);
   return {
     id: row.id,
@@ -48,6 +54,11 @@ function serializeEntry(row: JournalEntryRow, moduleTitle: string | null) {
     mood_emoji: mood?.emoji ?? null,
     linked_module_id: row.linkedModuleId,
     linked_module_title: moduleTitle,
+    teacher_response: row.teacherResponse,
+    teacher_response_at: row.teacherResponseAt,
+    teacher_responded_by: row.teacherRespondedBy,
+    teacher_responded_by_name: row.teacherRespondedBy !== null ? responderNames.get(row.teacherRespondedBy) ?? null : null,
+    reviewed_at: row.reviewedAt,
     created_at: row.createdAt,
     updated_at: row.updatedAt,
   };
@@ -61,6 +72,25 @@ async function loadEntryWithModuleTitle(entryId: number) {
     .where(eq(journalEntries.id, entryId))
     .limit(1);
   return row;
+}
+
+/** Nama guru penanggap untuk sekumpulan baris entri (peta id → nama; kosong bila tak ada tanggapan). */
+async function loadResponderNames(rows: readonly JournalEntryRow[]): Promise<Map<number, string>> {
+  const ids = [...new Set(rows.map((row) => row.teacherRespondedBy).filter((id): id is number => id !== null))];
+  const names = new Map<number, string>();
+  if (ids.length) {
+    const userRows = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, ids));
+    for (const userRow of userRows) names.set(userRow.id, userRow.name);
+  }
+  return names;
+}
+
+/** Satu entri terserialisasi penuh (judul materi + nama penanggap); undefined bila tidak ada. */
+async function loadSerializedEntry(entryId: number) {
+  const row = await loadEntryWithModuleTitle(entryId);
+  if (!row) return undefined;
+  const names = await loadResponderNames([row.entry]);
+  return serializeEntry(row.entry, row.moduleTitle, names);
 }
 
 function parseListWindow(c: { req: { query: (key: string) => string | undefined } }, defaultLimit: number, maxLimit: number) {
@@ -92,10 +122,11 @@ muridJurnalRoutes.get("/jurnal", async (c) => {
       .offset(offset),
     db.select({ value: sql<number>`count(*)` }).from(journalEntries).where(eq(journalEntries.studentId, user.userId)),
   ]);
+  const names = await loadResponderNames(rows.map((row) => row.entry));
   return c.json({
     ok: true,
     data: {
-      entries: rows.map((row) => serializeEntry(row.entry, row.moduleTitle)),
+      entries: rows.map((row) => serializeEntry(row.entry, row.moduleTitle, names)),
       total: Number(countRows[0]?.value ?? 0),
       prompts: JOURNAL_PROMPTS,
       moods: JOURNAL_MOODS,
@@ -127,9 +158,9 @@ muridJurnalRoutes.post("/jurnal", async (c) => {
       linkedModuleId: draft.linkedModuleId,
     })
     .$returningId();
-  const row = created ? await loadEntryWithModuleTitle(created.id) : undefined;
-  if (!row) return c.json({ ok: false, message: "Entri jurnal gagal disimpan." }, 500);
-  return c.json({ ok: true, data: serializeEntry(row.entry, row.moduleTitle) }, 201);
+  const data = created ? await loadSerializedEntry(created.id) : undefined;
+  if (!data) return c.json({ ok: false, message: "Entri jurnal gagal disimpan." }, 500);
+  return c.json({ ok: true, data }, 201);
 });
 
 muridJurnalRoutes.patch("/jurnal/:id", async (c) => {
@@ -154,9 +185,9 @@ muridJurnalRoutes.patch("/jurnal/:id", async (c) => {
   if (patch.mood !== undefined) updates.mood = patch.mood;
   if (patch.linkedModuleId !== undefined) updates.linkedModuleId = patch.linkedModuleId;
   await db.update(journalEntries).set(updates).where(eq(journalEntries.id, entryId));
-  const row = await loadEntryWithModuleTitle(entryId);
-  if (!row) return c.json({ ok: false, message: "Entri jurnal tidak ditemukan." }, 404);
-  return c.json({ ok: true, data: serializeEntry(row.entry, row.moduleTitle) });
+  const data = await loadSerializedEntry(entryId);
+  if (!data) return c.json({ ok: false, message: "Entri jurnal tidak ditemukan." }, 404);
+  return c.json({ ok: true, data });
 });
 
 muridJurnalRoutes.delete("/jurnal/:id", async (c) => {
@@ -172,7 +203,7 @@ muridJurnalRoutes.delete("/jurnal/:id", async (c) => {
 });
 
 // ---------------------------------------------------------------------------
-// Sisi guru (hanya-baca)
+// Sisi guru (baca + tanggapan singkat + penanda ditinjau)
 // ---------------------------------------------------------------------------
 
 export const guruJurnalRoutes = new Hono();
@@ -227,7 +258,7 @@ guruJurnalRoutes.get("/jurnal", async (c) => {
   const visibleIds = collectVisibleStudentIds(scope.members, scope.directStudents);
   const statRows = visibleIds.length
     ? await db
-        .select({ studentId: journalEntries.studentId, entryDate: journalEntries.entryDate, createdAt: journalEntries.createdAt })
+        .select({ studentId: journalEntries.studentId, entryDate: journalEntries.entryDate, createdAt: journalEntries.createdAt, reviewedAt: journalEntries.reviewedAt })
         .from(journalEntries)
         .where(inArray(journalEntries.studentId, visibleIds))
     : [];
@@ -237,7 +268,7 @@ guruJurnalRoutes.get("/jurnal", async (c) => {
     directStudents: scope.directStudents,
     stats: reduceJournalStats(statRows),
   });
-  return c.json({ ok: true, data: { classes: overview } });
+  return c.json({ ok: true, data: { classes: overview, unreviewed_total: countUnreviewedEntries(statRows) } });
 });
 
 guruJurnalRoutes.get("/jurnal/entries", async (c) => {
@@ -263,12 +294,62 @@ guruJurnalRoutes.get("/jurnal/entries", async (c) => {
       .offset(offset),
     db.select({ value: sql<number>`count(*)` }).from(journalEntries).where(eq(journalEntries.studentId, studentId)),
   ]);
+  // Membuka detail jurnal murid ini MENANDAI entri yang dikembalikan
+  // permintaan ini sebagai sudah ditinjau (hanya yang reviewed_at-nya
+  // masih NULL; idempoten — membuka lagi tidak mengubah cap waktunya).
+  const now = new Date();
+  const unreviewedIds = collectUnreviewedEntryIds(rows.map((row) => row.entry));
+  if (unreviewedIds.length) {
+    await db
+      .update(journalEntries)
+      .set({ reviewedAt: now })
+      .where(and(inArray(journalEntries.id, unreviewedIds), isNull(journalEntries.reviewedAt)));
+  }
+  const justReviewed = new Set(unreviewedIds);
+  const names = await loadResponderNames(rows.map((row) => row.entry));
   return c.json({
     ok: true,
     data: {
       student,
-      entries: rows.map((row) => serializeEntry(row.entry, row.moduleTitle)),
+      entries: rows.map((row) =>
+        serializeEntry(justReviewed.has(row.entry.id) ? { ...row.entry, reviewedAt: now } : row.entry, row.moduleTitle, names),
+      ),
       total: Number(countRows[0]?.value ?? 0),
     },
   });
+});
+
+// Satu-satunya jalur tulis sisi guru: menyimpan (atau mengosongkan)
+// tanggapan untuk SATU entri. Hanya guru yang boleh melihat murid
+// pemilik entri yang dapat menanggapinya; entri di luar jangkauan —
+// sama seperti entri yang tidak ada — menjawab 404. Menyimpan
+// tanggapan juga menandai entri sudah ditinjau.
+guruJurnalRoutes.put("/jurnal/entries/:id/tanggapan", async (c) => {
+  const user = c.get("user")!;
+  const entryId = Number(c.req.param("id"));
+  if (!Number.isInteger(entryId) || entryId <= 0) return c.json({ ok: false, message: "Entri jurnal tidak ditemukan." }, 404);
+  let input: { response?: unknown };
+  try { input = await c.req.json(); } catch { return c.json({ ok: false, message: "Isi tanggapan harus berupa JSON yang valid." }, 400); }
+  const [entry] = await db.select().from(journalEntries).where(eq(journalEntries.id, entryId)).limit(1);
+  if (!entry) return c.json({ ok: false, message: "Entri jurnal tidak ditemukan." }, 404);
+  const scope = await loadTeacherJournalScope(user.userId);
+  const visibleIds = collectVisibleStudentIds(scope.members, scope.directStudents);
+  if (!visibleIds.includes(entry.studentId)) {
+    return c.json({ ok: false, message: "Entri jurnal tidak ditemukan." }, 404);
+  }
+  const validated = validateJournalResponse(input);
+  if ("error" in validated) return c.json({ ok: false, message: validated.error }, 400);
+  const now = new Date();
+  await db
+    .update(journalEntries)
+    .set({
+      teacherResponse: validated.response,
+      teacherResponseAt: validated.response === null ? null : now,
+      teacherRespondedBy: validated.response === null ? null : user.userId,
+      reviewedAt: entry.reviewedAt ?? now,
+    })
+    .where(eq(journalEntries.id, entryId));
+  const data = await loadSerializedEntry(entryId);
+  if (!data) return c.json({ ok: false, message: "Entri jurnal tidak ditemukan." }, 404);
+  return c.json({ ok: true, data });
 });

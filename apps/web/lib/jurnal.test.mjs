@@ -2,6 +2,8 @@
 // label tanggal + pengelompokan riwayat (lib/jurnal.ts), label kelas
 // guru + saringan kelas — MURNI — plus pengkabelan halaman murid
 // (bagian Jurnal di beranda + halaman /murid/jurnal) dan panel guru.
+// Diperluas untuk Tanggapan Guru + Penanda Ditinjau: label tanggal-jam
+// tanggapan, lencana belum-ditinjau, dan editor tanggapan panel guru.
 // Run with bun from apps/web:  bun lib/jurnal.test.mjs
 //
 // Yang dikunci di sini:
@@ -10,13 +12,14 @@
 //    bergeser); string rusak diteruskan apa adanya.
 //  - Riwayat dikelompokkan per tanggal dengan labelnya; urutan
 //    kelompok mengikuti kemunculan pertama tanggal.
-//  - Panel guru MURNI BACA: komponennya tidak mengirim metode tulis
-//    apa pun (jarum statis atas sumber panel) dan halaman guru
-//    memasang tampilan "jurnal" seperti panel malas lainnya.
+//  - Panel guru: SATU-SATUNYA metode tulis adalah PUT tanggapan per
+//    entri (jarum statis atas sumber panel); halaman guru memasang
+//    tampilan "jurnal" seperti panel malas lainnya. Halaman murid
+//    menampilkan tanggapan guru TANPA jalur balas apa pun.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { filterGuruJournalClasses, groupEntriesByDate, guruJournalClassLabel, journalDateLabel } from "./jurnal.ts";
+import { filterGuruJournalClasses, groupEntriesByDate, guruJournalClassLabel, journalDateLabel, journalDateTimeLabel } from "./jurnal.ts";
 
 let passed = 0;
 let failed = 0;
@@ -43,6 +46,10 @@ check("label tanggal: Minggu, 15 November 2026", journalDateLabel("2026-11-15") 
 check("label tanggal: Sabtu, 14 November 2026", journalDateLabel("2026-11-14") === "Sabtu, 14 November 2026", journalDateLabel("2026-11-14"));
 check("label tanggal: Kamis, 1 Januari 2026", journalDateLabel("2026-01-01") === "Kamis, 1 Januari 2026", journalDateLabel("2026-01-01"));
 check("label tanggal: string rusak diteruskan apa adanya", journalDateLabel("bukan-tanggal") === "bukan-tanggal");
+check("label tanggal-jam tanggapan: ISO → tanggal + 'pukul HH.mm' WIB",
+  journalDateTimeLabel("2026-11-17T04:12:00.000Z") === "17 November 2026 pukul 11.12", journalDateTimeLabel("2026-11-17T04:12:00.000Z"));
+check("label tanggal-jam tanggapan: null → kosong; string rusak diteruskan",
+  journalDateTimeLabel(null) === "" && journalDateTimeLabel("bukan-tanggal") === "bukan-tanggal");
 
 // --- Pengelompokan riwayat -----------------------------------------------------------------
 const entri = (id, entry_date, body) => ({
@@ -87,6 +94,11 @@ check("halaman jurnal: keadaan kosong ramah",
   jurnalPage.includes("Belum ada entri jurnal") && jurnalPage.includes("Refleksi pertamamu bisa sesingkat dua kalimat"));
 check("halaman jurnal: dinyatakan tidak dinilai di hero",
   jurnalPage.includes("Jurnal ini tidak dinilai"));
+check("halaman jurnal: blok Tanggapan guru tampil di bawah entri bila ada (nama + waktu + isi)",
+  jurnalPage.includes("entry.teacher_response") && jurnalPage.includes("💬 Tanggapan guru") &&
+  jurnalPage.includes("entry.teacher_responded_by_name") && jurnalPage.includes("journalDateTimeLabel(entry.teacher_response_at)"));
+check("halaman jurnal: TANPA jalur balas tanggapan (tidak menyentuh endpoint tanggapan)",
+  !jurnalPage.includes("/tanggapan"));
 
 // --- Pengkabelan sisi guru --------------------------------------------------------------------------------
 check("halaman guru: tampilan jurnal terpasang seperti panel malas lain",
@@ -95,11 +107,26 @@ check("halaman guru: tampilan jurnal terpasang seperti panel malas lain",
   guruPage.includes("<JurnalGuruPanel />"));
 check("panel guru: membaca ringkasan + entri dari /guru/jurnal*",
   guruPanel.includes('"/guru/jurnal"') && guruPanel.includes("/guru/jurnal/entries?studentId="));
-check("panel guru: MURNI BACA — tidak ada metode tulis pada panel",
-  !/method: "(POST|PATCH|PUT|DELETE)"/.test(guruPanel));
+check("panel guru: SATU-SATUNYA metode tulis adalah PUT tanggapan per entri",
+  guruPanel.includes('method: "PUT"') && guruPanel.includes("/guru/jurnal/entries/${entry.id}/tanggapan") &&
+  !/method: "(POST|PATCH|DELETE)"/.test(guruPanel));
+check("panel guru: editor tanggapan (simpan/sunting/hapus + batas 500 karakter)",
+  guruPanel.includes("Simpan tanggapan") && guruPanel.includes("Sunting tanggapan") && guruPanel.includes("Hapus tanggapan") &&
+  guruPanel.includes("maxLength={500}"));
+check("panel guru: lencana kepala 'perlu ditinjau' dari unreviewed_total + hitungan per murid",
+  guruPanel.includes("overview.unreviewed_total") && guruPanel.includes("perlu ditinjau") &&
+  guruPanel.includes("student.unreviewed_count") && guruPanel.includes("belum ditinjau"));
+check("panel guru: chip 'Belum ditinjau' pada entri yang reviewed_at-nya kosong",
+  guruPanel.includes("entry.reviewed_at === null") && guruPanel.includes("Belum ditinjau"));
+check("panel guru: kembali ke daftar memuat ulang ringkasan (hitungan ditinjau terbarui)",
+  guruPanel.includes("void loadOverview()") && guruPanel.includes("onClick={backToList}"));
+check("panel guru: tanggapan tersimpan tampil dengan nama penanggap + waktu",
+  guruPanel.includes("entry.teacher_responded_by_name") && guruPanel.includes("journalDateTimeLabel(entry.teacher_response_at)"));
 check("panel guru: tanpa bahasa penilaian (tidak ada kata nilai/skor untuk jurnal)",
   !guruPanel.includes("Nilai jurnal") && !guruPanel.includes("Skor jurnal") && guruPanel.includes("bukan tugas yang dinilai"));
-check("panel guru: gaya panel terdaftar di globals.css", globalsCss.includes(".jurnal-guru-panel"));
+check("panel guru: gaya panel + tanggapan terdaftar di globals.css",
+  globalsCss.includes(".jurnal-guru-panel") && globalsCss.includes(".jurnal-guru-review-badge") &&
+  globalsCss.includes(".jurnal-guru-response") && globalsCss.includes(".jurnal-guru-unreviewed"));
 
 console.log(`\nWeb jurnal: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

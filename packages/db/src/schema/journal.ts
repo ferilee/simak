@@ -6,9 +6,15 @@ import { users } from "./users";
 // murid — bentuk permanen tahap Transform pada alur DELTA. Satu murid
 // boleh menulis lebih dari satu entri pada tanggal yang sama; entri
 // disunting/dihapus hanya oleh pemiliknya (penegakan di rute murid),
-// dan guru hanya MEMBACA entri murid dalam jangkauan kelasnya (rute
-// guru jurnal tidak punya jalur tulis sama sekali). Jurnal tidak
+// dan guru membaca entri murid dalam jangkauan kelasnya. Jurnal tidak
 // menghasilkan XP dan tidak dinilai — tidak ada kolom skor di sini.
+//
+// TANGGAPAN GURU + PENANDA DITINJAU (migrasi 0023): guru boleh menulis
+// SATU tanggapan singkat per entri (teacher_response; mengosongkannya
+// mengembalikan ketiga kolom tanggapan ke NULL) dan entri ditandai
+// sudah ditinjau (reviewed_at) saat guru membukanya atau menanggapinya.
+// Ini BUKAN ruang diskusi: murid tidak punya jalur balas apa pun atas
+// tanggapan — kolom-kolom ini hanya ditulis rute guru.
 //
 // - entry_date adalah tanggal jurnal menurut WIB, diputuskan server
 //   saat entri dibuat (lib/jurnal.ts todayWib) dan tidak berubah saat
@@ -35,6 +41,12 @@ export const journalEntries = mysqlTable(
     promptKey: varchar("prompt_key", { length: 64 }),
     mood: varchar("mood", { length: 32 }),
     linkedModuleId: bigint("linked_module_id", { mode: "number" }).references(() => modules.id),
+    teacherResponse: text("teacher_response"),
+    teacherResponseAt: timestamp("teacher_response_at"),
+    teacherRespondedBy: bigint("teacher_responded_by", { mode: "number" }).references(() => users.id, {
+      onDelete: "set null",
+    }),
+    reviewedAt: timestamp("reviewed_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
   },

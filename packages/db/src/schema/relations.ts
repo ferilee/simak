@@ -154,4 +154,5 @@ export const ruasScoresRelations = relations(ruasScores, ({ one }) => ({
 export const journalEntriesRelations = relations(journalEntries, ({ one }) => ({
   student: one(users, { fields: [journalEntries.studentId], references: [users.id] }),
   linkedModule: one(modules, { fields: [journalEntries.linkedModuleId], references: [modules.id] }),
+  respondedBy: one(users, { fields: [journalEntries.teacherRespondedBy], references: [users.id] }),
 }));

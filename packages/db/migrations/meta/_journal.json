@@ -162,6 +162,13 @@
       "when": 1794740816711,
       "tag": "0022_token_serah_terima",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "5",
+      "when": 1794889273874,
+      "tag": "0023_jurnal_tanggapan",
+      "breakpoints": true
     }
   ]
 }

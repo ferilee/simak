@@ -90,9 +90,9 @@ console.log("Case 3: permukaan lain tidak berubah");
 console.log("Case 4: Jalur — tidak ada migrasi melampaui 0013 (Persetujuan Berbagi)");
 {
   const files = readdirSync(new URL("../../../../packages/db/migrations/", import.meta.url)).filter((name) => name.endsWith(".sql"));
-  check("tidak ada berkas migrasi 0023+", !files.some((name) => /^002[3-9]/.test(name)), files.join(","));
+  check("tidak ada berkas migrasi 0024+", !files.some((name) => /^002[4-9]/.test(name)), files.join(","));
   const journal = JSON.parse(read("../../../../packages/db/migrations/meta/_journal.json"));
-  check("jurnal 23 entri (idx terakhir 22, 0022 token-serah-terima)", journal.entries.length === 23 && journal.entries[journal.entries.length - 1].idx === 22);
+  check("jurnal 24 entri (idx terakhir 23, 0023 jurnal-tanggapan)", journal.entries.length === 24 && journal.entries[journal.entries.length - 1].idx === 23);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

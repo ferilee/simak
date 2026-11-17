@@ -7,6 +7,7 @@ import { apiRequest } from "../../../lib/api";
 import {
   groupEntriesByDate,
   journalDateLabel,
+  journalDateTimeLabel,
   type JournalEntry,
   type JournalListData,
   type JournalMood,
@@ -318,6 +319,16 @@ export default function JurnalBelajarPage() {
                     {entry.linked_module_title ? (
                       <p style={styles.meta}>📚 Materi: {entry.linked_module_title}</p>
                     ) : null}
+                    {entry.teacher_response ? (
+                      <div style={styles.responseBlock}>
+                        <p style={styles.responseLabel}>
+                          💬 Tanggapan guru
+                          {entry.teacher_responded_by_name ? ` · ${entry.teacher_responded_by_name}` : ""}
+                          {entry.teacher_response_at ? ` · ${journalDateTimeLabel(entry.teacher_response_at)}` : ""}
+                        </p>
+                        <p style={styles.responseBody}>{entry.teacher_response}</p>
+                      </div>
+                    ) : null}
                   </div>
                   <div style={styles.cardActions}>
                     <button type="button" className="button button-secondary" onClick={() => startEdit(entry)}>
@@ -377,6 +388,9 @@ const styles = {
   moodChip: { background: "#fffaeb", color: "#93370d", border: "1px solid #fedf89", borderRadius: 999, padding: "2px 10px", fontSize: 12, fontWeight: 700 },
   bodyText: { margin: 0, lineHeight: 1.65, color: "#1d2939", whiteSpace: "pre-wrap" as const, overflowWrap: "break-word" as const },
   meta: { color: "#475467", fontSize: 14, margin: 0 },
+  responseBlock: { background: "#ecfdf3", border: "1px solid #a6f4c5", borderRadius: 12, padding: "10px 12px", display: "grid", gap: 4 },
+  responseLabel: { fontWeight: 700, fontSize: 13, color: "#067647", margin: 0 },
+  responseBody: { margin: 0, lineHeight: 1.6, color: "#1d2939", whiteSpace: "pre-wrap" as const, overflowWrap: "break-word" as const },
   cardActions: { display: "flex", gap: 8 },
   deleteButton: { color: "#b42318", borderColor: "#fecdca" },
 };

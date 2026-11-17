@@ -71,7 +71,7 @@ function sameFields(a, b) {
 // ---------------------------------------------------------------------------
 {
   const journal = JSON.parse(readRepo("packages/db/migrations/meta/_journal.json"));
-  check("journal has exactly 23 entries", journal.entries.length === 23, `got ${journal.entries.length}`);
+  check("journal has exactly 24 entries", journal.entries.length === 24, `got ${journal.entries.length}`);
   const entry0013 = journal.entries.find((entry) => entry.tag === "0013_persetujuan_berbagi");
   const entry0012 = journal.entries.find((entry) => entry.tag === "0012_perpustakaan_bersama");
   check("journal entry 0013_persetujuan_berbagi exists at idx 13", entry0013?.idx === 13);

@@ -20,6 +20,11 @@ export type JournalEntry = {
   mood_emoji: string | null;
   linked_module_id: number | null;
   linked_module_title: string | null;
+  teacher_response: string | null;
+  teacher_response_at: string | null;
+  teacher_responded_by: number | null;
+  teacher_responded_by_name: string | null;
+  reviewed_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -36,6 +41,7 @@ export type GuruJournalStudent = {
   name: string;
   username: string;
   entry_count: number;
+  unreviewed_count: number;
   last_entry_date: string | null;
 };
 
@@ -45,7 +51,7 @@ export type GuruJournalClass = {
   students: GuruJournalStudent[];
 };
 
-export type GuruJournalOverviewData = { classes: GuruJournalClass[] };
+export type GuruJournalOverviewData = { classes: GuruJournalClass[]; unreviewed_total: number };
 
 export type GuruJournalEntriesData = {
   student: { id: number; name: string; username: string };
@@ -68,6 +74,26 @@ export function journalDateLabel(entryDate: string): string {
     day: "numeric",
     month: "long",
     year: "numeric",
+  }).format(instant);
+}
+
+/**
+ * Label tanggal + jam untuk cap waktu tanggapan guru (ISO dari
+ * server), mis. "17 November 2026 pukul 11.12" menurut WIB. String
+ * yang tidak terbaca sebagai tanggal diteruskan apa adanya; null
+ * menjadi string kosong.
+ */
+export function journalDateTimeLabel(iso: string | null): string {
+  if (iso === null) return "";
+  const instant = new Date(iso);
+  if (Number.isNaN(instant.getTime())) return iso;
+  return new Intl.DateTimeFormat("id-ID", {
+    timeZone: "Asia/Jakarta",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   }).format(instant);
 }
 

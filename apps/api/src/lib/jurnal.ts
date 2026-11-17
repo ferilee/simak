@@ -10,7 +10,9 @@
 //   prompt adalah perubahan kode yang ditinjau dan terbit bersama rilis.
 // - Jurnal tidak menghasilkan XP dan tidak dinilai: tidak ada skor,
 //   tidak ada kait ke lib/xp.ts di paket ini.
-// - Guru membaca jurnal murid dalam jangkauannya, hanya-baca.
+// - Guru membaca jurnal murid dalam jangkauannya dan boleh menulis
+//   SATU tanggapan singkat per entri (bimbingan, bukan diskusi: murid
+//   tidak dapat membalas) serta menandai entri sudah ditinjau.
 
 // ---------------------------------------------------------------------------
 // Katalog prompt refleksi (gaya Transform DELTA: pemahaman awal vs akhir)
@@ -166,6 +168,27 @@ export function validateJournalPatch(input: RawJournalInput): { patch: JournalEn
 }
 
 // ---------------------------------------------------------------------------
+// Tanggapan guru: SATU tanggapan singkat per entri, ditulis guru yang
+// berhak melihat murid pemilik entri (penegakan jangkauan di rute).
+// Teks ter-trim, maksimal 500 karakter; string kosong/putih berarti
+// HAPUS tanggapan (hasil null). Ini saluran bimbingan satu arah —
+// murid tidak punya jalur balas, jadi tidak ada validasi balasan.
+// ---------------------------------------------------------------------------
+
+export const JOURNAL_RESPONSE_MAX_LENGTH = 500;
+
+export function validateJournalResponse(input: { response?: unknown }): { response: string | null } | { error: string } {
+  if (typeof input.response !== "string") {
+    return { error: "Tanggapan harus berupa teks." };
+  }
+  const response = input.response.trim();
+  if (response.length > JOURNAL_RESPONSE_MAX_LENGTH) {
+    return { error: `Tanggapan maksimal ${JOURNAL_RESPONSE_MAX_LENGTH} karakter.` };
+  }
+  return { response: response === "" ? null : response };
+}
+
+// ---------------------------------------------------------------------------
 // Kepemilikan + tanggal
 // ---------------------------------------------------------------------------
 
@@ -226,20 +249,22 @@ export function groupEntriesByDate<T extends { entryDate: string }>(
 //   (berpreferensi mapel penugasan; tak teratasi → kelas id 0, nama "").
 // ---------------------------------------------------------------------------
 
-export type JournalStatRow = { studentId: number; entryDate: string; createdAt: Date };
+export type JournalStatRow = { studentId: number; entryDate: string; createdAt: Date; reviewedAt: Date | null };
 
 export type JournalStudentStat = {
   entryCount: number;
+  unreviewedCount: number;
   lastEntryDate: string | null;
   lastEntryAt: Date | null;
 };
 
-/** Lipat baris (studentId, entryDate, createdAt) menjadi hitungan + entri terakhir per murid. */
+/** Lipat baris (studentId, entryDate, createdAt, reviewedAt) menjadi hitungan + entri terakhir + belum-ditinjau per murid. */
 export function reduceJournalStats(rows: readonly JournalStatRow[]): Map<number, JournalStudentStat> {
   const stats = new Map<number, JournalStudentStat>();
   for (const row of rows) {
-    const current = stats.get(row.studentId) ?? { entryCount: 0, lastEntryDate: null, lastEntryAt: null };
+    const current = stats.get(row.studentId) ?? { entryCount: 0, unreviewedCount: 0, lastEntryDate: null, lastEntryAt: null };
     current.entryCount += 1;
+    if (row.reviewedAt === null) current.unreviewedCount += 1;
     const isLater =
       current.lastEntryDate === null ||
       row.entryDate > current.lastEntryDate ||
@@ -261,6 +286,7 @@ export type TeacherJournalStudent = {
   name: string;
   username: string;
   entry_count: number;
+  unreviewed_count: number;
   last_entry_date: string | null;
 };
 
@@ -318,6 +344,7 @@ export function planTeacherJournalOverview(input: {
       name: student.name,
       username: student.username,
       entry_count: stat?.entryCount ?? 0,
+      unreviewed_count: stat?.unreviewedCount ?? 0,
       last_entry_date: stat?.lastEntryDate ?? null,
     });
   };
@@ -340,4 +367,23 @@ export function planTeacherJournalOverview(input: {
     return a.name.localeCompare(b.name, "id") || a.id - b.id;
   });
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Penanda sudah ditinjau (reviewed_at): entri "perlu ditinjau" selama
+// reviewed_at-nya NULL. reviewed_at terisi (hanya bila masih NULL) saat
+// guru membuka detail jurnal murid pemiliknya — entri yang dikembalikan
+// permintaan itu ditandai pada permintaan yang sama — atau saat guru
+// menyimpan tanggapan untuk entri itu. Dua helper murni ini adalah
+// satu-satunya definisi semantiknya; rute hanya menerapkannya ke DB.
+// ---------------------------------------------------------------------------
+
+/** Id entri yang masih perlu ditinjau (reviewedAt NULL) dari sekumpulan baris entri. */
+export function collectUnreviewedEntryIds(rows: readonly { id: number; reviewedAt: Date | null }[]): number[] {
+  return rows.filter((row) => row.reviewedAt === null).map((row) => row.id);
+}
+
+/** Jumlah entri belum ditinjau dari baris statistik mentah (untuk lencana kepala panel guru). */
+export function countUnreviewedEntries(rows: readonly { reviewedAt: Date | null }[]): number {
+  return rows.reduce((total, row) => total + (row.reviewedAt === null ? 1 : 0), 0);
 }

@@ -1,3 +1,5 @@
+import { avatarBadgeFields } from "./avatar";
+
 // Jurnal Belajar (Hub Murid Tahap 3): katalog prompt refleksi + mood,
 // validasi entri, dan perencana murni untuk riwayat murid dan ringkasan
 // guru. Semua keputusan yang bisa diuji tanpa basis data tinggal di
@@ -278,13 +280,15 @@ export function reduceJournalStats(rows: readonly JournalStatRow[]): Map<number,
   return stats;
 }
 
-export type TeacherJournalMemberInput = { classId: number; studentId: number; name: string; username: string };
-export type TeacherJournalDirectInput = { studentId: number; name: string; username: string; classId: number; className: string };
+export type TeacherJournalMemberInput = { classId: number; studentId: number; name: string; username: string; avatarSlug: string | null };
+export type TeacherJournalDirectInput = { studentId: number; name: string; username: string; avatarSlug: string | null; classId: number; className: string };
 
 export type TeacherJournalStudent = {
   id: number;
   name: string;
   username: string;
+  avatar_slug: string | null;
+  avatar_emoji: string | null;
   entry_count: number;
   unreviewed_count: number;
   last_entry_date: string | null;
@@ -334,7 +338,7 @@ export function planTeacherJournalOverview(input: {
   for (const kelas of input.classes) ensureGroup(kelas.id, kelas.name);
 
   const seenInClass = new Set<string>();
-  const addStudent = (classId: number, className: string, student: { id: number; name: string; username: string }) => {
+  const addStudent = (classId: number, className: string, student: { id: number; name: string; username: string; avatarSlug: string | null }) => {
     const key = `${classId}:${student.id}`;
     if (seenInClass.has(key)) return;
     seenInClass.add(key);
@@ -343,6 +347,7 @@ export function planTeacherJournalOverview(input: {
       id: student.id,
       name: student.name,
       username: student.username,
+      ...avatarBadgeFields(student.avatarSlug),
       entry_count: stat?.entryCount ?? 0,
       unreviewed_count: stat?.unreviewedCount ?? 0,
       last_entry_date: stat?.lastEntryDate ?? null,
@@ -351,10 +356,10 @@ export function planTeacherJournalOverview(input: {
 
   for (const member of input.members) {
     const group = groups.get(member.classId);
-    addStudent(member.classId, group?.name ?? "", { id: member.studentId, name: member.name, username: member.username });
+    addStudent(member.classId, group?.name ?? "", { id: member.studentId, name: member.name, username: member.username, avatarSlug: member.avatarSlug });
   }
   for (const direct of input.directStudents) {
-    addStudent(direct.classId, direct.className, { id: direct.studentId, name: direct.name, username: direct.username });
+    addStudent(direct.classId, direct.className, { id: direct.studentId, name: direct.name, username: direct.username, avatarSlug: direct.avatarSlug });
   }
 
   const result = [...groups.values()];

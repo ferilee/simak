@@ -223,7 +223,12 @@ console.log("Case 9: wiring halaman LKPD murid (statis)");
     page.includes('const liveActive = Boolean(groupInfo) && Boolean(assignmentId) && status === "draf" && Boolean(data);'),
   );
   check("heartbeat terkirim saat fokus masuk ke kartu soal", page.includes("onFocus={() => { if (liveActive) sendHeartbeatRef.current(); }}"));
-  check("garis 'Aktif sekarang' di kartu kelompok", page.includes("Aktif sekarang: {livePresence.map((entry) => entry.name).join(\", \")}"));
+  check(
+    "garis 'Aktif sekarang' di kartu kelompok (v1.0.75: per entri lencana nama beravatar, bukan lagi gabungan nama polos)",
+    page.includes("Aktif sekarang: {livePresence.map((entry, index) => (") &&
+      page.includes("<StudentNameBadge name={entry.name} avatar_slug={entry.avatar_slug} avatar_emoji={entry.avatar_emoji} />") &&
+      !page.includes("livePresence.map((entry) => entry.name).join(\", \")"),
+  );
   check(
     "chip presensi pada butir yang sedang tampil",
     page.includes("sedang mengerjakan soal ini") && page.includes("entry.current_item_id === currentItem.id"),

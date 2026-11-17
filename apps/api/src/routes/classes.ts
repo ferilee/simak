@@ -5,6 +5,7 @@ import { zValidator } from "@hono/zod-validator";
 import { db, schema } from "@simak/db";
 import { createClassSchema, joinClassSchema } from "@simak/shared";
 import { requireRole } from "../middleware/auth";
+import { avatarBadgeFields } from "../lib/avatar";
 
 // CRUD kelas/rombel + anggota dari username/NIS yang dicocokkan ke akun RUAS.
 export const classRoutes = new Hono();
@@ -52,16 +53,16 @@ classRoutes.get("/", requireRole("guru"), async (c) => {
   // dari data ini (hanya kelas milik guru yang meminta).
   const memberRows = rows.length
     ? await db
-        .select({ classId: classMembers.classId, id: users.id, name: users.name, username: users.username })
+        .select({ classId: classMembers.classId, id: users.id, name: users.name, username: users.username, avatarSlug: users.avatarSlug })
         .from(classMembers)
         .innerJoin(users, eq(users.id, classMembers.studentId))
         .where(inArray(classMembers.classId, rows.map((kelas) => kelas.id)))
         .orderBy(asc(users.name))
     : [];
-  const membersByClass = new Map<number, { id: number; name: string; username: string }[]>();
+  const membersByClass = new Map<number, { id: number; name: string; username: string; avatar_slug: string | null; avatar_emoji: string | null }[]>();
   for (const row of memberRows) {
     const current = membersByClass.get(row.classId) ?? [];
-    current.push({ id: row.id, name: row.name, username: row.username });
+    current.push({ id: row.id, name: row.name, username: row.username, ...avatarBadgeFields(row.avatarSlug) });
     membersByClass.set(row.classId, current);
   }
   return c.json({

@@ -7,6 +7,7 @@ import { loadAssignmentSubject } from "../lib/assignment-target";
 import { loadTeacherClassMemberships, resolveStudentClass } from "../lib/student-class";
 import { REKAP_HEADER_PDF_COLOR, materialReadingText, measurePdfText, planMaterialReadingState, planRekapColumnWidths, planRekapRowFills, rekapFillPdfColor, type MaterialReadingState, type RekapCellFill } from "../lib/rekap-pdf";
 import { fetchRuasScores, resolveEffectiveRuasTarget, summarizeRuasPull } from "../lib/ruas-hub";
+import { avatarBadgeFields } from "../lib/avatar";
 
 // Rekap bukti = agregasi activity_logs + worksheet_attempts + exit_tickets.
 // Format laporan: JSON (default), CSV yang dapat dibuka di Excel, atau PDF.
@@ -14,9 +15,9 @@ export const reportRoutes = new Hono();
 reportRoutes.use("*", requireRole("guru"));
 
 const { activityLogs, assignmentClasses, assignmentGroupMembers, assignmentGroups, assignmentStudents, assignments, classes, classMembers, exitTickets, ruasScores, users, worksheetAttemptMemberScores, worksheetAttempts } = schema;
-type TargetStudent = { id: number; name: string; username: string; nis: string | null; classId: number; className: string };
+type TargetStudent = { id: number; name: string; username: string; nis: string | null; avatarSlug: string | null; classId: number; className: string };
 type ReportRow = {
-  student_id: number; name: string; username: string; class_name: string; hadir: boolean; opened_at: Date | null;
+  student_id: number; name: string; username: string; avatar_slug: string | null; avatar_emoji: string | null; class_name: string; hadir: boolean; opened_at: Date | null;
   material_opened: boolean; material_completed: boolean;
   started_lkpd_at: Date | null; submission_status: "belum" | "draf" | "terkumpul" | "dinilai"; submitted_at: Date | null;
   total_score: number | null; exit_ticket_submitted: boolean; exit_ticket_submitted_at: Date | null; ruas_opened_at: Date | null;
@@ -41,7 +42,7 @@ async function getTargetStudents(assignment: typeof assignments.$inferSelect) {
   // kelas — tak teratasi berarti classId 0 / className "".
   if (assignment.targetType === "siswa") {
     const rows = await db
-      .select({ id: users.id, name: users.name, username: users.username, nis: users.nis })
+      .select({ id: users.id, name: users.name, username: users.username, nis: users.nis, avatarSlug: users.avatarSlug })
       .from(assignmentStudents)
       .innerJoin(users, eq(users.id, assignmentStudents.studentId))
       .where(eq(assignmentStudents.assignmentId, assignment.id));
@@ -55,7 +56,7 @@ async function getTargetStudents(assignment: typeof assignments.$inferSelect) {
     });
   }
   const targetStudents = await db
-    .select({ id: users.id, name: users.name, username: users.username, nis: users.nis, classId: classes.id, className: classes.name })
+    .select({ id: users.id, name: users.name, username: users.username, nis: users.nis, avatarSlug: users.avatarSlug, classId: classes.id, className: classes.name })
     .from(assignmentClasses)
     .innerJoin(classes, eq(classes.id, assignmentClasses.classId))
     .innerJoin(classMembers, eq(classMembers.classId, classes.id))
@@ -147,7 +148,7 @@ async function loadSessionReportData(userId: number, assignmentId: number): Prom
     const ruas = ruasByStudent.get(student.id);
     const submitted = Boolean(attempt && attempt.status !== "draf") || Boolean(ticket);
     return {
-      student_id: student.id, name: student.name, username: student.username, class_name: student.className,
+      student_id: student.id, name: student.name, username: student.username, ...avatarBadgeFields(student.avatarSlug), class_name: student.className,
       hadir: Boolean(openedAt && submitted), opened_at: openedAt,
       material_opened: materialOpenedStudents.has(student.id), material_completed: materialCompletedStudents.has(student.id),
       started_lkpd_at: firstEvent("mulai_lkpd"),

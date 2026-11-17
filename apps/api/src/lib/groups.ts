@@ -1,5 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@simak/db";
+import { avatarBadgeFields } from "./avatar";
 
 // Kelompok pengerjaan LKPD (Tahap 1): kelompok dibentuk OTOMATIS ACAK oleh
 // sistem per kelas tujuan saat penugasan bermode "kelompok" diterbitkan.
@@ -775,8 +776,8 @@ export async function loadStudentGroup(assignmentId: number, studentId: number) 
     .where(and(eq(assignmentGroupMembers.assignmentId, assignmentId), eq(assignmentGroupMembers.studentId, studentId)))
     .limit(1);
   if (!own) return null;
-  const members = await db
-    .select({ id: users.id, name: users.name, username: users.username })
+  const memberRows = await db
+    .select({ id: users.id, name: users.name, username: users.username, avatarSlug: users.avatarSlug })
     .from(assignmentGroupMembers)
     .innerJoin(users, eq(users.id, assignmentGroupMembers.studentId))
     .where(eq(assignmentGroupMembers.groupId, own.groupId))
@@ -786,6 +787,14 @@ export async function loadStudentGroup(assignmentId: number, studentId: number) 
     name: own.groupName,
     class_id: own.classId,
     class_name: own.className,
-    members,
+    // Avatar terpasang tiap anggota ikut terkirim (lencana nama di
+    // kartu kelompok + halaman LKPD murid): slug tervalidasi katalog
+    // + emoji-nya, null bila belum memasang (lib/avatar.ts).
+    members: memberRows.map((member) => ({
+      id: member.id,
+      name: member.name,
+      username: member.username,
+      ...avatarBadgeFields(member.avatarSlug),
+    })),
   };
 }

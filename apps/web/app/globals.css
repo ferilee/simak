@@ -1580,6 +1580,45 @@ a {
   cursor: not-allowed;
 }
 
+/* Lencana nama murid (components/StudentNameBadge.tsx): lingkaran
+   kecil berisi emoji avatar terpasang — atau inisial nama bergaya
+   netral bila murid belum memasang avatar — di samping nama, dipakai
+   semua daftar nama di sisi murid dan guru. Kecil dan tenang agar
+   daftar guru yang padat tetap terbaca. */
+.student-name-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  vertical-align: middle;
+}
+
+.student-name-badge-circle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 999px;
+  border: 1px solid #eaecf0;
+  background: #fff7e6;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.student-name-badge-circle.is-initials {
+  background: #f9fafb;
+  color: #667085;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.student-name-badge-name {
+  min-width: 0;
+}
+
 /* Kartu kelompok pada panel "Kelompok penugasan" (Penilaian Rapi,
    v1.0.34): struktur satu kolom — baris kepala (ikon + nama kelompok +
    jumlah anggota + lencana progres) lalu baris chip anggota yang membungkus

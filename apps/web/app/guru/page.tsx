@@ -1,6 +1,6 @@
 "use client";
 
-import { CSSProperties, FormEvent, ReactNode, useEffect, useRef, useState } from "react";
+import { CSSProperties, FormEvent, Fragment, ReactNode, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiBase, apiRequest } from "../../lib/api";
@@ -54,6 +54,7 @@ import { RichTextEditor, sanitizeBlockHtml } from "../../components/RichTextEdit
 import { LibraryPanel } from "../../components/LibraryPanel";
 import { KurikulumPanel } from "../../components/KurikulumPanel";
 import { JurnalGuruPanel } from "../../components/JurnalGuruPanel";
+import { StudentNameBadge } from "../../components/StudentNameBadge";
 import { GuruMobileMenu } from "../../components/GuruMobileMenu";
 import type { GuruJournalOverviewData } from "../../lib/jurnal";
 import { PemilihCepat } from "../../components/PemilihCepat";
@@ -142,7 +143,7 @@ type WorksheetPreviewItem = {
   points: number;
 };
 type WorksheetItemsResponse = { ok: true; data: WorksheetPreviewItem[] };
-type ClassMemberSummary = { id: number; name: string; username: string };
+type ClassMemberSummary = { id: number; name: string; username: string; avatar_slug: string | null; avatar_emoji: string | null };
 type ClassSummary = { id: number; name: string; subject: string; academic_year: string; join_code: string; is_archived: boolean; members: ClassMemberSummary[] };
 type ClassesResponse = { ok: true; data: ClassSummary[] };
 type AssignmentSummary = {
@@ -181,7 +182,7 @@ type AssignmentSummary = {
     grading_status: "belum_ada_pengumpulan" | "belum_dinilai" | "sebagian" | "selesai";
   }[];
 };
-type AssignmentGroupMemberView = { id: number; name: string; username: string };
+type AssignmentGroupMemberView = { id: number; name: string; username: string; avatar_slug?: string | null; avatar_emoji?: string | null };
 type AssignmentClassGroups = {
   class_id: number;
   class_name: string;
@@ -216,6 +217,11 @@ type WorksheetAttemptSummary = {
   group_id?: number | null;
   group_name?: string | null;
   member_names?: string[];
+  // Avatar murid pengumpul (attempt individu) + daftar anggota
+  // beravatar (attempt kelompok) untuk lencana nama; aditif dari API.
+  avatar_slug?: string | null;
+  avatar_emoji?: string | null;
+  members?: { name: string; avatar_slug: string | null; avatar_emoji: string | null }[];
 };
 type WorksheetAttemptsResponse = { ok: true; data: WorksheetAttemptSummary[] };
 type GradingAttemptSummary = WorksheetAttemptSummary & {
@@ -235,6 +241,8 @@ type AssignmentStudentSummary = {
   id: number;
   name: string;
   username: string;
+  avatar_slug: string | null;
+  avatar_emoji: string | null;
   status: "belum" | "draf" | "terkumpul" | "dinilai";
   submitted_at: string | null;
   total_score: number | null;
@@ -249,6 +257,8 @@ type SessionReportRow = {
   student_id: number;
   name: string;
   username: string;
+  avatar_slug: string | null;
+  avatar_emoji: string | null;
   class_name: string;
   hadir: boolean;
   opened_at: string | null;
@@ -672,11 +682,11 @@ export default function GuruPage() {
 
   // Peta murid → nama + kelas asal untuk chip murid terpilih pada pemilih
   // sasaran siswa tertentu (sumbernya daftar anggota per kelas dari API).
-  const assignmentStudentInfoById = new Map<number, { name: string; className: string }>();
+  const assignmentStudentInfoById = new Map<number, { name: string; className: string; avatar_slug?: string | null; avatar_emoji?: string | null }>();
   for (const kelas of classes) {
     for (const member of kelas.members ?? []) {
       if (!assignmentStudentInfoById.has(member.id)) {
-        assignmentStudentInfoById.set(member.id, { name: member.name, className: kelas.name });
+        assignmentStudentInfoById.set(member.id, { name: member.name, className: kelas.name, avatar_slug: member.avatar_slug, avatar_emoji: member.avatar_emoji });
       }
     }
   }
@@ -3252,7 +3262,12 @@ export default function GuruPage() {
       <div className="teacher-attempt-review" style={styles.review}>
         <h3 style={styles.reviewTitle}>{attemptDetail.attempt.student_name}</h3>
         {attemptDetail.attempt.is_group ? (
-          <p style={styles.muted}>👥 Pengumpulan kelompok · status {attemptDetail.attempt.status}{attemptDetail.attempt.members && attemptDetail.attempt.members.length > 0 ? <> · Anggota: {attemptDetail.attempt.members.map((member) => member.name).join(", ")}</> : null}</p>
+          <p style={styles.muted}>👥 Pengumpulan kelompok · status {attemptDetail.attempt.status}{attemptDetail.attempt.members && attemptDetail.attempt.members.length > 0 ? <> · Anggota: {attemptDetail.attempt.members.map((member, index) => (
+            <Fragment key={member.id}>
+              {index > 0 ? ", " : null}
+              <StudentNameBadge name={member.name} avatar_slug={member.avatar_slug} avatar_emoji={member.avatar_emoji} />
+            </Fragment>
+          ))}</> : null}</p>
         ) : (
           <p style={styles.muted}>{attemptDetail.attempt.username} · status {attemptDetail.attempt.status}</p>
         )}
@@ -3322,7 +3337,7 @@ export default function GuruPage() {
             <p style={styles.muted}>Kontribusi adalah rata-rata penilaian antarteman — hanya informasi untuk pertimbangan guru dan tidak diterapkan otomatis ke nilai. Nilai akhir anggota mengikuti nilai kelompok, kecuali guru menyesuaikannya di sini.</p>
             {attemptDetail.attempt.members.map((member) => (
               <div key={member.id} style={{ display: "grid", gap: 6, border: "1px solid #eaecf0", borderRadius: 10, padding: 12 }}>
-                <strong>{member.name}</strong>
+                <strong><StudentNameBadge name={member.name} avatar_slug={member.avatar_slug} avatar_emoji={member.avatar_emoji} /></strong>
                 <span style={styles.muted}>{member.contribution_average !== null && member.contribution_average !== undefined ? `Kontribusi: ${formatScoreValue(member.contribution_average)} dari ${member.contribution_raters ?? 0} penilai` : "Kontribusi: belum dinilai teman"}</span>
                 <span style={styles.muted}>Nilai akhir: {member.effective_score === null || member.effective_score === undefined ? "—" : formatScoreValue(member.effective_score)}{member.member_score !== null && member.member_score !== undefined ? " (disesuaikan guru)" : ""}</span>
                 <div style={styles.scoreRow}>
@@ -3444,7 +3459,7 @@ export default function GuruPage() {
                   const info = assignmentStudentInfoById.get(studentId);
                   return (
                     <span key={studentId} style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid #d0d5dd", borderRadius: 999, padding: "2px 6px 2px 10px", fontSize: 13 }}>
-                      {info ? `${info.name}${info.className ? ` · ${info.className}` : ""}` : `Murid #${studentId}`}
+                      {info ? <><StudentNameBadge name={info.name} avatar_slug={info.avatar_slug} avatar_emoji={info.avatar_emoji} />{info.className ? ` · ${info.className}` : ""}</> : `Murid #${studentId}`}
                       <button type="button" aria-label={`Hapus ${info?.name ?? studentId} dari sasaran`} onClick={() => setAssignmentStudentIds((current) => current.filter((id) => id !== studentId))} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2 }}>×</button>
                     </span>
                   );
@@ -3470,7 +3485,7 @@ export default function GuruPage() {
                   {visibleMembers.map((member) => (
                     <label key={member.id} style={{ ...styles.checkbox, marginLeft: 22 }}>
                       <input type="checkbox" checked={assignmentStudentIds.includes(member.id)} onChange={(event) => setAssignmentStudentIds((current) => event.target.checked ? [...current, member.id] : current.filter((id) => id !== member.id))} />
-                      {member.name} · @{member.username}
+                      <StudentNameBadge name={member.name} avatar_slug={member.avatar_slug} avatar_emoji={member.avatar_emoji} /> · @{member.username}
                     </label>
                   ))}
                 </div>
@@ -4648,7 +4663,7 @@ export default function GuruPage() {
                   <table style={styles.reportTable}>
                     <thead><tr><th style={styles.reportCell}>Murid</th><th style={styles.reportCell}>Presensi</th><th style={styles.reportCell}>LKPD</th><th style={styles.reportCell}>Nilai</th><th style={styles.reportCell}>Exit ticket</th><th style={styles.reportCell}>RUAS</th><th style={styles.reportCell}>Nilai RUAS</th></tr></thead>
                     <tbody>{sessionReport.students.map((student) => <tr key={student.student_id}>
-                      <td style={styles.reportCell}><strong>{student.name}</strong><br /><span style={styles.muted}>{student.username} · {student.class_name}</span></td>
+                      <td style={styles.reportCell}><strong><StudentNameBadge name={student.name} avatar_slug={student.avatar_slug} avatar_emoji={student.avatar_emoji} /></strong><br /><span style={styles.muted}>{student.username} · {student.class_name}</span></td>
                       <td style={styles.reportCell}>{student.hadir ? "Hadir" : "Belum hadir"}</td>
                       <td style={styles.reportCell}>{submissionStatusLabel(student.submission_status)}</td>
                       <td style={styles.reportCell}>{student.total_score === null ? "—" : student.total_score}</td>
@@ -4725,7 +4740,7 @@ export default function GuruPage() {
                 exitTicketVisibleStudents.map((student) => student.exit_ticket ? (
                 <article key={student.id} style={styles.exitTicketCard}>
                   <div style={styles.assignmentInfo}>
-                    <strong>{student.name}</strong>
+                    <strong><StudentNameBadge name={student.name} avatar_slug={student.avatar_slug} avatar_emoji={student.avatar_emoji} /></strong>
                     <span style={styles.muted}>{student.username} · dikirim {formatDate(student.exit_ticket.submitted_at)}</span>
                   </div>
                   <div style={styles.exitTicketField}><strong>3 hal yang dipahami</strong><p>{student.exit_ticket.understood_3}</p></div>
@@ -4805,12 +4820,23 @@ export default function GuruPage() {
                     }}
                     style={{ ...styles.attempt, borderColor: selectedAttemptId === attempt.id ? "#175cd3" : "#eaecf0" }}
                   >
-                    <strong>{attempt.student_name}</strong>
+                    {attempt.is_group ? (
+                      <strong>{attempt.student_name}</strong>
+                    ) : (
+                      <strong><StudentNameBadge name={attempt.student_name} avatar_slug={attempt.avatar_slug} avatar_emoji={attempt.avatar_emoji} /></strong>
+                    )}
                     {gradingCombined && attempt.worksheet_title ? <span style={styles.muted}>{attempt.worksheet_title}</span> : null}
                     {attempt.is_group ? (
                       <>
                         <span style={styles.muted}>👥 Kelompok · {attempt.status} · {attempt.class_name ?? "Tanpa kelas"}</span>
-                        {attempt.member_names && attempt.member_names.length > 0 ? <span style={styles.muted}>{attempt.member_names.join(", ")}</span> : null}
+                        {attempt.members && attempt.members.length > 0 ? (
+                          <span style={styles.muted}>{attempt.members.map((member, index) => (
+                            <Fragment key={`${member.name}-${index}`}>
+                              {index > 0 ? ", " : null}
+                              <StudentNameBadge name={member.name} avatar_slug={member.avatar_slug} avatar_emoji={member.avatar_emoji} />
+                            </Fragment>
+                          ))}</span>
+                        ) : attempt.member_names && attempt.member_names.length > 0 ? <span style={styles.muted}>{attempt.member_names.join(", ")}</span> : null}
                       </>
                     ) : (
                       <span style={styles.muted}>{attempt.username} · {attempt.status} · {attempt.class_name ?? "Tanpa kelas"}</span>

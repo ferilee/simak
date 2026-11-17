@@ -15,7 +15,7 @@ import { buildUnansweredMessage, isSameAnswerValue, unansweredDetails, type Subm
 import { needsWelcome } from "../lib/sapaan";
 import { awardXp, summarizeXp, XP_POINTS, type XpSummary } from "../lib/xp";
 import { countMaterialWords, minReadingSeconds } from "../lib/baca-wajar";
-import { avatarBySlug } from "../lib/avatar";
+import { avatarBadgeFields, avatarBySlug } from "../lib/avatar";
 import { assignmentLockedMessage, loadStudentAssignmentPlan, moduleLockedMessage, planAssignmentChains, planForAssignment, planModuleLock, planModuleRepresentative } from "../lib/rantai-penugasan";
 import { collectMappedTopics, fetchStudentAssessments, planAssessmentCards, planChainProgress, requestRuasHandoff, resolveEffectiveRuasTarget, ruasBridgeConfigured, type ChainProgressInput } from "../lib/ruas-hub";
 
@@ -334,6 +334,8 @@ async function contributionRatingsState(studentId: number, context: { attempt: t
         id: member.id,
         name: member.name,
         username: member.username,
+        avatar_slug: member.avatar_slug,
+        avatar_emoji: member.avatar_emoji,
         my_score: myScoreByRatee.get(member.id) ?? null,
       })),
   };
@@ -1162,11 +1164,27 @@ muridRoutes.get("/worksheets/:id/live", async (c) => {
     ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, editorIds))
     : [];
   const editorNameById = new Map(editors.map((editor) => [editor.id, editor.name]));
-  const presence = context.group
-    ? presenceSnapshot(presenceStore, attempt.id, Date.now())
-        .filter((entry) => entry.studentId !== user.userId)
-        .map((entry) => ({ student_id: entry.studentId, name: entry.name, current_item_id: entry.currentItemId }))
+  const presenceEntries = context.group
+    ? presenceSnapshot(presenceStore, attempt.id, Date.now()).filter((entry) => entry.studentId !== user.userId)
     : [];
+  // Lencana avatar pada baris kehadiran: slug terpasang murid yang
+  // sedang aktif dibaca lewat SATU kueri himpunan dari users — presensi
+  // sendiri tetap murni di memori proses, avatar tidak disimpan di sana.
+  const presenceAvatarById = presenceEntries.length
+    ? new Map(
+        (await db
+          .select({ id: users.id, avatarSlug: users.avatarSlug })
+          .from(users)
+          .where(inArray(users.id, presenceEntries.map((entry) => entry.studentId))))
+          .map((row) => [row.id, row.avatarSlug] as const),
+      )
+    : new Map<number, string | null>();
+  const presence = presenceEntries.map((entry) => ({
+    student_id: entry.studentId,
+    name: entry.name,
+    current_item_id: entry.currentItemId,
+    ...avatarBadgeFields(presenceAvatarById.get(entry.studentId)),
+  }));
   return c.json({
     ok: true,
     data: {

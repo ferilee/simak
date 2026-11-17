@@ -26,6 +26,7 @@ import { loadTeacherClassMemberships, resolveStudentClass } from "../lib/student
 import { loadAttemptMemberScores, loadContributionSummary, resolveEffectiveMemberScore } from "../lib/groups";
 import { computeGradingProgress, countGradedByAttempt, gradingStatusAfterItemSave } from "../lib/grading-progress";
 import { filterGradingQueueRows, groupOnlyWorksheetIds } from "../lib/grading-queue";
+import { avatarBadgeFields } from "../lib/avatar";
 
 // LKPD + butir blok interaktifnya (Tahap 2).
 // Opsi butir divalidasi worksheetItemOptionsSchema dari @simak/shared.
@@ -230,6 +231,7 @@ worksheetRoutes.get("/:id/attempts", requireRole("guru"), async (c) => {
         studentId: worksheetAttempts.studentId,
         studentName: users.name,
         username: users.username,
+        studentAvatarSlug: users.avatarSlug,
         groupId: worksheetAttempts.groupId,
         groupName: assignmentGroups.name,
         groupClassId: assignmentGroups.classId,
@@ -265,17 +267,23 @@ worksheetRoutes.get("/:id/attempts", requireRole("guru"), async (c) => {
   const groupIds = [...new Set(rows.flatMap((row) => (row.groupId === null ? [] : [row.groupId])))];
   const memberRows = groupIds.length
     ? await db
-        .select({ groupId: assignmentGroupMembers.groupId, name: users.name })
+        .select({ groupId: assignmentGroupMembers.groupId, name: users.name, avatarSlug: users.avatarSlug })
         .from(assignmentGroupMembers)
         .innerJoin(users, eq(users.id, assignmentGroupMembers.studentId))
         .where(inArray(assignmentGroupMembers.groupId, groupIds))
         .orderBy(users.name)
     : [];
   const memberNamesByGroup = new Map<number, string[]>();
+  // Daftar anggota beravatar untuk lencana nama di daftar pengumpulan —
+  // member_names (nama polos) tetap dikirim apa adanya untuk kompatibilitas.
+  const memberBadgesByGroup = new Map<number, { name: string; avatar_slug: string | null; avatar_emoji: string | null }[]>();
   for (const row of memberRows) {
     const list = memberNamesByGroup.get(row.groupId) ?? [];
     list.push(row.name);
     memberNamesByGroup.set(row.groupId, list);
+    const badges = memberBadgesByGroup.get(row.groupId) ?? [];
+    badges.push({ name: row.name, ...avatarBadgeFields(row.avatarSlug) });
+    memberBadgesByGroup.set(row.groupId, badges);
   }
 
   // Kemajuan penilaian per attempt (Penilaian Rapi): jumlah butir yang
@@ -313,6 +321,7 @@ worksheetRoutes.get("/:id/attempts", requireRole("guru"), async (c) => {
           group_id: row.groupId,
           group_name: row.groupName,
           member_names: memberNamesByGroup.get(row.groupId) ?? [],
+          members: memberBadgesByGroup.get(row.groupId) ?? [],
           graded_count: gradedByAttempt.get(row.id) ?? 0,
           total_items: totalItems,
         };
@@ -323,6 +332,7 @@ worksheetRoutes.get("/:id/attempts", requireRole("guru"), async (c) => {
         student_id: row.studentId,
         student_name: row.studentName,
         username: row.username,
+        ...avatarBadgeFields(row.studentAvatarSlug),
         status: row.status,
         submitted_at: row.submittedAt,
         total_score: serializeScore(row.totalScore),
@@ -376,18 +386,23 @@ worksheetRoutes.get("/:id/attempts/:attemptId", requireRole("guru"), async (c) =
   // nilai individu dan nilai efektif tiap anggota.
   const groupMemberRows = attempt.groupId !== null
     ? await db
-        .select({ id: users.id, name: users.name, username: users.username })
+        .select({ id: users.id, name: users.name, username: users.username, avatarSlug: users.avatarSlug })
         .from(assignmentGroupMembers)
         .innerJoin(users, eq(users.id, assignmentGroupMembers.studentId))
         .where(eq(assignmentGroupMembers.groupId, attempt.groupId))
         .orderBy(asc(users.name))
     : [];
-  let groupMembers: (typeof groupMemberRows[number] & {
+  let groupMembers: {
+    id: number;
+    name: string;
+    username: string;
+    avatar_slug: string | null;
+    avatar_emoji: string | null;
     contribution_average: number | null;
     contribution_raters: number;
     member_score: number | null;
     effective_score: number | null;
-  })[] = [];
+  }[] = [];
   if (attempt.groupId !== null) {
     const memberIds = groupMemberRows.map((member) => member.id);
     const [contributionSummary, memberScores] = await Promise.all([
@@ -398,7 +413,10 @@ worksheetRoutes.get("/:id/attempts/:attemptId", requireRole("guru"), async (c) =
       const contribution = contributionSummary.get(member.id) ?? { average: null, raters: 0 };
       const override = memberScores.get(member.id) ?? null;
       return {
-        ...member,
+        id: member.id,
+        name: member.name,
+        username: member.username,
+        ...avatarBadgeFields(member.avatarSlug),
         contribution_average: contribution.average,
         contribution_raters: contribution.raters,
         member_score: override === null ? null : Number(override),

@@ -3,6 +3,7 @@ import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, schema } from "@simak/db";
 import { requireRole } from "../middleware/auth";
 import { loadAssignmentSubject, studentCanAccessModule } from "../lib/assignment-target";
+import { avatarBadgeFields } from "../lib/avatar";
 import { loadTeacherClassMemberships, resolveStudentClass } from "../lib/student-class";
 import {
   JOURNAL_MOODS,
@@ -227,13 +228,13 @@ async function loadTeacherJournalScope(teacherId: number) {
   const classIds = classRows.map((row) => row.id);
   const memberRows: TeacherJournalMemberInput[] = classIds.length
     ? await db
-        .select({ classId: classMembers.classId, studentId: users.id, name: users.name, username: users.username })
+        .select({ classId: classMembers.classId, studentId: users.id, name: users.name, username: users.username, avatarSlug: users.avatarSlug })
         .from(classMembers)
         .innerJoin(users, eq(users.id, classMembers.studentId))
         .where(and(inArray(classMembers.classId, classIds), eq(users.role, "murid")))
     : [];
   const directRows = await db
-    .select({ studentId: users.id, name: users.name, username: users.username, assignmentId: assignments.id, moduleId: assignments.moduleId, worksheetId: assignments.worksheetId })
+    .select({ studentId: users.id, name: users.name, username: users.username, avatarSlug: users.avatarSlug, assignmentId: assignments.id, moduleId: assignments.moduleId, worksheetId: assignments.worksheetId })
     .from(assignmentStudents)
     .innerJoin(assignments, eq(assignments.id, assignmentStudents.assignmentId))
     .innerJoin(users, eq(users.id, assignmentStudents.studentId))
@@ -246,7 +247,7 @@ async function loadTeacherJournalScope(teacherId: number) {
     [...firstByStudent.values()].map(async (row) => {
       const subject = await loadAssignmentSubject({ moduleId: row.moduleId, worksheetId: row.worksheetId });
       const resolved = resolveStudentClass(membershipsByStudent.get(row.studentId) ?? [], subject);
-      return { studentId: row.studentId, name: row.name, username: row.username, classId: resolved?.id ?? 0, className: resolved?.name ?? "" };
+      return { studentId: row.studentId, name: row.name, username: row.username, avatarSlug: row.avatarSlug, classId: resolved?.id ?? 0, className: resolved?.name ?? "" };
     }),
   );
   return { classes: classRows, members: memberRows, directStudents };
@@ -280,8 +281,9 @@ guruJurnalRoutes.get("/jurnal/entries", async (c) => {
   if (!visibleIds.includes(studentId)) {
     return c.json({ ok: false, message: "Murid ini tidak berada dalam jangkauan penugasan Anda." }, 403);
   }
-  const [student] = await db.select({ id: users.id, name: users.name, username: users.username }).from(users).where(eq(users.id, studentId)).limit(1);
-  if (!student) return c.json({ ok: false, message: "Murid tidak ditemukan." }, 404);
+  const [studentRow] = await db.select({ id: users.id, name: users.name, username: users.username, avatarSlug: users.avatarSlug }).from(users).where(eq(users.id, studentId)).limit(1);
+  if (!studentRow) return c.json({ ok: false, message: "Murid tidak ditemukan." }, 404);
+  const student = { id: studentRow.id, name: studentRow.name, username: studentRow.username, ...avatarBadgeFields(studentRow.avatarSlug) };
   const { limit, offset } = parseListWindow(c, 100, 200);
   const [rows, countRows] = await Promise.all([
     db

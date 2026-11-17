@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiRequest } from "../lib/api";
+import { StudentNameBadge } from "./StudentNameBadge";
 import {
   filterGuruJournalClasses,
   groupEntriesByDate,
@@ -150,7 +151,7 @@ export function JurnalGuruPanel() {
           ← Kembali ke daftar murid
         </button>
         <h3 className="jurnal-guru-class-title">
-          Jurnal {selected.name} <span className="jurnal-guru-student-meta">({selected.username})</span>
+          Jurnal <StudentNameBadge name={selected.name} avatar_slug={selected.avatar_slug} avatar_emoji={selected.avatar_emoji} /> <span className="jurnal-guru-student-meta">({selected.username})</span>
         </h3>
         {entriesError ? (
           <p className="jurnal-guru-error" role="alert">{entriesError}</p>
@@ -316,7 +317,7 @@ export function JurnalGuruPanel() {
                     className="jurnal-guru-student"
                     onClick={() => void openStudent(student)}
                   >
-                    <span className="jurnal-guru-student-name">{student.name}</span>
+                    <span className="jurnal-guru-student-name"><StudentNameBadge name={student.name} avatar_slug={student.avatar_slug} avatar_emoji={student.avatar_emoji} /></span>
                     <span className="jurnal-guru-student-meta">
                       {student.entry_count > 0
                         ? `${student.entry_count} entri · terakhir ${student.last_entry_date ? journalDateLabel(student.last_entry_date) : "-"}`

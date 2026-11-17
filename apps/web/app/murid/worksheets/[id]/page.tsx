@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { apiRequest } from "../../../../lib/api";
 import { ITEM_TYPE_LABELS, itemTypeLabel, submitButtonLabel } from "../../../../lib/label-kumpulkan";
 import { materialBannerVisible } from "../../../../lib/pengingat";
 import { advanceSavedSnapshot, diffAnswersPayload, mergeLiveAnswers, type LiveAnswer, type LivePayloadEntry } from "../../../../lib/live-kelompok";
 import { prepareImageForUpload } from "../../../../lib/prepare-image";
 import { Toast } from "../../../../components/Toast";
+import { StudentNameBadge } from "../../../../components/StudentNameBadge";
 import { useConfirm } from "../../../../components/ConfirmDialog";
 import { MathText } from "../../../../components/MathContent";
 
@@ -33,7 +34,7 @@ type MuridGroup = {
   name: string;
   class_id: number;
   class_name: string;
-  members: { id: number; name: string; username: string }[];
+  members: { id: number; name: string; username: string; avatar_slug: string | null; avatar_emoji: string | null }[];
 };
 
 type AttemptResponse = {
@@ -57,7 +58,7 @@ type AttemptResponse = {
   };
 };
 
-type LivePresenceEntry = { student_id: number; name: string; current_item_id: number | null };
+type LivePresenceEntry = { student_id: number; name: string; current_item_id: number | null; avatar_slug: string | null; avatar_emoji: string | null };
 type LiveStateResponse = {
   ok: true;
   data: {
@@ -69,7 +70,7 @@ type LiveStateResponse = {
   };
 };
 
-type ContributionTeammate = { id: number; name: string; username: string; my_score: number | null };
+type ContributionTeammate = { id: number; name: string; username: string; avatar_slug: string | null; avatar_emoji: string | null; my_score: number | null };
 type ContributionRatingsResponse = {
   ok: true;
   data: {
@@ -803,10 +804,15 @@ export default function WorksheetPage() {
         <div style={styles.groupCard}>
           <strong>👥 {groupInfo.name} · {groupInfo.class_name}</strong>
           <div style={styles.groupMembers}>
-            {groupInfo.members.map((member) => <span key={member.id} className="member-chip">{member.name}</span>)}
+            {groupInfo.members.map((member) => <span key={member.id} className="member-chip"><StudentNameBadge name={member.name} avatar_slug={member.avatar_slug} avatar_emoji={member.avatar_emoji} /></span>)}
           </div>
           {livePresence.length > 0 ? (
-            <span>Aktif sekarang: {livePresence.map((entry) => entry.name).join(", ")}</span>
+            <span>Aktif sekarang: {livePresence.map((entry, index) => (
+              <Fragment key={entry.student_id}>
+                {index > 0 ? ", " : null}
+                <StudentNameBadge name={entry.name} avatar_slug={entry.avatar_slug} avatar_emoji={entry.avatar_emoji} />
+              </Fragment>
+            ))}</span>
           ) : null}
           <span>Jawaban di halaman ini dikerjakan bersama — perubahan temanmu tampil otomatis dalam beberapa detik.</span>
           {lastEditedBy ? (
@@ -844,7 +850,7 @@ export default function WorksheetPage() {
             <>
               {contributionTeammates.map((teammate) => (
                 <div key={teammate.id} style={styles.contributionRow}>
-                  <span style={styles.contributionName}>{teammate.name}</span>
+                  <span style={styles.contributionName}><StudentNameBadge name={teammate.name} avatar_slug={teammate.avatar_slug} avatar_emoji={teammate.avatar_emoji} /></span>
                   <span style={styles.contributionButtons}>
                     {[1, 2, 3, 4, 5].map((score) => (
                       <button
@@ -978,7 +984,12 @@ export default function WorksheetPage() {
                 </span>
               </div>
               {teammatesHere.length > 0 ? (
-                <span style={styles.presenceChip}>👤 {teammatesHere.map((entry) => entry.name).join(", ")} sedang mengerjakan soal ini</span>
+                <span style={styles.presenceChip}>👤 {teammatesHere.map((entry, index) => (
+                  <Fragment key={entry.student_id}>
+                    {index > 0 ? ", " : null}
+                    <StudentNameBadge name={entry.name} avatar_slug={entry.avatar_slug} avatar_emoji={entry.avatar_emoji} />
+                  </Fragment>
+                ))} sedang mengerjakan soal ini</span>
               ) : null}
               <div className="lkpd-prompt"><MathText text={currentItem.prompt} /></div>
               <AnswerField

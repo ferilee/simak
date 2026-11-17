@@ -112,7 +112,7 @@ console.log("Case 6: panel Kelompok — susunan desktop + tombol Salin daftar (s
 // ---------------------------------------------------------------------------
 console.log("Case 7: kartu kelompok murid — anggota sebagai chip (statis)");
 {
-  check("detail penugasan merender chip per anggota", muridDetail.includes('{data.assignment.group.members.map((member) => <span key={member.id} className="member-chip">{member.name}</span>)}'));
+  check("detail penugasan merender chip per anggota (v1.0.75: isi chip = lencana nama beravatar)", muridDetail.includes('{data.assignment.group.members.map((member) => <span key={member.id} className="member-chip"><StudentNameBadge name={member.name} avatar_slug={member.avatar_slug} avatar_emoji={member.avatar_emoji} /></span>)}'));
   check("daftar koma lama hilang dari kartu detail", !muridDetail.includes('members.map((member) => member.name).join(", ")'));
   check("gaya chip sama dengan halaman LKPD murid (member-chip bersama)", muridWorksheet.includes('className="member-chip"') && css.includes(".member-chip {"));
   check("wadah chip membungkus seperti halaman LKPD", muridDetail.includes("groupMembers: { display: \"flex\", gap: 6, flexWrap: \"wrap\" as const }"));

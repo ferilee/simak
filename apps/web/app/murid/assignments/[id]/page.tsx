@@ -7,6 +7,7 @@ import { ApiError, apiRequest } from "../../../../lib/api";
 import { countdownParts, countdownUnits, formatSchedule, parseNotYetOpen, type NotYetOpenInfo } from "../../../../lib/halaman-tunggu";
 import { submissionStatusLabel } from "../../../lib/labels";
 import { Toast } from "../../../../components/Toast";
+import { StudentNameBadge } from "../../../../components/StudentNameBadge";
 import { MathText } from "../../../../components/MathContent";
 
 type AssignmentDetail = {
@@ -20,7 +21,7 @@ type AssignmentDetail = {
       id: number;
       name: string;
       class_name: string;
-      members: { id: number; name: string; username: string }[];
+      members: { id: number; name: string; username: string; avatar_slug: string | null; avatar_emoji: string | null }[];
     } | null;
     opens_at: string;
     due_at: string;
@@ -205,7 +206,7 @@ export default function AssignmentPage() {
             <span>Penugasan ini dikerjakan berkelompok — LKPD dikerjakan bersama dan dikumpulkan atas nama kelompok.</span>
             <span>Anggota:</span>
             <div style={styles.groupMembers}>
-              {data.assignment.group.members.map((member) => <span key={member.id} className="member-chip">{member.name}</span>)}
+              {data.assignment.group.members.map((member) => <span key={member.id} className="member-chip"><StudentNameBadge name={member.name} avatar_slug={member.avatar_slug} avatar_emoji={member.avatar_emoji} /></span>)}
             </div>
           </div>
         ) : (

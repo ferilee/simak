@@ -45,6 +45,24 @@ export function avatarBySlug(slug: string): AvatarCatalogEntry | undefined {
   return AVATAR_CATALOG.find((avatar) => avatar.slug === slug);
 }
 
+export type AvatarBadgeFields = { avatar_slug: string | null; avatar_emoji: string | null };
+
+/**
+ * Field lencana avatar untuk payload daftar nama (anggota kelompok,
+ * daftar murid guru, presensi): slug terpasang yang SAH menurut
+ * katalog beserta emoji-nya, atau keduanya null bila murid belum
+ * memasang avatar atau slug di basis data asing bagi katalog — pola
+ * validasi yang sama dengan avatar terpasang di /murid/today. Murni,
+ * tanpa basis data: pemanggil cukup menyerahkan users.avatar_slug
+ * mentah dari barisnya.
+ */
+export function avatarBadgeFields(slug: string | null | undefined): AvatarBadgeFields {
+  const entry = slug ? avatarBySlug(slug) : undefined;
+  return entry
+    ? { avatar_slug: entry.slug, avatar_emoji: entry.emoji }
+    : { avatar_slug: null, avatar_emoji: null };
+}
+
 export function avatarById(id: number): AvatarCatalogEntry | undefined {
   return AVATAR_CATALOG.find((avatar) => avatar.id === id);
 }

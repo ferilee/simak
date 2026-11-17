@@ -40,6 +40,8 @@ export type GuruJournalStudent = {
   id: number;
   name: string;
   username: string;
+  avatar_slug: string | null;
+  avatar_emoji: string | null;
   entry_count: number;
   unreviewed_count: number;
   last_entry_date: string | null;
@@ -54,7 +56,7 @@ export type GuruJournalClass = {
 export type GuruJournalOverviewData = { classes: GuruJournalClass[]; unreviewed_total: number };
 
 export type GuruJournalEntriesData = {
-  student: { id: number; name: string; username: string };
+  student: { id: number; name: string; username: string; avatar_slug: string | null; avatar_emoji: string | null };
   entries: JournalEntry[];
   total: number;
 };

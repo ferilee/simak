@@ -73,7 +73,7 @@ type AssignmentSummary = {
     id: number;
     name: string;
     class_name: string;
-    members: { id: number; name: string; username: string }[];
+    members: { id: number; name: string; username: string; avatar_slug: string | null; avatar_emoji: string | null }[];
   } | null;
   opens_at: string;
   due_at: string;

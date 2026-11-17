@@ -38,7 +38,7 @@ function check(label, condition, detail = "") {
 }
 
 // --- Bentuk keseluruhan -------------------------------------------------
-check("tepat enam set (Matematika X/XI × 2 semester, KKA X × 2 semester)", CURRICULUM_SETS.length === 6);
+check("tepat delapan set (Matematika X/XI × 2 semester, KKA X × 2 semester, Informatika X × 2 semester)", CURRICULUM_SETS.length === 8);
 const identities = new Set(CURRICULUM_SETS.map((s) => `${s.subject}|${s.grade}|${s.semester}`));
 check("identitas set (mapel, kelas, semester) unik", identities.size === CURRICULUM_SETS.length);
 
@@ -50,6 +50,8 @@ const EXPECTED = new Map([
   ["Matematika|Kelas XI|Genap", { atpCount: 12, totalJp: 36 }],
   ["KKA|Kelas X|Ganjil", { atpCount: 24, totalJp: 52 }],
   ["KKA|Kelas X|Genap", { atpCount: 19, totalJp: 44 }],
+  ["Informatika|Kelas X|Ganjil", { atpCount: 15, totalJp: 32 }],
+  ["Informatika|Kelas X|Genap", { atpCount: 12, totalJp: 26 }],
 ]);
 for (const set of CURRICULUM_SETS) {
   const key = `${set.subject}|${set.grade}|${set.semester}`;
@@ -100,9 +102,11 @@ check("mapel yang belum ada datanya → null", findCurriculumSet("Bahasa Indones
 
 // --- Ringkasan untuk pemilih di web ---------------------------------------
 const summaries = listCurriculumSummaries();
-check("ringkasan memuat enam set", summaries.length === 6);
+check("ringkasan memuat delapan set", summaries.length === 8);
 const kkaTotalJp = summaries.filter((s) => s.subject === "KKA").reduce((sum, s) => sum + s.totalJp, 0);
 check("total JP KKA lintas semester = 96 (dokumen yang disetujui)", kkaTotalJp === 96);
+const informatikaTotalJp = summaries.filter((s) => s.subject === "Informatika").reduce((sum, s) => sum + s.totalJp, 0);
+check("total JP Informatika lintas semester = 58 (dokumen ATP Informatika Kelas X)", informatikaTotalJp === 58);
 check(
   "ringkasan membawa hitungan kelompok/ATP/JP yang sama dengan set-nya",
   summaries.every((s) => {
@@ -125,9 +129,14 @@ check("route kurikulum baca-saja: tanpa akses basis data", !routeSource.includes
 // --- Daftar kelompok materi untuk dropdown modul -------------------------
 const topicGroups = listTopicGroups();
 check(
-  "daftar kelompok memuat Matematika (14 kelompok) dan KKA (6 kelompok)",
+  "daftar kelompok memuat Matematika (14 kelompok), KKA (6 kelompok), dan Informatika (2 kelompok)",
   topicGroups.find((e) => e.subject === "Matematika")?.groups.length === 14 &&
-    topicGroups.find((e) => e.subject === "KKA")?.groups.length === 6,
+    topicGroups.find((e) => e.subject === "KKA")?.groups.length === 6 &&
+    topicGroups.find((e) => e.subject === "Informatika")?.groups.length === 2,
+);
+check(
+  "mapel bebas 'Informatika' cocok ke kelompok Informatika",
+  topicGroupsForSubject("Informatika").includes("Literasi Digital"),
 );
 check(
   "urutan kelompok Matematika mengikuti kurikulum (Eksponen pertama, Peluang Bersyarat terakhir)",

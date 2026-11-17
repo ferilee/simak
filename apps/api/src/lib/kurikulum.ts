@@ -21,6 +21,14 @@
 //   BSKAP 046/2025 dan DISETUJUI guru pada 3 Nov 2026 sebagai acuan
 //   pembuatan materi (6 CP, 6 TP, 44 ATP, 96 JP). Penanda [CP tercapai]
 //   pada dokumen itu menjadi bendera `capstone` di sini.
+// - ATP Informatika Kelas X: dokumen "ATP Informatika Kelas X" yang
+//   diturunkan dari CP BSKAP 046/2025 Fase E (hanya 2 rumusan: CP 2.1
+//   Berpikir Komputasional dan CP 2.2 Literasi Digital) dan disusun
+//   17 Nov 2026 sebagai acuan pembuatan materi (2 TP, 27 ATP, 58 JP).
+//   Atas keputusan guru 17 Nov 2026, buku siswa lama (CP 033/2022,
+//   8 elemen) TIDAK dipakai sebagai referensi; pegangan murid adalah
+//   materi SIMAK. TP 2 terbagi dua semester: ATP 2.1–2.6 di Ganjil,
+//   ATP 2.7–2.18 di Genap. Penanda [CP tercapai] menjadi `capstone`.
 //
 // Satu set = satu mapel × satu kelas × satu semester. Setiap kelompok
 // (TP pada KKA, "Materi" pada dokumen ATP Matematika) menunjuk tepat satu
@@ -179,6 +187,8 @@ const SUMBER_MATEMATIKA =
   "ATP: dokumen ATP Matematika SMKN Pasirian · CP: Keputusan Kepala BSKAP Kemendikdasmen No. 046/H/KR/2025";
 const SUMBER_KKA =
   "ATP diturunkan dari CP BSKAP 046/H/KR/2025 dan disetujui 3 Nov 2026 sebagai acuan materi KKA Kelas X · CP: BSKAP 046/H/KR/2025";
+const SUMBER_INFORMATIKA =
+  "ATP diturunkan dari CP BSKAP 046/2025 Fase E (CP 2.1 & 2.2) dan disusun 17 Nov 2026 sebagai acuan materi Informatika Kelas X · CP: BSKAP 046/H/KR/2025";
 
 const CP_MATEMATIKA_FASE_E: CurriculumCp[] = [
   {
@@ -251,6 +261,19 @@ const CP_KKA_FASE_E: CurriculumCp[] = [
     code: "1.6",
     element: "Pemanfaatan dan Pengembangan Kecerdasan Artifisial",
     text: "Menerapkan prompt engineering pada KA generatif sebagai evaluasi dari pemahaman rencana proyek, desain dan pengembangan produk berupa barang/jasa.",
+  },
+];
+
+const CP_INFORMATIKA_FASE_E: CurriculumCp[] = [
+  {
+    code: "2.1",
+    element: "Berpikir Komputasional",
+    text: "Memahami konsep struktur data dan algoritma standar; menerapkan proses komputasi yang dilakukan manusia secara mandiri atau berkelompok untuk mendapatkan data yang berkualitas; menerapkan algoritma dan struktur data standar untuk menghasilkan berbagai solusi dalam menyelesaikan persoalan; menuliskan solusi rancangan program sederhana dalam format pseudocode yang dekat dengan bahasa komputer; memahami model dan menyimulasikan dinamika Input-Process-Output dalam sebuah komputer Von Neumann, serta memahami peran sistem operasi.",
+  },
+  {
+    code: "2.2",
+    element: "Literasi Digital",
+    text: "Memahami penggunaan mesin pencari dengan variabel yang lebih banyak; mengetahui ekosistem periksa fakta untuk memilah fakta dan bukan; menggunakan cara membaca lateral untuk mengevaluasi berbagai informasi digital; memahami pemanfaatan perangkat teknologi yang lebih beragam untuk pengolah dokumen, lembar kerja, dan presentasi; memahami konsep dan penerapan serta konfigurasi keamanan dasar untuk konektivitas jaringan data lokal dan internet baik kabel maupun nirkabel; memahami pemanfaatan media digital untuk produksi dan diseminasi konten, partisipasi dan kolaborasi; menghargai hak atas kekayaan intelektual, mengenal profesi bidang Informatika, memahami penerapan digitalisasi budaya Indonesia, menyaring konten negatif di dunia digital; menerapkan pengelolaan kata sandi dengan manajer kata sandi, dan menerapkan autentikasi dua langkah secara sederhana, serta menerapkan konfigurasi privasi dan keamanan pada akun platform digital.",
   },
 ];
 
@@ -600,6 +623,77 @@ export const CURRICULUM_SETS: CurriculumSet[] = [
           atp("6.5", "Peserta didik dapat menulis perintah SQL dasar untuk membuat, menambah, menampilkan, mengubah, dan menghapus data.", 2),
           atp("6.6", "Peserta didik dapat menerapkan pengolahan data dasar (filter, sort, fungsi hitung, dan visualisasi) pada spreadsheet dan basis data.", 2),
           atp("6.7", "Peserta didik dapat menerapkan pengolahan data pada basis data untuk menyelesaikan permasalahan sesuai bidang keahlian melalui proyek (mis. katalog perpustakaan, analisis kehadiran, atau reservasi ruang).", 4, true),
+        ],
+      },
+    ],
+  },
+  {
+    subject: "Informatika",
+    grade: "Kelas X",
+    phase: "Fase E",
+    semester: "Ganjil",
+    source: SUMBER_INFORMATIKA,
+    cps: onlyCps(CP_INFORMATIKA_FASE_E, "2.1", "2.2"),
+    groups: [
+      {
+        code: "TP 1",
+        title: "Berpikir Komputasional",
+        material: "Berpikir Komputasional",
+        cpCode: "2.1",
+        atps: [
+          atp("1.1", "Peserta didik dapat menjelaskan konsep struktur data standar dan memberi contoh penerapannya dalam kehidupan sehari-hari.", 2),
+          atp("1.2", "Peserta didik dapat menjelaskan konsep algoritma standar dan memberi contoh algoritma standar untuk persoalan sederhana.", 2),
+          atp("1.3", "Peserta didik dapat menerapkan proses komputasi yang dilakukan manusia secara mandiri untuk mendapatkan data yang berkualitas (akurat, lengkap, relevan, dan dapat dipercaya).", 2),
+          atp("1.4", "Peserta didik dapat menerapkan proses komputasi yang dilakukan manusia secara berkelompok, dengan pembagian peran yang jelas, untuk mendapatkan data yang berkualitas.", 2),
+          atp("1.5", "Peserta didik dapat menerapkan algoritma dan struktur data standar untuk menghasilkan berbagai solusi dalam menyelesaikan persoalan.", 2),
+          atp("1.6", "Peserta didik dapat membandingkan berbagai solusi dari satu persoalan dan memilih solusi yang paling tepat dengan alasan yang dapat dipertanggungjawabkan.", 2),
+          atp("1.7", "Peserta didik dapat menuliskan solusi rancangan program sederhana dalam format pseudocode yang dekat dengan bahasa komputer.", 2),
+          atp("1.8", "Peserta didik dapat memahami model komputer Von Neumann dan menyimulasikan dinamika Input-Process-Output di dalamnya.", 2),
+          atp("1.9", "Peserta didik dapat menjelaskan peran sistem operasi dalam kerja komputer serta menerapkan berpikir komputasional secara utuh untuk menyelesaikan persoalan sesuai konteks bidang keahlian.", 4, true),
+        ],
+      },
+      {
+        code: "TP 2",
+        title: "Literasi Digital",
+        material: "Literasi Digital",
+        cpCode: "2.2",
+        atps: [
+          atp("2.1", "Peserta didik dapat menggunakan mesin pencari dengan variabel yang lebih banyak (kata kunci dan operator pencarian lanjut) untuk menemukan informasi yang tepat.", 2),
+          atp("2.2", "Peserta didik dapat memilah fakta dan bukan fakta dengan memanfaatkan ekosistem periksa fakta.", 2),
+          atp("2.3", "Peserta didik dapat mengevaluasi berbagai informasi digital menggunakan cara membaca lateral.", 2),
+          atp("2.4", "Peserta didik dapat memanfaatkan perangkat teknologi pengolah dokumen untuk membuat dan mengolah dokumen secara efektif.", 2),
+          atp("2.5", "Peserta didik dapat memanfaatkan perangkat teknologi lembar kerja untuk mengolah data dan menyajikannya secara sederhana.", 2),
+          atp("2.6", "Peserta didik dapat memanfaatkan perangkat teknologi presentasi untuk menyajikan informasi secara menarik dan komunikatif.", 2),
+        ],
+      },
+    ],
+  },
+  {
+    subject: "Informatika",
+    grade: "Kelas X",
+    phase: "Fase E",
+    semester: "Genap",
+    source: SUMBER_INFORMATIKA,
+    cps: onlyCps(CP_INFORMATIKA_FASE_E, "2.2"),
+    groups: [
+      {
+        code: "TP 2",
+        title: "Literasi Digital",
+        material: "Literasi Digital",
+        cpCode: "2.2",
+        atps: [
+          atp("2.7", "Peserta didik dapat menjelaskan konsep konektivitas jaringan data lokal dan internet, baik melalui kabel maupun nirkabel.", 2),
+          atp("2.8", "Peserta didik dapat menerapkan konfigurasi keamanan dasar untuk konektivitas jaringan data lokal dan internet.", 2),
+          atp("2.9", "Peserta didik dapat memanfaatkan media digital untuk memproduksi dan mendiseminasikan konten secara bertanggung jawab.", 2),
+          atp("2.10", "Peserta didik dapat berpartisipasi dan berkolaborasi secara positif melalui media digital.", 2),
+          atp("2.11", "Peserta didik dapat menghargai hak atas kekayaan intelektual dalam menggunakan dan membagikan karya digital.", 2),
+          atp("2.12", "Peserta didik dapat mengenal berbagai profesi di bidang Informatika dan peranannya.", 2),
+          atp("2.13", "Peserta didik dapat menjelaskan penerapan digitalisasi budaya Indonesia di dunia digital.", 2),
+          atp("2.14", "Peserta didik dapat menyaring konten negatif di dunia digital dalam keseharian bermedia.", 2),
+          atp("2.15", "Peserta didik dapat menerapkan pengelolaan kata sandi dengan manajer kata sandi (password manager).", 2),
+          atp("2.16", "Peserta didik dapat menerapkan autentikasi dua langkah secara sederhana pada akun digitalnya.", 2),
+          atp("2.17", "Peserta didik dapat menerapkan konfigurasi privasi dan keamanan pada akun platform digital.", 2),
+          atp("2.18", "Peserta didik dapat menerapkan literasi digital secara utuh — mencari dan mengevaluasi informasi, berkarya dan berkolaborasi, serta menjaga keamanan diri — sebagai warga digital yang bijak dan bertanggung jawab sesuai konteks bidang keahlian.", 4, true),
         ],
       },
     ],

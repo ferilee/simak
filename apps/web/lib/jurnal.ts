@@ -132,3 +132,19 @@ export function filterGuruJournalClasses(
   if (classId === null) return [...classes];
   return classes.filter((kelas) => kelas.id === classId);
 }
+
+/**
+ * Label lencana pada tombol menu mobile guru (FAB), dari jumlah
+ * entri jurnal yang belum ditinjau milik ringkasan guru. null
+ * berarti lencana disembunyikan: hitungan belum termuat, gagal
+ * muat, atau memang nol — lencana tidak pernah menghalangi
+ * navigasi. Angka di atas 99 diringkas "99+" agar pilnya tetap
+ * kecil; pecahan dibulatkan ke bawah.
+ */
+export function journalFabBadgeLabel(unreviewedTotal: number | null | undefined): string | null {
+  if (unreviewedTotal === null || unreviewedTotal === undefined) return null;
+  if (!Number.isFinite(unreviewedTotal)) return null;
+  const count = Math.floor(unreviewedTotal);
+  if (count <= 0) return null;
+  return count > 99 ? "99+" : String(count);
+}

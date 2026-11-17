@@ -1980,6 +1980,19 @@ button.wizard-library-link {
   font-size: 12px;
 }
 
+/* Menu mobile guru (calon v1.0.73): FAB + bottom sheet milik
+   komponen GuruMobileMenu hanya hidup pada viewport ≤760px —
+   aturan tampilnya ada di blok @media guru di bawah. Di luar itu
+   keduanya tidak pernah terlihat, dan desktop/tablet tidak
+   berubah sama sekali. */
+.guru-mobile-fab {
+  display: none;
+}
+
+.guru-mobile-sheet-overlay {
+  display: none;
+}
+
 .module-row-action.is-danger {
   border-color: #fecdca;
   background: #fef3f2;
@@ -3212,6 +3225,100 @@ button.wizard-library-link {
 
   .wizard-theme-guru .wizard-step.is-active .wizard-step-number {
     box-shadow: 0 0 0 3px var(--wizard-accent-ring), 0 0 14px rgba(23, 92, 211, 0.24);
+  }
+
+  /* Tiga area sekunder keluar dari bilah bawah mobile (calon
+     v1.0.73): bilah hanya berisi lima langkah; pintu Perpustakaan
+     Bersama, CP & ATP, dan Jurnal Belajar pindah ke FAB + bottom
+     sheet GuruMobileMenu. Yang disembunyikan hanya salinan di
+     bilah samping — kartu di dalam sheet memakai kelas yang sama
+     dan tetap tampil. */
+  .wizard-theme-guru .wizard-sidebar .wizard-library-link {
+    display: none;
+  }
+
+  .guru-mobile-fab {
+    position: fixed;
+    z-index: 30;
+    right: max(16px, env(safe-area-inset-right));
+    bottom: calc(88px + env(safe-area-inset-bottom));
+    display: grid;
+    place-items: center;
+    width: 56px;
+    height: 56px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--color-brand-700);
+    color: #ffffff;
+    box-shadow: 0 10px 24px rgba(16, 24, 40, 0.3);
+    cursor: pointer;
+  }
+
+  .guru-mobile-fab-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    display: grid;
+    place-items: center;
+    min-width: 22px;
+    height: 22px;
+    border: 2px solid #ffffff;
+    border-radius: 999px;
+    padding: 0 5px;
+    background: #d92d20;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1;
+  }
+
+  .guru-mobile-sheet-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    display: flex;
+    align-items: flex-end;
+    background: rgba(16, 24, 40, 0.55);
+  }
+
+  /* Kartu tujuan di sheet memakai kelas .wizard-library-link yang
+     variabel aksennya hidup di .wizard-theme-guru; sheet dirender
+     di akar halaman (pola Modal), jadi nilai aksen guru yang sama
+     dinyatakan di sini agar rupa kartunya persis. */
+  .guru-mobile-sheet {
+    --wizard-accent: #175cd3;
+    --wizard-accent-dark: #1849a9;
+    --wizard-accent-soft: #eff8ff;
+    --wizard-accent-ring: #b2ddff;
+    width: 100%;
+    border-radius: 18px 18px 0 0;
+    background: var(--color-surface);
+    padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+    animation: guru-sheet-up 0.22s ease;
+  }
+
+  .guru-mobile-sheet-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .guru-mobile-sheet-title {
+    margin: 0;
+    font-size: 16px;
+  }
+
+  @keyframes guru-sheet-up {
+    from {
+      opacity: 0.4;
+      transform: translateY(24px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   .wizard-theme-murid .wizard-sidebar {

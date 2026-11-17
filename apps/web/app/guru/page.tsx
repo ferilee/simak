@@ -54,6 +54,8 @@ import { RichTextEditor, sanitizeBlockHtml } from "../../components/RichTextEdit
 import { LibraryPanel } from "../../components/LibraryPanel";
 import { KurikulumPanel } from "../../components/KurikulumPanel";
 import { JurnalGuruPanel } from "../../components/JurnalGuruPanel";
+import { GuruMobileMenu } from "../../components/GuruMobileMenu";
+import type { GuruJournalOverviewData } from "../../lib/jurnal";
 import { PemilihCepat } from "../../components/PemilihCepat";
 import { groupModulesForPicker, orderWorksheetsForPairing } from "../../lib/pemilih-cepat";
 import { filterAssignmentsByClass, planAssignmentCounts } from "../../lib/hitungan-penugasan";
@@ -615,6 +617,30 @@ export default function GuruPage() {
   // Panel Jurnal Belajar (Hub Murid Tahap 3) juga dipasang malas:
   // daftar murid + pilihan bacaan guru utuh saat bolak-balik tampilan.
   const [jurnalMounted, setJurnalMounted] = useState(false);
+  // Lencana menu mobile (calon v1.0.73): jumlah entri jurnal belum
+  // ditinjau untuk lencana FAB GuruMobileMenu, diambil dari endpoint
+  // ringkasan jurnal guru yang sama dengan panel Jurnal. Gagal muat
+  // berarti tanpa lencana (null) — tidak pernah menghalangi navigasi.
+  const [jurnalUnreviewedTotal, setJurnalUnreviewedTotal] = useState<number | null>(null);
+
+  // Lencana dimuat saat halaman dibuka, lalu disegarkan setiap guru
+  // meninggalkan tampilan jurnal — membaca/menanggapi di panel
+  // mengubah hitungan belum-ditinjau di server.
+  useEffect(() => {
+    if (guruView === "jurnal") return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await apiRequest<{ ok: true; data: GuruJournalOverviewData }>("/guru/jurnal");
+        if (!cancelled) setJurnalUnreviewedTotal(response.data.unreviewed_total);
+      } catch {
+        if (!cancelled) setJurnalUnreviewedTotal(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [guruView]);
   const [previewModule, setPreviewModule] = useState<ModuleSummary | null>(null);
   const [previewBlocks, setPreviewBlocks] = useState<ModuleBlock[] | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -5027,6 +5053,18 @@ export default function GuruPage() {
         {gradingSheetProgress ? <p style={styles.muted}>{gradingSheetProgress}</p> : null}
         {attemptDetail ? renderAttemptReview() : <p style={styles.muted}>Memuat rincian pengumpulan…</p>}
       </Modal>
+
+      {/* Menu mobile guru (calon v1.0.73): FAB + bottom sheet untuk
+          tiga area sekunder cangkang. Hanya tampil pada viewport
+          ≤760px (globals.css); di desktop tidak terlihat dan bilah
+          samping tetap rumah ketiga area itu. */}
+      <GuruMobileMenu
+        activeView={guruView}
+        unreviewedTotal={jurnalUnreviewedTotal}
+        onOpenLibrary={openLibraryView}
+        onOpenCurriculum={openCurriculumView}
+        onOpenJournal={openJournalView}
+      />
     </main>
   );
 }

@@ -200,10 +200,10 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     profile.indexOf("export function planProfileSync"),
     profile.indexOf("export async function upsertSimakProfile"),
   );
-  check("decision checks exact equality before trimmed equality",
+  check("decision checks exact equality before folded (trim+case) equality",
     planSegment.indexOf("row.ruasUserId === identity.ruasUserId") > -1
     && planSegment.indexOf("row.ruasUserId === identity.ruasUserId")
-      < planSegment.indexOf("row.ruasUserId.trim() === identity.ruasUserId"));
+      < planSegment.indexOf("foldIdentifier(row.ruasUserId) === foldIdentifier(identity.ruasUserId)"));
   const upsertSegment = profile.slice(profile.indexOf("export async function upsertSimakProfile"));
   check("candidate query keeps the exact comparisons",
     upsertSegment.includes("eq(users.ruasUserId, identity.ruasUserId)")

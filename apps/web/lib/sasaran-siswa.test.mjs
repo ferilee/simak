@@ -34,7 +34,7 @@ check("label Murid sasaran", guru.includes("Murid sasaran"));
 check("kotak cari nama/username", guru.includes('placeholder="Cari nama atau username murid"'));
 check("baris jumlah murid dipilih", guru.includes("{assignmentStudentIds.length} murid dipilih"));
 check("tombol pilih semua per kelas", guru.includes("— pilih semua"));
-check("anggota dirender dari data kelas", guru.includes("kelas.members ?? []") && guru.includes("{member.name} · @{member.username}"));
+check("anggota dirender dari data kelas", guru.includes("kelas.members ?? []") && guru.includes("<StudentNameBadge name={member.name} avatar_slug={member.avatar_slug} avatar_emoji={member.avatar_emoji} /> · @{member.username}"));
 check("chip murid terpilih dapat dihapus", guru.includes("dari sasaran") && guru.includes("assignmentStudentInfoById.get(studentId)"));
 check("payload buat+edit + snapshot membawa targetType", guru.split("targetType: assignmentTargetType,").length - 1 === 3);
 check("payload buat+bawa studentIds bersyarat", guru.split('studentIds: assignmentTargetType === "siswa" ? assignmentStudentIds : undefined').length - 1 === 2);

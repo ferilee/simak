@@ -140,6 +140,7 @@ export default function MuridPage() {
   const [joining, setJoining] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
   const [hasNewGrades, setHasNewGrades] = useState(false);
+  const [welcomeStep, setWelcomeStep] = useState(0);
   const [activeTab, setActiveTab] = useState<MuridTab>("dashboard");
   // Hub Tahap 2: null = belum termuat/gagal muat (bagian tampil sebagai
   // catatan lembut); available:false dari server = jembatan RUAS belum
@@ -157,6 +158,8 @@ export default function MuridPage() {
       ? { title: "Materi", description: "Baca materi yang diterbitkan" }
       : { title: "Penugasan", description: "Kerjakan aktivitas yang tersedia" };
   const displayName = user?.display_name ?? user?.name ?? "Murid";
+  const completedModules = data.modules.filter((module) => module.material_completed).length;
+  const completedAssignments = data.assignments.filter((assignment) => assignment.completed || assignment.progress === "dinilai").length;
 
   // Menutup sambutan (tombol "Mulai belajar", X, klik luar, Escape —
   // semuanya lewat onClose Modal) mencatat penanda ke server agar
@@ -423,26 +426,51 @@ export default function MuridPage() {
 
       <Modal
         open={welcomeOpen}
-        title={`${salamForHour(new Date().getHours())}, ${displayName}!`}
-        subtitle="Selamat datang di SIMAK — ruang belajarmu"
+        title={welcomeStep === 0 ? `${salamForHour(new Date().getHours())}, ${displayName}!` : welcomeStep === 1 ? "Tiga langkah belajar di SIMAK" : "Progres belajar Anda"}
+        subtitle={welcomeStep === 0 ? "Selamat datang di SIMAK — ruang belajarmu" : `Bagian ${welcomeStep + 1} dari 3`}
         onClose={dismissWelcome}
         footer={(
-          <button type="button" className="button button-primary" onClick={dismissWelcome}>
-            Mulai belajar
-          </button>
+          <>
+            <div className="welcome-progress" aria-label={`Bagian ${welcomeStep + 1} dari 3`}>
+              {[0, 1, 2].map((step) => <span key={step} className={step === welcomeStep ? "is-active" : step < welcomeStep ? "is-complete" : ""} />)}
+            </div>
+            <div className="welcome-actions">
+              {welcomeStep > 0 ? <button type="button" className="button button-secondary" onClick={() => setWelcomeStep((step) => step - 1)}>Kembali</button> : null}
+              {welcomeStep < 2 ? (
+                <button type="button" className="button button-primary" onClick={() => setWelcomeStep((step) => step + 1)}>Lanjutkan</button>
+              ) : (
+                <button type="button" className="button button-primary" onClick={dismissWelcome}>Mulai belajar</button>
+              )}
+            </div>
+          </>
         )}
       >
-        <p>
-          Senang kamu ada di sini. Di SIMAK kamu membaca materi dari gurumu, mengerjakan LKPD
-          bersama kelompokmu, dan melihat nilaimu bertumbuh — semua dalam satu tempat.
-        </p>
-        <blockquote className="welcome-quote">{quoteOfTheDay(new Date())}</blockquote>
-        <p><strong>Tiga langkah belajar di SIMAK:</strong></p>
-        <ol className="welcome-steps">
-          <li><strong>Baca materi</strong> sampai tuntas — daftar isi di bagian atas materi membantumu melompat antar bagian.</li>
-          <li><strong>Kerjakan LKPD lewat menu Penugasan</strong> — dengan begitu jawabanmu tercatat bersama kelompokmu.</li>
-          <li><strong>Isi exit ticket</strong> sesudahnya — ceritakan kesan dan kesulitanmu supaya gurumu tahu cara membantumu.</li>
-        </ol>
+        <div className="welcome-wizard-content">
+          {welcomeStep === 0 ? (
+            <>
+              <p>Senang kamu ada di sini. Di SIMAK kamu membaca materi dari gurumu, mengerjakan LKPD bersama kelompokmu, dan melihat nilaimu bertumbuh — semua dalam satu tempat.</p>
+              <blockquote className="welcome-quote">{quoteOfTheDay(new Date())}</blockquote>
+            </>
+          ) : null}
+          {welcomeStep === 1 ? (
+            <ol className="welcome-steps">
+              <li><strong>Baca materi</strong> sampai tuntas — daftar isi di bagian atas materi membantumu melompat antar bagian.</li>
+              <li><strong>Kerjakan LKPD lewat menu Penugasan</strong> — jawabanmu tercatat bersama kelompokmu.</li>
+              <li><strong>Isi exit ticket</strong> sesudahnya — ceritakan kesan dan kesulitanmu supaya gurumu tahu cara membantumu.</li>
+            </ol>
+          ) : null}
+          {welcomeStep === 2 ? (
+            <div className="welcome-progress-summary">
+              <p>Berikut kondisi ruang belajarmu saat ini. Kamu bisa melanjutkan kapan saja dari menu di bawah.</p>
+              <div className="welcome-progress-grid">
+                <div><strong>{data.classes.length}</strong><span>Kelas aktif</span></div>
+                <div><strong>{completedModules}/{data.modules.length}</strong><span>Materi tuntas</span></div>
+                <div><strong>{completedAssignments}/{data.assignments.length}</strong><span>Penugasan selesai</span></div>
+              </div>
+              {data.classes.length === 0 && data.modules.length === 0 && data.assignments.length === 0 ? <p className="content-muted">Belum ada progres. Mari mulai dengan bergabung ke kelas dari Dashboard.</p> : null}
+            </div>
+          ) : null}
+        </div>
       </Modal>
 
       <Modal

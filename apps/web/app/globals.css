@@ -4425,6 +4425,79 @@ button.wizard-library-link {
   color: #24466e;
 }
 
+.welcome-wizard-content {
+  min-height: 190px;
+}
+
+.welcome-progress-summary {
+  display: grid;
+  gap: 16px;
+}
+
+.welcome-progress-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.welcome-progress-grid > div {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #d0e4f7;
+  border-radius: 12px;
+  padding: 14px 10px;
+  background: #f6faff;
+  text-align: center;
+}
+
+.welcome-progress-grid strong {
+  color: #175cd3;
+  font-size: 1.35rem;
+}
+
+.welcome-progress-grid span {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.welcome-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.welcome-progress span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d0d5dd;
+}
+
+.welcome-progress span.is-active,
+.welcome-progress span.is-complete {
+  background: #175cd3;
+}
+
+.welcome-actions {
+  display: flex;
+  gap: 10px;
+  margin-left: auto;
+}
+
+@media (max-width: 520px) {
+  .welcome-progress-grid {
+    gap: 6px;
+  }
+
+  .welcome-progress-grid > div {
+    padding-inline: 6px;
+  }
+
+  .welcome-actions .button {
+    min-width: 0;
+  }
+}
+
 /* Kartu poin XP murid (gamifikasi): total, level, bilah kemajuan. */
 .xp-card {
   position: relative;

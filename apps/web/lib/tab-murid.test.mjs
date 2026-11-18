@@ -80,5 +80,31 @@ check(
   page.includes('activeTab === "materi" ? "is-active" : ""') && page.includes('activeTab === "penugasan" ? "is-active" : ""'),
 );
 
+console.log("Kasus D: bilah bawah di halaman anak murid");
+const modulePage = readFileSync(new URL("../app/murid/modules/[id]/page.tsx", import.meta.url), "utf8");
+const worksheetPage = readFileSync(new URL("../app/murid/worksheets/[id]/page.tsx", import.meta.url), "utf8");
+const assignmentPage = readFileSync(new URL("../app/murid/assignments/[id]/page.tsx", import.meta.url), "utf8");
+check(
+  "detail materi merender bilah bawah dengan tab materi aktif",
+  modulePage.includes('import { MuridBottomNav } from "../../../../components/MuridBottomNav";')
+    && modulePage.includes('<MuridBottomNav active="materi" />'),
+);
+check(
+  "LKPD merender bilah bawah dengan tab penugasan aktif",
+  worksheetPage.includes('import { MuridBottomNav } from "../../../../components/MuridBottomNav";')
+    && worksheetPage.includes('<MuridBottomNav active="penugasan" />'),
+);
+check(
+  "detail penugasan merender bilah bawah dengan tab penugasan aktif",
+  assignmentPage.includes('import { MuridBottomNav } from "../../../../components/MuridBottomNav";')
+    && assignmentPage.includes('<MuridBottomNav active="penugasan" />'),
+);
+check(
+  "ketiga halaman anak memakai wadah murid-page-container (bantalan bawah anti tertutup bilah)",
+  modulePage.includes('className="murid-page-container"')
+    && worksheetPage.includes('className="murid-page-container"')
+    && assignmentPage.includes('className="murid-page-container"'),
+);
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

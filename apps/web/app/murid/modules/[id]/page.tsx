@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "../../../../lib/api";
 import { planTableOfContents, tocAnchorForBlock, tocHeadingPrefix, type TocEntry } from "../../../../lib/daftar-isi";
 import { ReadingProgress } from "../../../../components/ReadingProgress";
+import { MuridBottomNav } from "../../../../components/MuridBottomNav";
 import { InteractiveBlock } from "../../../../components/InteractiveBlock";
 import { Toast } from "../../../../components/Toast";
 import { MarkdownHtml, MathHtml, MathText } from "../../../../components/MathContent";
@@ -65,11 +66,11 @@ export default function ModulePage() {
       .catch(() => {});
   }, []);
 
-  if (message) return <main style={styles.container}><Toast message={message} onDismiss={() => setMessage("")} /><Link href="/murid">← Kembali ke ruang murid</Link></main>;
-  if (!data) return <main style={styles.container}><p>Memuat materi...</p></main>;
+  if (message) return <main className="murid-page-container" style={styles.container}><Toast message={message} onDismiss={() => setMessage("")} /><Link href="/murid">← Kembali ke ruang murid</Link><MuridBottomNav active="materi" /></main>;
+  if (!data) return <main className="murid-page-container" style={styles.container}><p>Memuat materi...</p><MuridBottomNav active="materi" /></main>;
 
   return (
-    <main style={styles.container}>
+    <main className="murid-page-container" style={styles.container}>
       <Link href="/murid" style={styles.back}>← Ruang murid</Link>
       <p style={styles.subject}>{data.module.subject}</p>
       <h1 style={styles.title}>{data.module.title}</h1>
@@ -97,6 +98,7 @@ export default function ModulePage() {
         minSeconds={data.reading?.min_seconds ?? null}
         studentId={studentId}
       />
+      <MuridBottomNav active="materi" />
     </main>
   );
 }

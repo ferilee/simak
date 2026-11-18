@@ -8,6 +8,7 @@ import { countdownParts, countdownUnits, formatSchedule, parseNotYetOpen, type N
 import { submissionStatusLabel } from "../../../lib/labels";
 import { Toast } from "../../../../components/Toast";
 import { StudentNameBadge } from "../../../../components/StudentNameBadge";
+import { MuridBottomNav } from "../../../../components/MuridBottomNav";
 import { MathText } from "../../../../components/MathContent";
 
 type AssignmentDetail = {
@@ -140,7 +141,7 @@ export default function AssignmentPage() {
     const parts = countdownParts(new Date(waiting.opens_at).getTime(), nowMs);
     const units = countdownUnits(parts);
     return (
-      <main style={styles.waitingContainer}>
+      <main className="murid-page-container" style={styles.waitingContainer}>
         <Link href="/murid" style={styles.back}>← Ruang murid</Link>
         <section style={styles.waitingCard}>
           <WaitingIllustration />
@@ -170,11 +171,12 @@ export default function AssignmentPage() {
             <button type="button" onClick={checkAgain} style={styles.waitingSecondaryButton}>Cek lagi</button>
           </div>
         </section>
+        <MuridBottomNav active="penugasan" />
       </main>
     );
   }
-  if (message && !data) return <main style={styles.container}><Toast message={message} onDismiss={() => setMessage("")} /><Link href="/murid">← Kembali</Link></main>;
-  if (!data) return <main style={styles.container}><p>Memuat penugasan...</p></main>;
+  if (message && !data) return <main className="murid-page-container" style={styles.container}><Toast message={message} onDismiss={() => setMessage("")} /><Link href="/murid">← Kembali</Link><MuridBottomNav active="penugasan" /></main>;
+  if (!data) return <main className="murid-page-container" style={styles.container}><p>Memuat penugasan...</p><MuridBottomNav active="penugasan" /></main>;
 
   // Tanda selesai per langkah hanya dari bukti nyata: LKPD dari status
   // attempt (terkumpul/dinilai), Kuis RUAS dari status "completed" di RUAS
@@ -193,7 +195,7 @@ export default function AssignmentPage() {
   const stepCheckOrdinals = steps.map((step) => (step.complete ? completedSeen++ : -1));
 
   return (
-    <main style={styles.container}>
+    <main className="murid-page-container" style={styles.container}>
       <Link href="/murid" style={styles.back}>← Ruang murid</Link>
       <p style={styles.eyebrow}>SIMAK · PENUGASAN</p>
       <h1 style={styles.title}>{data.assignment.title}</h1>
@@ -285,6 +287,7 @@ export default function AssignmentPage() {
           )}
         </div>
       </section>
+      <MuridBottomNav active="penugasan" />
     </main>
   );
 }

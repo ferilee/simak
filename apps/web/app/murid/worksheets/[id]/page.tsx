@@ -10,6 +10,7 @@ import { advanceSavedSnapshot, diffAnswersPayload, mergeLiveAnswers, type LiveAn
 import { prepareImageForUpload } from "../../../../lib/prepare-image";
 import { Toast } from "../../../../components/Toast";
 import { StudentNameBadge } from "../../../../components/StudentNameBadge";
+import { MuridBottomNav } from "../../../../components/MuridBottomNav";
 import { useConfirm } from "../../../../components/ConfirmDialog";
 import { MathText } from "../../../../components/MathContent";
 
@@ -738,12 +739,12 @@ export default function WorksheetPage() {
     }
   }
 
-  if (message && !data) return <main style={styles.container}><Toast message={message} onDismiss={() => setMessage("")} /><Link href="/murid">← Kembali</Link></main>;
-  if (!data) return <main style={styles.container}><p>Memuat LKPD...</p></main>;
+  if (message && !data) return <main className="murid-page-container" style={styles.container}><Toast message={message} onDismiss={() => setMessage("")} /><Link href="/murid">← Kembali</Link><MuridBottomNav active="penugasan" /></main>;
+  if (!data) return <main className="murid-page-container" style={styles.container}><p>Memuat LKPD...</p><MuridBottomNav active="penugasan" /></main>;
 
   if (ungrouped) {
     return (
-      <main style={styles.container}>
+      <main className="murid-page-container" style={styles.container}>
         {assignmentId ? (
           <div style={styles.backRow}>
             <Link href={`/murid/assignments/${assignmentId}`} style={styles.back}>← Kembali ke penugasan</Link>
@@ -757,6 +758,7 @@ export default function WorksheetPage() {
           <strong>👥 Penugasan berkelompok</strong>
           <p style={{ margin: 0, lineHeight: 1.6 }}>Kamu belum masuk kelompok untuk penugasan ini. Hubungi gurumu.</p>
         </div>
+        <MuridBottomNav active="penugasan" />
       </main>
     );
   }
@@ -788,7 +790,7 @@ export default function WorksheetPage() {
   const showMaterialBanner = materialBannerVisible(materialInfo, status) && !materialBannerClosed;
 
   return (
-    <main style={styles.container}>
+    <main className="murid-page-container" style={styles.container}>
       {assignmentId ? (
         <div style={styles.backRow}>
           <Link href={`/murid/assignments/${assignmentId}`} style={styles.back}>← Kembali ke penugasan</Link>
@@ -1106,6 +1108,7 @@ export default function WorksheetPage() {
           </div>
         </div>
       ) : null}
+      <MuridBottomNav active="penugasan" />
     </main>
   );
 }

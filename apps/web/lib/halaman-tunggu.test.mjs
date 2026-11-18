@@ -140,7 +140,7 @@ console.log("Case 7: ilustrasi SVG sebaris — tanpa aset eksternal");
 console.log("Case 8: responsif — disiplin seluler v1.0.25 pada halaman tunggu");
 {
   const page = read("../app/murid/assignments/[id]/page.tsx");
-  check("cabang tunggu memakai wadah khusus waitingContainer", page.includes("<main style={styles.waitingContainer}>"));
+  check("cabang tunggu memakai wadah khusus waitingContainer", page.includes('<main className="murid-page-container" style={styles.waitingContainer}>'));
   check("wadah tunggu: maxWidth 720 + overflowX clip (anti geser menyamping)", page.includes('waitingContainer: { maxWidth: 720, margin: "0 auto", padding: "32px 20px 64px", overflowX: "clip" as const }'));
   check("kartu tunggu minWidth 0 (anak grid tidak memaksa lebar)", page.includes('textAlign: "center" as const, minWidth: 0 }'));
   const anywhereCount = (page.match(/overflowWrap: "anywhere" as const/g) ?? []).length;

@@ -2897,16 +2897,18 @@ button.wizard-library-link {
   letter-spacing: -0.02em;
 }
 
-/* Kartu bagian beranda murid (calon v1.0.74): empat bagian langkah
-   "Kelas saya" — Kelas saya, Progres belajar, Asesmen RUAS, Jurnal
-   belajar — masing-masing menjadi kartu identitas yang jelas
-   terpisah (dulu judul kecil + kotak putus-putus yang sama berat,
-   sehingga sering terlewat murid). Kepala kartu: ikon dalam
-   lingkaran berwarna khas per bagian (biru / kuning emas / ungu /
-   hijau, rona lembut palet yang sama dengan kartu XP dan lencana
-   status), judul lebih besar, dan chip status di sisi kanan yang
+/* Kartu bagian beranda murid (calon v1.0.74, disesuaikan era
+   navigasi v1.0.76): dua bagian langkah "Kelas saya" — Kelas saya
+   dan Progres belajar — masing-masing menjadi kartu identitas yang
+   jelas terpisah (dulu judul kecil + kotak putus-putus yang sama
+   berat, sehingga sering terlewat murid). Kepala kartu: ikon dalam
+   lingkaran berwarna khas per bagian (biru / kuning emas, rona
+   lembut palet yang sama dengan kartu XP dan lencana status),
+   judul lebih besar, dan chip status di sisi kanan yang
    diturunkan dari data bagian itu sendiri (lib/beranda-murid).
-   Isi, urutan, dan perilaku tiap bagian tidak berubah. */
+   Isi, urutan, dan perilaku tiap bagian tidak berubah. (Kartu
+   Asesmen RUAS + Jurnal belajar dari v1.0.74 dipensiunkan oleh
+   desain navigasi v1.0.76.) */
 .murid-home-card {
   margin-top: 22px;
   border: 1px solid var(--color-border-soft);
@@ -2945,16 +2947,6 @@ button.wizard-library-link {
 .murid-home-card-icon--progres {
   background: #fff3d6;
   color: #9a6200;
-}
-
-.murid-home-card-icon--asesmen {
-  background: #f4f3ff;
-  color: #6941c6;
-}
-
-.murid-home-card-icon--jurnal {
-  background: var(--color-success-surface);
-  color: var(--color-success);
 }
 
 .murid-home-card-titles {

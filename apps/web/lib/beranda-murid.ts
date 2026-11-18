@@ -1,15 +1,17 @@
-// Kartu bagian beranda murid (calon v1.0.74): chip status di kepala
-// kartu Kelas saya / Progres belajar / Asesmen RUAS / Jurnal belajar.
-// Chip SELALU diturunkan dari data yang sudah dimuat bagian itu
-// sendiri (payload /murid/today, /murid/asesmen, /murid/jurnal) —
-// tidak ada endpoint atau panggilan data baru; fungsi-fungsi di
-// sini murni agar pemetaannya terkunci uji.
+// Kartu bagian beranda murid (calon v1.0.74, disesuaikan era
+// navigasi v1.0.76): chip status di kepala dua kartu identitas
+// dashboard murid — Kelas saya dan Progres belajar. Chip SELALU
+// diturunkan dari data yang sudah dimuat bagian itu sendiri
+// (payload /murid/today dan /murid/asesmen) — tidak ada endpoint
+// atau panggilan data baru; fungsi-fungsi di sini murni agar
+// pemetaannya terkunci uji. (Dua kartu lain dari v1.0.74 — Asesmen
+// RUAS dan Jurnal belajar — dipensiunkan oleh desain navigasi
+// v1.0.76 beserta helper chipnya.)
 //
 // Nada chip: "neutral" untuk hitungan biasa, "accent" untuk keadaan
-// yang menunggu aksi murid (asesmen belum selesai — dibuat menonjol
-// agar tidak terlewat), "done" untuk keadaan tuntas yang menenangkan.
-
-import type { AssessmentCardData, HubData } from "./hub-murid";
+// yang menunggu aksi murid, "done" untuk keadaan tuntas yang
+// menenangkan — dua nada terakhir tetap bagian dari tipe chip
+// bersama walau kedua chip yang tersisa selalu "neutral".
 
 export type MuridChipTone = "neutral" | "accent" | "done";
 
@@ -27,29 +29,4 @@ export function kelasChip(classCount: number): MuridSectionChip {
 export function progresChip(xpTotal: number | null): MuridSectionChip | null {
   if (xpTotal === null) return null;
   return { label: `${xpTotal} XP`, tone: "neutral" };
-}
-
-/** Jumlah asesmen yang masih menunggu dikerjakan (belum mulai atau sedang berjalan). */
-export function countWaitingAssessments(assessments: AssessmentCardData[]): number {
-  return assessments.filter((card) => card.status === "not_started" || card.status === "in_progress").length;
-}
-
-/**
- * Chip Asesmen RUAS: "N menunggu" beraksen bila masih ada asesmen
- * belum selesai; "Semua selesai" bila semua terpetakan sudah tuntas;
- * "0 terpetakan" bila belum ada pemetaan. Jembatan belum termuat /
- * belum aktif → tanpa chip (bagiannya sendiri sudah menjelaskan).
- */
-export function asesmenChip(hub: HubData | null): MuridSectionChip | null {
-  if (!hub || !hub.available) return null;
-  const waiting = countWaitingAssessments(hub.assessments);
-  if (waiting > 0) return { label: `${waiting} menunggu`, tone: "accent" };
-  if (hub.assessments.length > 0) return { label: "Semua selesai", tone: "done" };
-  return { label: "0 terpetakan", tone: "neutral" };
-}
-
-/** Chip Jurnal belajar: jumlah entri refleksi; ringkasan belum termuat → tanpa chip. */
-export function jurnalChip(total: number | null): MuridSectionChip | null {
-  if (total === null) return null;
-  return { label: `${total} entri`, tone: "neutral" };
 }

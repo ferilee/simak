@@ -11,7 +11,7 @@ import { avatarImagePath, priceLabel, stateLabel, type AvatarCatalogItem, type A
 import { allStepsDone, planAssignmentSteps, planReminderLevel, worksheetStatusFromProgress } from "../../lib/pengingat";
 import { circleAriaLabel, initialPagerIndex, planCircle } from "../../lib/navigasi-tugas";
 import { ARCHIVE_GROUP_NAME, MATERIAL_FILTERS, guidedGroupName, planGuidedMaterials, shouldShowHero, type GuidedModule, type GuidedMaterialsPlan, type MaterialFilter } from "../../lib/materi-terpandu";
-import { assessmentStatusLabel, type AssessmentCardData, type HubData } from "../../lib/hub-murid";
+import { assessmentStatusLabel, type HubData } from "../../lib/hub-murid";
 import { kelasChip, progresChip, type MuridSectionChip } from "../../lib/beranda-murid";
 import { muridTabFromSearch, type MuridHomeTab } from "../../lib/tab-murid";
 import { submissionStatusLabel } from "../lib/labels";
@@ -113,17 +113,15 @@ type NilaiDotResponse = {
   data: { grades: { assignment_id: number; graded_at: string }[] };
 };
 
-// Ringkasan hub beranda (Hub Murid Tahap 2): kartu asesmen RUAS +
-// progres per rantai dari GET /murid/asesmen. XP tidak ikut di sini —
-// kartu XP sidebar membaca ringkasan dari /murid/today seperti biasa.
+// Ringkasan hub beranda (Hub Murid Tahap 2): progres per rantai
+// dari GET /murid/asesmen (status/skor asesmen tertempel di tiap
+// rantai). XP tidak ikut di sini — kartu XP sidebar membaca
+// ringkasan dari /murid/today seperti biasa.
 type HubResponse = {
   ok: true;
   data: HubData;
 };
 
-// Ringkasan jurnal beranda (Hub Murid Tahap 3): jumlah entri + entri
-// terakhir murid dari GET /murid/jurnal?limit=1 — cukup untuk kartu
-// ajakan menulis; isi lengkapnya di halaman /murid/jurnal.
 export default function MuridPage() {
   const router = useRouter();
   const [user, setUser] = useState<MeResponse["user"] | null>(null);
@@ -143,11 +141,10 @@ export default function MuridPage() {
   const [hasNewGrades, setHasNewGrades] = useState(false);
   const [welcomeStep, setWelcomeStep] = useState(0);
   const [activeTab, setActiveTab] = useState<MuridTab>("dashboard");
-  // Hub Tahap 2: null = belum termuat/gagal muat (bagian tampil sebagai
-  // catatan lembut); available:false dari server = jembatan RUAS belum
-  // aktif. Keduanya tidak pernah menghalangi beranda.
+  // Hub Tahap 2: null = belum termuat/gagal muat (rantai progres
+  // tampil kosong); available:false dari server = jembatan RUAS
+  // belum aktif. Keduanya tidak pernah menghalangi beranda.
   const [hub, setHub] = useState<HubData | null>(null);
-  const [handoffBusy, setHandoffBusy] = useState<string | null>(null);
   const studentStep = activeTab === "dashboard" ? 0 : activeTab === "materi" ? 1 : 2;
   const tabHeading = activeTab === "dashboard"
     ? { title: "Dashboard", description: "Lihat kelas dan progres belajar Anda" }
@@ -315,8 +312,8 @@ export default function MuridPage() {
       }
       const today = await apiRequest<TodayResponse>("/murid/today");
       setData(today.data);
-      // Ringkasan hub (asesmen + progres) dimuat menyusul dan gagal-
-      // lembut: kegagalannya hanya mengosongkan kedua bagian hub.
+      // Ringkasan hub (progres per rantai) dimuat menyusul dan
+      // gagal-lembut: kegagalannya hanya mengosongkan rantai progres.
       void apiRequest<HubResponse>("/murid/asesmen")
         .then((response) => setHub(response.data))
         .catch(() => setHub(null));
@@ -350,25 +347,6 @@ export default function MuridPage() {
   async function logout() {
     await apiRequest("/auth/logout", { method: "POST" }).catch(() => undefined);
     router.replace("/login");
-  }
-
-  // Serah-terima ke RUAS: server menerbitkan URL penukaran sekali
-  // pakai, peramban dialihkan ke sana dan murid mendarat di RUAS sudah
-  // masuk. Kartu asesmen membawa target topiknya (langsung ke halaman
-  // asesmen); tanpa kartu, targetnya dashboard RUAS. Kegagalan apa pun
-  // berakhir pada satu pesan ramah yang sama — tanpa rincian teknis.
-  async function openRuas(card?: AssessmentCardData) {
-    setHandoffBusy(card ? `topik-${card.topic_id}` : "dashboard");
-    try {
-      const response = await apiRequest<{ ok: true; data: { url: string } }>("/murid/handoff", {
-        method: "POST",
-        body: JSON.stringify(card ? { topic_id: card.topic_id, ...(card.subject_id !== null ? { subject_id: card.subject_id } : {}) } : {}),
-      });
-      window.location.href = response.data.url;
-    } catch {
-      setMessage("RUAS belum bisa dibuka otomatis — buka RUAS seperti biasa.");
-      setHandoffBusy(null);
-    }
   }
 
   useEffect(() => {

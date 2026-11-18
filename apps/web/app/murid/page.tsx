@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { FormEvent, Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiRequest } from "../../lib/api";
 import { decideBaruMarkers, readNilaiSayaBaseline } from "../../lib/nilai-saya";
 import { quoteOfTheDay, salamForHour } from "../../lib/sapaan";
@@ -13,6 +13,7 @@ import { circleAriaLabel, initialPagerIndex, planCircle } from "../../lib/naviga
 import { ARCHIVE_GROUP_NAME, MATERIAL_FILTERS, guidedGroupName, planGuidedMaterials, shouldShowHero, type GuidedModule, type GuidedMaterialsPlan, type MaterialFilter } from "../../lib/materi-terpandu";
 import { assessmentStatusLabel, type AssessmentCardData, type HubData } from "../../lib/hub-murid";
 import { kelasChip, progresChip, type MuridSectionChip } from "../../lib/beranda-murid";
+import { muridTabFromSearch, type MuridHomeTab } from "../../lib/tab-murid";
 import { submissionStatusLabel } from "../lib/labels";
 import { Toast } from "../../components/Toast";
 import { Modal } from "../../components/Modal";
@@ -147,10 +148,6 @@ export default function MuridPage() {
   // aktif. Keduanya tidak pernah menghalangi beranda.
   const [hub, setHub] = useState<HubData | null>(null);
   const [handoffBusy, setHandoffBusy] = useState<string | null>(null);
-  useEffect(() => {
-    const requestedTab = new URLSearchParams(window.location.search).get("tab");
-    if (requestedTab === "materi" || requestedTab === "penugasan") setActiveTab(requestedTab);
-  }, []);
   const studentStep = activeTab === "dashboard" ? 0 : activeTab === "materi" ? 1 : 2;
   const tabHeading = activeTab === "dashboard"
     ? { title: "Dashboard", description: "Lihat kelas dan progres belajar Anda" }
@@ -878,9 +875,32 @@ export default function MuridPage() {
 
         </section>
       </div>
+      <Suspense fallback={null}>
+        <MuridTabUrlSync onSync={setActiveTab} />
+      </Suspense>
       <MuridBottomNav active={activeTab} hasNewGrades={hasNewGrades} />
     </main>
   );
+}
+
+// Penyinkron tab beranda dari URL (perbaikan navigasi murid, calon
+// v1.0.77): bilah bawah dan menu samping menautkan Materi/Penugasan
+// sebagai /murid?tab=..., dan navigasi lunak Next ke pathname yang
+// sama TIDAK memasang ulang halaman — membaca parameter hanya saat
+// mount membuat ketukan tab tampak mati. Komponen kecil ini membaca
+// parameter lewat useSearchParams dan menyinkronkan state tab
+// SETIAP kali parameter berubah (ketukan navigasi, tombol
+// back/forward peramban, kedatangan dari halaman lain), dengan
+// pemetaan murni dari lib/tab-murid. Ia satu-satunya pemakai
+// useSearchParams di halaman statis ini, jadi ia dirender di dalam
+// batas Suspense agar build produksi tetap hijau.
+function MuridTabUrlSync({ onSync }: { onSync: (tab: MuridHomeTab) => void }) {
+  const searchParams = useSearchParams();
+  const search = searchParams.toString();
+  useEffect(() => {
+    onSync(muridTabFromSearch(search));
+  }, [search, onSync]);
+  return null;
 }
 
 // Pil chip status di kepala kartu bagian beranda (calon v1.0.74):

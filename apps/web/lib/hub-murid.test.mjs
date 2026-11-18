@@ -1,7 +1,18 @@
 // Tests for Hub Murid Tahap 2 di sisi web: cermin urai tautan +
 // pemetaan efektif (lib/ruas-pemetaan.ts), label status asesmen
 // (lib/hub-murid.ts), dan pengkabelan halaman guru (pemilih topik +
-// tombol Tarik) & beranda murid (bagian Progres/Asesmen + serah-terima).
+// tombol Tarik), beranda murid (Progres belajar + baris asesmen
+// tertempel di rantai), & halaman detail penugasan (serah-terima
+// Kuis RUAS — tempat hidupnya sejak v1.0.76).
+//
+// PENSIUN v1.0.76: kartu Asesmen RUAS di beranda murid (tombol
+// "Buka di RUAS" per kartu + "Buka RUAS" umum + catatan lembut
+// "belum dapat dimuat") dihapus oleh commit 5a13f69 dan Mas
+// Ferilee mengonfirmasi penghapusan itu DISENGAJA (18 Nov 2026).
+// Jaminan-jaminan lamanya dipensiunkan secara eksplisit di bawah
+// (label PENSIUN) dan penggantinya dikunci di tempat desain baru
+// menaruhnya: status/skor asesmen sebagai baris di rantai Progres
+// beranda, dan serah-terima di halaman detail penugasan.
 // Run with bun from apps/web:  bun lib/hub-murid.test.mjs
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -25,6 +36,7 @@ function check(label, condition, detail = "") {
 const here = dirname(fileURLToPath(import.meta.url));
 const guruPage = readFileSync(join(here, "../app/guru/page.tsx"), "utf8");
 const muridPage = readFileSync(join(here, "../app/murid/page.tsx"), "utf8");
+const assignmentPage = readFileSync(join(here, "../app/murid/assignments/[id]/page.tsx"), "utf8");
 
 // --- Urai tautan (cermin server) ---------------------------------------------------
 check("urai /quiz/<id> + subject_id", JSON.stringify(parseRuasQuizUrl("https://ruas.example/quiz/42?subject_id=7")) === JSON.stringify({ topicId: 42, subjectId: 7 }));
@@ -63,12 +75,25 @@ check("guru: ringkasan tarikan menyebut terbarui/belum ada skor/tidak dikenal", 
 
 // --- Pengkabelan beranda murid ---------------------------------------------------------------------
 check("murid: memuat ringkasan hub dari /murid/asesmen secara gagal-lembut", muridPage.includes('apiRequest<HubResponse>("/murid/asesmen")') && muridPage.includes(".catch(() => setHub(null))"));
-check("murid: bagian Progres belajar + Asesmen RUAS tampil", muridPage.includes("Progres belajar") && muridPage.includes("Asesmen RUAS"));
+check("murid: bagian Progres belajar tampil di dashboard", muridPage.includes("Progres belajar"));
 check("murid: progres menampilkan materi/LKPD + asesmen tertempel", muridPage.includes("chain.materials_completed") && muridPage.includes("chain.lkpd_submitted") && muridPage.includes("chain.assessment"));
-check("murid: tombol Buka di RUAS per kartu + Buka RUAS umum", muridPage.includes("Buka di RUAS") && muridPage.includes("Buka RUAS"));
-check("murid: serah-terima lewat /murid/handoff lalu alihkan peramban", muridPage.includes('"/murid/handoff"') && muridPage.includes("window.location.href = response.data.url"));
-check("murid: pesan gagal serah-terima ramah tanpa rincian teknis", muridPage.includes("RUAS belum bisa dibuka otomatis — buka RUAS seperti biasa."));
-check("murid: keadaan belum terhubung tampil sebagai catatan lembut", muridPage.includes("Asesmen RUAS belum dapat dimuat dari sini."));
+check("murid: status + skor asesmen tampil sebagai baris di kartu rantai progres",
+  muridPage.includes("Asesmen RUAS:") && muridPage.includes("assessmentStatusLabel(chain.assessment.status)") && muridPage.includes("Skor ${chain.assessment.score}"));
+check("PENSIUN v1.0.76: beranda tanpa tombol Buka di RUAS per kartu + Buka RUAS umum",
+  !muridPage.includes("Buka di RUAS") && !muridPage.includes("Buka RUAS"));
+check("PENSIUN v1.0.76: beranda tanpa kartu Asesmen RUAS + catatan lembut 'belum dapat dimuat'",
+  !muridPage.includes("<h3>Asesmen RUAS</h3>") && !muridPage.includes("Asesmen RUAS belum dapat dimuat dari sini."));
+check("PENSIUN v1.0.76: beranda tidak lagi memanggil /murid/handoff (serah-terima pindah ke detail penugasan)",
+  !muridPage.includes('"/murid/handoff"') && !muridPage.includes("RUAS belum bisa dibuka otomatis"));
+
+// --- Pengkabelan halaman detail penugasan (tempat hidup serah-terima sejak v1.0.76) -------------------
+check("penugasan: langkah Kuis RUAS hanya ada bila penugasan punya ruas_quiz_url",
+  assignmentPage.includes('data.assignment.ruas_quiz_url ? [{ id: "quiz"'));
+check("penugasan: tombol 'Buka Kuis di RUAS' pada langkah kuis", assignmentPage.includes("Buka Kuis di RUAS"));
+check("penugasan: membuka kuis mencatat aktivitas buka_kuis_ruas + membuka URL kuis di tab baru",
+  assignmentPage.includes('"buka_kuis_ruas"') && assignmentPage.includes('window.open(data.assignment.ruas_quiz_url, "_blank", "noopener,noreferrer")'));
+check("penugasan: langkah kuis bertanda tuntas dari ruas_quiz_completed",
+  assignmentPage.includes("complete: data.ruas_quiz_completed"));
 
 console.log(`\nWeb hub-murid: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

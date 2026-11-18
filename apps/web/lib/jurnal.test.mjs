@@ -1,7 +1,17 @@
 // Tests for Hub Murid Tahap 3 — Jurnal Belajar di sisi web:
 // label tanggal + pengelompokan riwayat (lib/jurnal.ts), label kelas
 // guru + saringan kelas — MURNI — plus pengkabelan halaman murid
-// (bagian Jurnal di beranda + halaman /murid/jurnal) dan panel guru.
+// (Jurnal sebagai tujuan navigasi kelas satu + halaman
+// /murid/jurnal) dan panel guru.
+//
+// PENSIUN v1.0.76: kartu Jurnal belajar di beranda murid (bagian
+// sejajar di langkah Kelas saya + ringkasan entri terakhir dari
+// /murid/jurnal?limit=1) dihapus oleh commit 5a13f69 dan Mas
+// Ferilee mengonfirmasi penghapusan itu DISENGAJA (18 Nov 2026):
+// Jurnal kini tujuan navigasi kelas satu (MuridBottomNav + menu
+// desktop), bukan kartu beranda. Jaminan lamanya dipensiunkan
+// secara eksplisit di bawah (label PENSIUN) dan penggantinya
+// dikunci pada navigasi + halaman jurnal itu sendiri.
 // Diperluas untuk Tanggapan Guru + Penanda Ditinjau: label tanggal-jam
 // tanggapan, lencana belum-ditinjau, dan editor tanggapan panel guru.
 // Run with bun from apps/web:  bun lib/jurnal.test.mjs
@@ -36,6 +46,7 @@ function check(label, condition, detail = "") {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const muridPage = readFileSync(join(here, "../app/murid/page.tsx"), "utf8");
+const bottomNav = readFileSync(join(here, "../components/MuridBottomNav.tsx"), "utf8");
 const jurnalPage = readFileSync(join(here, "../app/murid/jurnal/page.tsx"), "utf8");
 const guruPage = readFileSync(join(here, "../app/guru/page.tsx"), "utf8");
 const guruPanel = readFileSync(join(here, "../components/JurnalGuruPanel.tsx"), "utf8");
@@ -75,11 +86,17 @@ check("saringan kelas: null → semua; id → hanya kelas itu",
   filterGuruJournalClasses(kelasContoh, null).length === 2 &&
   JSON.stringify(filterGuruJournalClasses(kelasContoh, 2).map((kelas) => kelas.id)) === JSON.stringify([2]));
 
-// --- Pengkabelan beranda murid ----------------------------------------------------------------------
-check("beranda murid: bagian Jurnal belajar sejajar Progres/Asesmen di langkah Kelas saya",
-  muridPage.includes("<h3>Jurnal belajar</h3>") && muridPage.includes('href="/murid/jurnal"'));
-check("beranda murid: ringkasan jurnal dimuat gagal-lembut dari /murid/jurnal?limit=1",
-  muridPage.includes('"/murid/jurnal?limit=1"') && muridPage.includes("journalDateLabel(journal.latest.entry_date)"));
+// --- Pengkabelan beranda murid + navigasi (era navigasi v1.0.76) --------------------------------------
+check("PENSIUN v1.0.76: beranda tanpa kartu Jurnal belajar (bukan lagi bagian langkah Kelas saya)",
+  !muridPage.includes("<h3>Jurnal belajar</h3>"));
+check("PENSIUN v1.0.76: beranda tidak memuat ringkasan jurnal dari /murid/jurnal?limit=1",
+  !muridPage.includes("/murid/jurnal?limit=1") && !muridPage.includes("journalDateLabel(journal.latest"));
+check("jurnal tujuan navigasi kelas satu: bilah bawah memuat butir Jurnal belajar → /murid/jurnal",
+  bottomNav.includes('key: "jurnal"') && bottomNav.includes('href: "/murid/jurnal"') && bottomNav.includes('label: "Jurnal belajar"'));
+check("jurnal tujuan navigasi kelas satu: menu desktop beranda menautkan /murid/jurnal",
+  muridPage.includes('href="/murid/jurnal"'));
+check("halaman jurnal memasang bilah bawah dengan tab jurnal aktif",
+  jurnalPage.includes('<MuridBottomNav active="jurnal" />'));
 
 // --- Pengkabelan halaman jurnal murid ------------------------------------------------------------------
 check("halaman jurnal: formulir simpan entri baru + sunting lewat POST/PATCH",

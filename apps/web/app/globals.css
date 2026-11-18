@@ -2415,6 +2415,104 @@ button.wizard-library-link {
   --wizard-accent-ring: #a6f4c5;
 }
 
+.murid-app-shell {
+  display: grid;
+  grid-template-columns: minmax(220px, 270px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+  padding-bottom: 48px;
+}
+
+.murid-desktop-nav {
+  display: grid;
+  gap: 4px;
+  margin-top: 20px;
+}
+
+.murid-desktop-nav a {
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--color-muted);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.murid-desktop-nav a:hover,
+.murid-desktop-nav a.is-active {
+  background: var(--wizard-accent-soft);
+  color: var(--wizard-accent-dark);
+}
+
+.murid-bottom-nav {
+  position: fixed;
+  z-index: 30;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: none;
+  justify-content: center;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--color-border-soft);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 -8px 24px rgba(16, 24, 40, 0.1);
+  backdrop-filter: blur(16px);
+}
+
+.murid-bottom-nav-inner {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  width: min(100%, 720px);
+  gap: 4px;
+}
+
+.murid-bottom-nav-item {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 54px;
+  place-items: center;
+  align-content: center;
+  gap: 3px;
+  border-radius: 14px;
+  color: var(--color-muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.15;
+  text-align: center;
+  text-decoration: none;
+}
+
+.murid-bottom-nav-item.is-active {
+  background: var(--wizard-accent-soft);
+  color: var(--wizard-accent-dark);
+}
+
+.murid-bottom-nav-icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 17px;
+  line-height: 1;
+}
+
+.murid-bottom-nav-item.is-active .murid-bottom-nav-icon {
+  background: var(--wizard-accent);
+  color: white;
+}
+
+.murid-bottom-nav-dot {
+  position: absolute;
+  top: 7px;
+  right: calc(50% - 22px);
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #d92d20;
+}
+
 .wizard-sidebar {
   position: sticky;
   top: 24px;
@@ -2970,6 +3068,31 @@ button.wizard-library-link {
 }
 
 @media (max-width: 760px) {
+  .murid-app-shell {
+    display: block;
+    padding-bottom: 104px;
+  }
+
+  .murid-profile-sidebar {
+    display: none;
+  }
+
+  .murid-desktop-nav {
+    display: none;
+  }
+
+  .murid-bottom-nav {
+    display: flex;
+  }
+
+  .murid-page-container {
+    padding-bottom: 120px !important;
+  }
+
+  .murid-tab-main {
+    border-radius: 24px;
+  }
+
   .guru-panel-heading {
     display: grid;
     gap: 4px;

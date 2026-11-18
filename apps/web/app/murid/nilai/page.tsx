@@ -8,6 +8,7 @@ import { avatarImagePath, type AvatarsResponse } from "../../../lib/avatar";
 import { decideBaruMarkers, gradeScoreTone, readNilaiSayaBaseline, summarizeGrades, writeNilaiSayaBaseline, type GradeScoreTone } from "../../../lib/nilai-saya";
 import { parseAtpCode } from "../../../lib/pemilih-cepat";
 import { Toast } from "../../../components/Toast";
+import { MuridBottomNav } from "../../../components/MuridBottomNav";
 
 // Halaman "Nilai Saya" (v1.0.35; rombak tampilan v1.0.64): rangkuman
 // nilai LKPD murid yang sudah terbit, satu kartu per penugasan, terbaru
@@ -92,7 +93,7 @@ export default function NilaiSayaPage() {
   const summary = rows ? summarizeGrades(rows) : { count: 0, average: null };
 
   return (
-    <main style={styles.container}>
+    <main className="murid-page-container" style={styles.container}>
       <Link href="/murid" style={styles.back}>← Ruang murid</Link>
       {message ? <Toast message={message} onDismiss={() => setMessage("")} /> : null}
 
@@ -166,6 +167,7 @@ export default function NilaiSayaPage() {
           );
         })}
       </div>
+      <MuridBottomNav active="nilai" />
     </main>
   );
 }

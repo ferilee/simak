@@ -12,11 +12,11 @@ import { allStepsDone, planAssignmentSteps, planReminderLevel, worksheetStatusFr
 import { circleAriaLabel, initialPagerIndex, planCircle } from "../../lib/navigasi-tugas";
 import { ARCHIVE_GROUP_NAME, MATERIAL_FILTERS, guidedGroupName, planGuidedMaterials, shouldShowHero, type GuidedModule, type GuidedMaterialsPlan, type MaterialFilter } from "../../lib/materi-terpandu";
 import { assessmentStatusLabel, type AssessmentCardData, type HubData } from "../../lib/hub-murid";
-import { asesmenChip, jurnalChip, kelasChip, progresChip, type MuridSectionChip } from "../../lib/beranda-murid";
-import { journalDateLabel, type JournalEntry, type JournalListData } from "../../lib/jurnal";
+import { kelasChip, progresChip, type MuridSectionChip } from "../../lib/beranda-murid";
 import { submissionStatusLabel } from "../lib/labels";
 import { Toast } from "../../components/Toast";
 import { Modal } from "../../components/Modal";
+import { MuridBottomNav, type MuridTab } from "../../components/MuridBottomNav";
 
 type ClassSummary = {
   id: number;
@@ -123,11 +123,6 @@ type HubResponse = {
 // Ringkasan jurnal beranda (Hub Murid Tahap 3): jumlah entri + entri
 // terakhir murid dari GET /murid/jurnal?limit=1 — cukup untuk kartu
 // ajakan menulis; isi lengkapnya di halaman /murid/jurnal.
-type JournalSummaryResponse = {
-  ok: true;
-  data: JournalListData;
-};
-
 export default function MuridPage() {
   const router = useRouter();
   const [user, setUser] = useState<MeResponse["user"] | null>(null);
@@ -144,32 +139,23 @@ export default function MuridPage() {
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
-  const [studentStep, setStudentStep] = useState(0);
   const [hasNewGrades, setHasNewGrades] = useState(false);
+  const [activeTab, setActiveTab] = useState<MuridTab>("dashboard");
   // Hub Tahap 2: null = belum termuat/gagal muat (bagian tampil sebagai
   // catatan lembut); available:false dari server = jembatan RUAS belum
   // aktif. Keduanya tidak pernah menghalangi beranda.
   const [hub, setHub] = useState<HubData | null>(null);
   const [handoffBusy, setHandoffBusy] = useState<string | null>(null);
-  // Jurnal Tahap 3: null = belum termuat/gagal muat (bagian tampil
-  // sebagai ajakan umum); terisi = jumlah entri + entri terakhir.
-  const [journal, setJournal] = useState<{ total: number; latest: JournalEntry | null } | null>(null);
-
-  const studentSteps = [
-    { title: "Kelas saya", description: "Gabung dan lihat kelas aktif" },
-    { title: "Materi", description: "Baca materi yang diterbitkan" },
-    { title: "Penugasan", description: "Kerjakan aktivitas yang tersedia" },
-  ];
-  // Tanda selesai langkah hanya dari syarat nyata, bukan posisi wizard:
-  // Kelas saya = sudah tergabung minimal satu kelas; Materi = sudah pernah
-  // membuka minimal satu materi (has_viewed_material dari catatan
-  // activity_logs event "buka_materi" — sinyal yang sama dengan statistik
-  // penonton guru); Penugasan = ada penugasan.
-  const studentStepComplete = [
-    data.classes.length > 0,
-    data.has_viewed_material,
-    data.assignments.length > 0,
-  ];
+  useEffect(() => {
+    const requestedTab = new URLSearchParams(window.location.search).get("tab");
+    if (requestedTab === "materi" || requestedTab === "penugasan") setActiveTab(requestedTab);
+  }, []);
+  const studentStep = activeTab === "dashboard" ? 0 : activeTab === "materi" ? 1 : 2;
+  const tabHeading = activeTab === "dashboard"
+    ? { title: "Dashboard", description: "Lihat kelas dan progres belajar Anda" }
+    : activeTab === "materi"
+      ? { title: "Materi", description: "Baca materi yang diterbitkan" }
+      : { title: "Penugasan", description: "Kerjakan aktivitas yang tersedia" };
   const displayName = user?.display_name ?? user?.name ?? "Murid";
 
   // Menutup sambutan (tombol "Mulai belajar", X, klik luar, Escape —
@@ -305,8 +291,6 @@ export default function MuridPage() {
   // bagian itu sendiri — tanpa panggilan data baru.
   const kelasSectionChip = kelasChip(data.classes.length);
   const progresSectionChip = progresChip(data.xp?.total ?? null);
-  const asesmenSectionChip = asesmenChip(hub);
-  const jurnalSectionChip = jurnalChip(journal?.total ?? null);
 
   // Mengganti saringan/kata cari membatalkan timpaan buka-tutup arsip:
   // keterbukaan arsip kembali mengikuti bawaan rencana (saringan
@@ -336,11 +320,6 @@ export default function MuridPage() {
       void apiRequest<HubResponse>("/murid/asesmen")
         .then((response) => setHub(response.data))
         .catch(() => setHub(null));
-      // Ringkasan jurnal juga menyusul dan gagal-lembut: kegagalannya
-      // hanya membuat bagian Jurnal tampil sebagai ajakan umum.
-      void apiRequest<JournalSummaryResponse>("/murid/jurnal?limit=1")
-        .then((response) => setJournal({ total: response.data.total, latest: response.data.entries[0] ?? null }))
-        .catch(() => setJournal(null));
       // Sambutan pertama: server yang memutuskan (penanda welcomed_at),
       // jadi modal ini tampil tepat sekali untuk akun ini di perangkat
       // mana pun.
@@ -512,8 +491,8 @@ export default function MuridPage() {
         ) : null}
       </Modal>
 
-      <div className="container wizard-layout wizard-theme-murid">
-        <aside className="wizard-sidebar" aria-label="Langkah ruang murid">
+      <div className="container murid-app-shell wizard-theme-murid">
+        <aside className="wizard-sidebar murid-profile-sidebar" aria-label="Profil ruang murid">
           <div className="wizard-profile">
             <span className="wizard-avatar">{displayName.slice(0, 1).toUpperCase()}</span>
             <div>
@@ -591,19 +570,12 @@ export default function MuridPage() {
               </button>
             </section>
           ) : null}
-          <nav className={`wizard-steps wizard-steps-${studentStep}`}>
-            {studentSteps.map((step, index) => (
-              <button
-                key={step.title}
-                type="button"
-                className={`wizard-step ${studentStep === index ? "is-active" : ""} ${studentStepComplete[index] ? "is-complete" : ""}`}
-                onClick={() => setStudentStep(index)}
-                aria-current={studentStep === index ? "step" : undefined}
-              >
-                <span className="wizard-step-number">{studentStepComplete[index] ? "✓" : index + 1}</span>
-                <span><strong>{step.title}</strong><small>{step.description}</small></span>
-              </button>
-            ))}
+          <nav className="murid-desktop-nav" aria-label="Menu ruang murid">
+            <Link className={activeTab === "dashboard" ? "is-active" : ""} href="/murid">Dashboard</Link>
+            <Link className={activeTab === "materi" ? "is-active" : ""} href="/murid?tab=materi">Materi</Link>
+            <Link className={activeTab === "penugasan" ? "is-active" : ""} href="/murid?tab=penugasan">Penugasan</Link>
+            <Link className={activeTab === "nilai" ? "is-active" : ""} href="/murid/nilai">Nilai saya</Link>
+            <Link className={activeTab === "jurnal" ? "is-active" : ""} href="/murid/jurnal">Jurnal belajar</Link>
           </nav>
           <Link href="/murid/nilai" className="content-card content-link" style={{ marginTop: 16 }}>
             <strong style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -616,12 +588,12 @@ export default function MuridPage() {
           <p className="wizard-side-note">Selesaikan langkah belajar sesuai kebutuhan Anda. Anda dapat berpindah langkah kapan saja.</p>
         </aside>
 
-        <section className="wizard-main" aria-label="Isi ruang murid">
+        <section className="wizard-main murid-tab-main" aria-label="Isi ruang murid">
           <div className="wizard-main-heading">
             <div>
-              <p className="eyebrow">Langkah {studentStep + 1} dari {studentSteps.length}</p>
-              <h2>{studentSteps[studentStep].title}</h2>
-              <p>{studentSteps[studentStep].description}.</p>
+              <p className="eyebrow">Ruang murid</p>
+              <h2>{tabHeading.title}</h2>
+              <p>{tabHeading.description}.</p>
             </div>
             <span className="wizard-role-chip">Murid</span>
           </div>
@@ -734,80 +706,6 @@ export default function MuridPage() {
                 )}
               </section>
 
-              <section className="murid-home-card murid-home-card--asesmen">
-                <div className="murid-home-card-head">
-                  <span className="murid-home-card-icon murid-home-card-icon--asesmen" aria-hidden="true">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="8" y="2" width="8" height="4" rx="1" ry="1" /><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><path d="m9 14 2 2 4-4" /></svg>
-                  </span>
-                  <div className="murid-home-card-titles">
-                    <h3>Asesmen RUAS</h3>
-                    <span>{hub?.available ? `${hub.assessments.length} asesmen terpetakan` : "Belum terhubung"}</span>
-                  </div>
-                  <div className="murid-home-card-side">
-                    <MuridSectionChipPill chip={asesmenSectionChip} />
-                    {hub?.available ? (
-                      <button type="button" className="button button-secondary" disabled={handoffBusy !== null} onClick={() => void openRuas()}>
-                        Buka RUAS
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-                {!hub || !hub.available ? (
-                  <p className="empty-state">Asesmen RUAS belum dapat dimuat dari sini. Kamu tetap bisa membuka RUAS seperti biasa dan masuk dengan akun yang sama.</p>
-                ) : hub.assessments.length === 0 ? (
-                  <p className="empty-state">Belum ada asesmen RUAS yang terpetakan ke penugasanmu.</p>
-                ) : (
-                  <div className="content-list">
-                    {hub.assessments.map((card) => (
-                      <article key={`${card.topic_id}-${card.subject_id ?? ""}`} className="content-card">
-                        <strong>{card.title}</strong>
-                        <span className="content-muted">{card.assignment_title}</span>
-                        <span className="content-muted">
-                          Status: {assessmentStatusLabel(card.status)}
-                          {card.score !== null ? ` · Skor ${card.score}` : ""}
-                        </span>
-                        <span>
-                          <button type="button" className="button" disabled={handoffBusy !== null} onClick={() => void openRuas(card)}>
-                            Buka di RUAS →
-                          </button>
-                        </span>
-                      </article>
-                    ))}
-                  </div>
-                )}
-              </section>
-
-              <section className="murid-home-card murid-home-card--jurnal">
-                <div className="murid-home-card-head">
-                  <span className="murid-home-card-icon murid-home-card-icon--jurnal" aria-hidden="true">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>
-                  </span>
-                  <div className="murid-home-card-titles">
-                    <h3>Jurnal belajar</h3>
-                    <span>{journal ? `${journal.total} entri refleksi` : "Refleksi harianmu"}</span>
-                  </div>
-                  <div className="murid-home-card-side">
-                    <MuridSectionChipPill chip={jurnalSectionChip} />
-                    <Link href="/murid/jurnal" className="button button-secondary">
-                      Buka jurnal
-                    </Link>
-                  </div>
-                </div>
-                {journal && journal.latest ? (
-                  <article className="content-card">
-                    <span className="content-label">Terakhir menulis · {journalDateLabel(journal.latest.entry_date)}</span>
-                    <span className="content-muted">
-                      {journal.latest.body.length > 140 ? `${journal.latest.body.slice(0, 140)}…` : journal.latest.body}
-                    </span>
-                    <span className="content-muted">Lanjutkan refleksimu hari ini — dua kalimat pun cukup.</span>
-                  </article>
-                ) : (
-                  <p className="empty-state">
-                    Tulis refleksi belajarmu: apa yang berubah dari pemahamanmu, bagian yang masih membingungkan,
-                    dan strategi yang berhasil. Jurnal tidak dinilai — gurumu membacanya untuk membantumu.
-                  </p>
-                )}
-              </section>
             </div>
           ) : null}
 
@@ -950,12 +848,9 @@ export default function MuridPage() {
             </section>
           ) : null}
 
-          <footer className="wizard-footer">
-            <button type="button" className="button button-secondary" onClick={() => setStudentStep((current) => Math.max(0, current - 1))} disabled={studentStep === 0}>← Sebelumnya</button>
-            <button type="button" className="button" onClick={() => setStudentStep((current) => Math.min(studentSteps.length - 1, current + 1))} disabled={studentStep === studentSteps.length - 1}>{studentStep === studentSteps.length - 1 ? "Selesai" : "Lanjutkan →"}</button>
-          </footer>
         </section>
       </div>
+      <MuridBottomNav active={activeTab} hasNewGrades={hasNewGrades} />
     </main>
   );
 }

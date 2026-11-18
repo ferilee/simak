@@ -15,6 +15,7 @@ import {
 } from "../../../lib/jurnal";
 import { useConfirm } from "../../../components/ConfirmDialog";
 import { Toast } from "../../../components/Toast";
+import { MuridBottomNav } from "../../../components/MuridBottomNav";
 
 // Halaman "Jurnal Belajar" (Hub Murid Tahap 3): refleksi harian murid —
 // bentuk permanen tahap Transform pada alur DELTA. Murid menulis entri
@@ -180,7 +181,7 @@ export default function JurnalBelajarPage() {
   const groups = entries ? groupEntriesByDate(entries) : [];
 
   return (
-    <main style={styles.container}>
+    <main className="murid-page-container" style={styles.container}>
       <Link href="/murid" style={styles.back}>← Ruang murid</Link>
       {message ? <Toast message={message} onDismiss={() => setMessage("")} /> : null}
 
@@ -349,6 +350,7 @@ export default function JurnalBelajarPage() {
           ) : null}
         </div>
       )}
+      <MuridBottomNav active="jurnal" />
     </main>
   );
 }

@@ -6,6 +6,8 @@ import { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "../../../../lib/api";
 import { planTableOfContents, tocAnchorForBlock, tocHeadingPrefix, type TocEntry } from "../../../../lib/daftar-isi";
 import { ReadingProgress } from "../../../../components/ReadingProgress";
+import { XpCelebration } from "../../../../components/XpCelebration";
+import { xpPointsFor } from "../../../../lib/xp";
 import { MuridBottomNav } from "../../../../components/MuridBottomNav";
 import { InteractiveBlock } from "../../../../components/InteractiveBlock";
 import { Toast } from "../../../../components/Toast";
@@ -41,6 +43,11 @@ export default function ModulePage() {
   const [data, setData] = useState<ModuleResponse["data"] | null>(null);
   const [message, setMessage] = useState("");
   const [studentId, setStudentId] = useState<number | null>(null);
+  // Panel perayaan XP materi tuntas (Kilau Murid 2): dibuka oleh
+  // panggilan balik onCompleted ReadingProgress, tepat sekali per
+  // ketuntasan baru. Angka perolehan dari konstanta bersama
+  // (respons POST /activity tidak membawa angka perolehan).
+  const [celebrationOpen, setCelebrationOpen] = useState(false);
   const tocEntries = useMemo(() => (data ? planTableOfContents(data.blocks) : []), [data]);
 
   useEffect(() => {
@@ -97,7 +104,15 @@ export default function ModulePage() {
         alreadyCompleted={data.material_completed}
         minSeconds={data.reading?.min_seconds ?? null}
         studentId={studentId}
+        onCompleted={() => setCelebrationOpen(true)}
       />
+      {celebrationOpen ? (
+        <XpCelebration
+          points={xpPointsFor("materi_tuntas") ?? 10}
+          headline="Materi selesai dibaca sampai tuntas."
+          onClose={() => setCelebrationOpen(false)}
+        />
+      ) : null}
       <MuridBottomNav active="materi" />
     </main>
   );

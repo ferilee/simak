@@ -119,6 +119,17 @@ export function levelProgress(totalInput: number): LevelProgress {
   };
 }
 
+/**
+ * Poin baku satu jenis perolehan dari cerminan XP_EARN_WAYS (yang
+ * dikunci sama dengan XP_POINTS server): dipakai momen yang respons
+ * API-nya tidak membawa angka perolehan — ketuntasan materi di
+ * POST /activity hanya menjawab completed, jadi panel perayaannya
+ * memakai besaran baku materi_tuntas dari konstanta bersama ini.
+ */
+export function xpPointsFor(event: string): number | null {
+  return XP_EARN_WAYS.find((way) => way.event === event)?.points ?? null;
+}
+
 /** Judul panel info XP di kartu XP beranda murid. */
 export const XP_INFO_TITLE = "Cara Mendapat XP";
 

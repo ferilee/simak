@@ -9,8 +9,10 @@
 //  - Wiring ruang murid: data.xp dari /today menggerakkan kartu XP
 //    (total, nama level, bilah kemajuan); xp null (gagal-aman server)
 //    berarti kartu tidak dirender.
-//  - Wiring halaman LKPD: toast sukses kumpul menyebut "+N XP" dari
-//    data.xp_awarded respons submit, hanya bila N > 0.
+//  - Wiring halaman LKPD: perolehan dari data.xp_awarded respons
+//    submit dirayakan lewat panel perayaan (Kilau Murid 2,
+//    lib/perayaan-xp.test.mjs) hanya bila N > 0; toast "+N XP" yang
+//    lama sudah digantikan panel itu.
 import { readFileSync } from "node:fs";
 import { XP_EARN_WAYS, XP_INFO_NOTE, XP_INFO_TITLE, xpProgressLabel } from "./xp.ts";
 
@@ -143,8 +145,11 @@ check(
     worksheetPage.includes("const xpAwarded = submitResult.data.xp_awarded ?? 0;"),
 );
 check(
-  "toast sukses menyebut +N XP hanya bila xp_awarded > 0",
-  worksheetPage.includes("xpAwarded > 0 ? `LKPD berhasil dikumpulkan. +${xpAwarded} XP ⭐` : \"LKPD berhasil dikumpulkan.\""),
+  "perolehan > 0 membuka panel perayaan; tanpa perolehan toast sukses biasa",
+  worksheetPage.includes("if (xpAwarded > 0) {") &&
+    worksheetPage.includes("setXpCelebration(xpAwarded);") &&
+    worksheetPage.includes('setMessage("LKPD berhasil dikumpulkan.");') &&
+    !worksheetPage.includes("+${xpAwarded} XP"),
 );
 
 console.log(`\n${passed} passed, ${failed} failed`);

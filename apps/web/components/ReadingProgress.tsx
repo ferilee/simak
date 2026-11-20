@@ -63,11 +63,19 @@ export function ReadingProgress({
   alreadyCompleted,
   minSeconds = null,
   studentId = null,
+  onCompleted,
 }: {
   moduleId: number;
   alreadyCompleted: boolean;
   minSeconds?: number | null;
   studentId?: number | null;
+  /**
+   * Dipanggil tepat sekali saat ketuntasan BARU tercatat pada sesi
+   * ini (transisi ke serverCompleted) — pemakai memakainya untuk
+   * momen perayaan XP. Tidak dipanggil untuk materi yang sudah
+   * tuntas sebelum halaman dibuka (alreadyCompleted).
+   */
+  onCompleted?: () => void;
 }) {
   const [progress, setProgress] = useState(0);
   const [reachedBottom, setReachedBottom] = useState(false);
@@ -79,6 +87,9 @@ export function ReadingProgress({
   const initialLoadedRef = useRef(false);
   const postingRef = useRef(false);
   const serverMinSecondsRef = useRef<number | null>(null);
+  const onCompletedRef = useRef(onCompleted);
+  onCompletedRef.current = onCompleted;
+  const celebratedRef = useRef(false);
 
   if (trackerRef.current === null) {
     trackerRef.current = createActiveTimeTracker(() => Date.now());
@@ -168,6 +179,15 @@ export function ReadingProgress({
         const storage = browserStorage();
         if (storage && storageKeyRef.current) {
           clearStoredActiveSeconds(storage, storageKeyRef.current);
+        }
+        // Momen perayaan: cabang ini hanya tercapai pada pencatatan
+        // yang berjalan di sesi ini (attemptPost menolak jalan saat
+        // alreadyCompleted/serverCompleted), dan penanda ref membuat
+        // panggilan baliknya tetap tepat sekali walau ada posting
+        // susulan.
+        if (!celebratedRef.current) {
+          celebratedRef.current = true;
+          onCompletedRef.current?.();
         }
       } else {
         if (typeof response.min_seconds === "number") {

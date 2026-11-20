@@ -9,6 +9,7 @@ import { materialBannerVisible } from "../../../../lib/pengingat";
 import { advanceSavedSnapshot, diffAnswersPayload, mergeLiveAnswers, type LiveAnswer, type LivePayloadEntry } from "../../../../lib/live-kelompok";
 import { prepareImageForUpload } from "../../../../lib/prepare-image";
 import { Toast } from "../../../../components/Toast";
+import { XpCelebration } from "../../../../components/XpCelebration";
 import { StudentNameBadge } from "../../../../components/StudentNameBadge";
 import { MuridBottomNav } from "../../../../components/MuridBottomNav";
 import { useConfirm } from "../../../../components/ConfirmDialog";
@@ -129,6 +130,10 @@ export default function WorksheetPage() {
   const [materialInfo, setMaterialInfo] = useState<{ module_id: number; completed: boolean } | null>(null);
   const [materialBannerClosed, setMaterialBannerClosed] = useState(false);
   const [message, setMessage] = useState("");
+  // Panel perayaan XP (Kilau Murid 2): menggantikan toast "+N XP"
+  // saat pengumpulan membayar XP — nilainya angka xp_awarded dari
+  // respons submit; null berarti panel tidak tampil.
+  const [xpCelebration, setXpCelebration] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   // Pemutar satu soal per halaman: pageIndex == items.length berarti layar
   // tinjauan. Snapshot payload terakhir tersimpan menjadi acuan "kotor"
@@ -686,7 +691,13 @@ export default function WorksheetPage() {
       setStatus("terkumpul");
       setLivePresence([]);
       const xpAwarded = submitResult.data.xp_awarded ?? 0;
-      setMessage(xpAwarded > 0 ? `LKPD berhasil dikumpulkan. +${xpAwarded} XP ⭐` : "LKPD berhasil dikumpulkan.");
+      // Perolehan > 0 dirayakan lewat panel perayaan (yang memuat
+      // kalimat suksesnya); tanpa perolehan, toast sukses biasa.
+      if (xpAwarded > 0) {
+        setXpCelebration(xpAwarded);
+      } else {
+        setMessage("LKPD berhasil dikumpulkan.");
+      }
       if (groupInfo) void loadContributionRatings();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "LKPD belum dapat dikumpulkan.");
@@ -832,6 +843,9 @@ export default function WorksheetPage() {
         </div>
       ) : null}
       {message ? <Toast message={message} onDismiss={() => setMessage("")} /> : null}
+      {xpCelebration !== null ? (
+        <XpCelebration points={xpCelebration} headline="LKPD berhasil dikumpulkan." onClose={() => setXpCelebration(null)} />
+      ) : null}
       {assignmentId && status !== "draf" ? (
         <Link href={`/murid/assignments/${assignmentId}`} style={styles.continueButton}>Kembali ke penugasan untuk melanjutkan →</Link>
       ) : null}

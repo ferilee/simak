@@ -1906,6 +1906,15 @@ a {
   justify-content: flex-end;
 }
 
+/* Wadah tombol aksi baris daftar modul/LKPD (Langkah 1 & 2): di luar
+   media query mobile wadah ini tembus pandang (display: contents) agar
+   tombol-tombolnya tetap menjadi butir kisi .module-row persis seperti
+   sebelumnya — desktop tidak berubah. Di HP wadah berubah menjadi bar
+   aksi selebar penuh (lihat blok @media max-width: 760px di bawah). */
+.module-row-actions {
+  display: contents;
+}
+
 /* Ikon tombol aksi baris isi hanya tampil di bar aksi mobile (lihat blok
    @media di bawah); di desktop ikon disembunyikan agar tampilan tetap sama. */
 .content-row-actions .action-icon {
@@ -3209,7 +3218,7 @@ button.wizard-library-link {
   }
 
   .module-row {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: 1fr;
   }
 
   .module-row-main {
@@ -3223,10 +3232,43 @@ button.wizard-library-link {
     justify-self: start;
   }
 
-  .module-row-action {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-    align-self: center;
+  /* Bar aksi baris daftar modul/LKPD: wadah .module-row-actions menjadi
+     bar aksi selebar penuh di bawah judul + status, mengikuti pola
+     .content-row-actions — ikon di atas label mini, tinggi ketuk 48px.
+     Aturan lama yang menaruh SEMUA .module-row-action baris daftar ke
+     satu sel kisi yang sama (kolom 2, baris 1 / span 2) membuat tombol
+     bertumpuk dan Terbitkan tertutup tombol lain; aturan itu dihapus. */
+  .module-row-actions {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    width: 100%;
+  }
+
+  .module-row-actions .module-row-action {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-height: 48px;
+    padding: 6px 2px;
+    font-size: 11px;
+    white-space: normal;
+  }
+
+  .module-row-actions .action-icon {
+    display: block;
+    margin-right: 0;
+    font-size: 15px;
+    line-height: 1;
+  }
+
+  .module-row-actions .share-status-badge {
+    grid-column: 1 / -1;
+    justify-self: start;
   }
 
   /* Baris isi (blok materi & soal LKPD): satu kolom di HP — teks selebar
@@ -3257,8 +3299,8 @@ button.wizard-library-link {
     align-items: center;
     justify-content: center;
     gap: 2px;
-    /* Batalkan penempatan grid dari aturan .module-row-action mobile di
-       atas: di dalam bar aksi, posisi tombol diatur oleh grid bar-nya. */
+    /* Di dalam bar aksi, posisi tombol diatur oleh grid bar-nya sendiri:
+       batalkan penempatan kisi tingkat baris apa pun. */
     grid-column: auto;
     grid-row: auto;
     align-self: stretch;

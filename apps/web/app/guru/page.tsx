@@ -777,31 +777,33 @@ export default function GuruPage() {
           <span>{module.viewer_count > 0 ? `Dilihat ${module.viewer_count} murid` : "Belum ada murid yang melihat"}</span>
         </button>
         <span className={`module-status module-status-${module.status}`}>{module.status}</span>
-        <button type="button" onClick={() => void openPreview(module)} className="module-row-action">
-          <span className="action-icon" aria-hidden="true">👁</span>Pratinjau
-        </button>
-        <button type="button" onClick={() => void changeStatus(module)} className="module-row-action">
-          {module.status === "terbit" ? <><span className="action-icon" aria-hidden="true">📦</span>Arsipkan</> : <><span className="action-icon" aria-hidden="true">🚀</span>Terbitkan</>}
-        </button>
-        <button
-          type="button"
-          onClick={() => void toggleModuleShare(module)}
-          className={`module-row-action ${moduleShareOn ? "is-shared" : ""}`}
-          aria-pressed={moduleShareOn}
-          title={module.share_status === "menunggu"
-            ? "Menunggu persetujuan Perpustakaan Bersama — klik untuk membatalkan pengajuan"
-            : moduleShareOn
-              ? "Sedang dibagikan ke Perpustakaan Bersama — klik untuk berhenti membagikan"
-              : "Bagikan ke Perpustakaan Bersama"}
-        >
-          {moduleShareOn ? <><span className="action-icon" aria-hidden="true">✓</span>Dibagikan</> : <><span className="action-icon" aria-hidden="true">🔗</span>Bagikan</>}
-        </button>
-        {moduleShareBadge ? (
-          <span className={`share-status-badge is-${moduleShareBadge.tone}`}>{moduleShareBadge.label}</span>
-        ) : null}
-        <button type="button" onClick={() => void deleteModule(module)} className="module-row-action is-danger">
-          <span className="action-icon" aria-hidden="true">🗑</span>Hapus
-        </button>
+        <div className="module-row-actions">
+          <button type="button" onClick={() => void openPreview(module)} className="module-row-action">
+            <span className="action-icon" aria-hidden="true">👁</span>Pratinjau
+          </button>
+          <button type="button" onClick={() => void changeStatus(module)} className="module-row-action">
+            {module.status === "terbit" ? <><span className="action-icon" aria-hidden="true">📦</span>Arsipkan</> : <><span className="action-icon" aria-hidden="true">🚀</span>Terbitkan</>}
+          </button>
+          <button
+            type="button"
+            onClick={() => void toggleModuleShare(module)}
+            className={`module-row-action ${moduleShareOn ? "is-shared" : ""}`}
+            aria-pressed={moduleShareOn}
+            title={module.share_status === "menunggu"
+              ? "Menunggu persetujuan Perpustakaan Bersama — klik untuk membatalkan pengajuan"
+              : moduleShareOn
+                ? "Sedang dibagikan ke Perpustakaan Bersama — klik untuk berhenti membagikan"
+                : "Bagikan ke Perpustakaan Bersama"}
+          >
+            {moduleShareOn ? <><span className="action-icon" aria-hidden="true">✓</span>Dibagikan</> : <><span className="action-icon" aria-hidden="true">🔗</span>Bagikan</>}
+          </button>
+          {moduleShareBadge ? (
+            <span className={`share-status-badge is-${moduleShareBadge.tone}`}>{moduleShareBadge.label}</span>
+          ) : null}
+          <button type="button" onClick={() => void deleteModule(module)} className="module-row-action is-danger">
+            <span className="action-icon" aria-hidden="true">🗑</span>Hapus
+          </button>
+        </div>
         {moduleShareBadge?.hint ? (
           <p className="module-share-hint" style={{ gridColumn: "1 / -1" }}>{moduleShareBadge.hint}</p>
         ) : null}
@@ -918,31 +920,33 @@ export default function GuruPage() {
           <span>{worksheet.started_count > 0 ? `${worksheet.started_count} murid mengerjakan · ${worksheet.submitted_count} mengumpulkan` : "Belum ada murid yang mengerjakan"}</span>
         </button>
         <span className={`module-status module-status-${worksheet.status}`}>{worksheet.status}</span>
-        <button type="button" onClick={() => void openWorksheetPreview(worksheet)} className="module-row-action">
-          <span className="action-icon" aria-hidden="true">👁</span>Pratinjau
-        </button>
-        <button type="button" onClick={() => void changeWorksheetStatus(worksheet)} className="module-row-action">
-          {worksheet.status === "terbit" ? <><span className="action-icon" aria-hidden="true">📦</span>Arsipkan</> : <><span className="action-icon" aria-hidden="true">🚀</span>Terbitkan</>}
-        </button>
-        <button
-          type="button"
-          onClick={() => void toggleWorksheetShare(worksheet)}
-          className={`module-row-action ${worksheetShareOn ? "is-shared" : ""}`}
-          aria-pressed={worksheetShareOn}
-          title={worksheet.share_status === "menunggu"
-            ? "Menunggu persetujuan Perpustakaan Bersama — klik untuk membatalkan pengajuan"
-            : worksheetShareOn
-              ? "Sedang dibagikan ke Perpustakaan Bersama — klik untuk berhenti membagikan"
-              : "Bagikan ke Perpustakaan Bersama"}
-        >
-          {worksheetShareOn ? <><span className="action-icon" aria-hidden="true">✓</span>Dibagikan</> : <><span className="action-icon" aria-hidden="true">🔗</span>Bagikan</>}
-        </button>
-        {worksheetShareBadge ? (
-          <span className={`share-status-badge is-${worksheetShareBadge.tone}`}>{worksheetShareBadge.label}</span>
-        ) : null}
-        <button type="button" onClick={() => void deleteWorksheet(worksheet)} className="module-row-action is-danger">
-          <span className="action-icon" aria-hidden="true">🗑</span>Hapus
-        </button>
+        <div className="module-row-actions">
+          <button type="button" onClick={() => void openWorksheetPreview(worksheet)} className="module-row-action">
+            <span className="action-icon" aria-hidden="true">👁</span>Pratinjau
+          </button>
+          <button type="button" onClick={() => void changeWorksheetStatus(worksheet)} className="module-row-action">
+            {worksheet.status === "terbit" ? <><span className="action-icon" aria-hidden="true">📦</span>Arsipkan</> : <><span className="action-icon" aria-hidden="true">🚀</span>Terbitkan</>}
+          </button>
+          <button
+            type="button"
+            onClick={() => void toggleWorksheetShare(worksheet)}
+            className={`module-row-action ${worksheetShareOn ? "is-shared" : ""}`}
+            aria-pressed={worksheetShareOn}
+            title={worksheet.share_status === "menunggu"
+              ? "Menunggu persetujuan Perpustakaan Bersama — klik untuk membatalkan pengajuan"
+              : worksheetShareOn
+                ? "Sedang dibagikan ke Perpustakaan Bersama — klik untuk berhenti membagikan"
+                : "Bagikan ke Perpustakaan Bersama"}
+          >
+            {worksheetShareOn ? <><span className="action-icon" aria-hidden="true">✓</span>Dibagikan</> : <><span className="action-icon" aria-hidden="true">🔗</span>Bagikan</>}
+          </button>
+          {worksheetShareBadge ? (
+            <span className={`share-status-badge is-${worksheetShareBadge.tone}`}>{worksheetShareBadge.label}</span>
+          ) : null}
+          <button type="button" onClick={() => void deleteWorksheet(worksheet)} className="module-row-action is-danger">
+            <span className="action-icon" aria-hidden="true">🗑</span>Hapus
+          </button>
+        </div>
         {worksheetShareBadge?.hint ? (
           <p className="module-share-hint" style={{ gridColumn: "1 / -1" }}>{worksheetShareBadge.hint}</p>
         ) : null}

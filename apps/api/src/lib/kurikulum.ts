@@ -29,6 +29,16 @@
 //   8 elemen) TIDAK dipakai sebagai referensi; pegangan murid adalah
 //   materi SIMAK. TP 2 terbagi dua semester: ATP 2.1–2.6 di Ganjil,
 //   ATP 2.7–2.18 di Genap. Penanda [CP tercapai] menjadi `capstone`.
+// - REVISI ATP Matematika Kelas XI (Skema B, DISETUJUI guru 20 Nov 2026):
+//   ATP Kelas XI diselaraskan ulang ke CP BSKAP 046/2025 Fase F. CP 6.3
+//   Geometri (lingkaran) ditambahkan — sebelumnya tidak dimuat karena
+//   tidak dirujuk ATP mana pun. Ganjil: rumusan 2.3/2.4 dinaikkan dari
+//   "menghitung" menjadi "memodelkan … dan menghitung …", ATP 2.5 anuitas
+//   + penyelidikan parameter ditambahkan, alokasi Materi 4 menjadi 2 JP
+//   per ATP (total Ganjil tetap 45 JP, 16 ATP). Genap: rumusan 1.4
+//   digabung dengan pembeda asosiasi vs sebab-akibat, ATP 3.5 (saling
+//   lepas + frekuensi harapan) ditambahkan, Materi 4 Lingkaran baru
+//   (3 ATP, CP 6.3) ditambahkan (total Genap 48 JP, 16 ATP).
 //
 // Satu set = satu mapel × satu kelas × satu semester. Setiap kelompok
 // (TP pada KKA, "Materi" pada dokumen ATP Matematika) menunjuk tepat satu
@@ -223,6 +233,11 @@ const CP_MATEMATIKA_FASE_F: CurriculumCp[] = [
     code: "6.2",
     element: "Aljabar dan Fungsi",
     text: "Menentukan fungsi invers, komposisi fungsi, dan transformasi fungsi untuk memodelkan situasi dunia nyata menggunakan fungsi yang sesuai (linear, kuadrat, eksponensial).",
+  },
+  {
+    code: "6.3",
+    element: "Geometri",
+    text: "Menerapkan, mengidentifikasi dan menjelaskan hubungan antara unsur-unsur lingkaran untuk menyelesaikan masalah.",
   },
   {
     code: "6.4",
@@ -441,8 +456,9 @@ export const CURRICULUM_SETS: CurriculumSet[] = [
         atps: [
           atp("2.1", "Peserta didik dapat menghitung bunga tunggal.", 3),
           atp("2.2", "Peserta didik dapat menghitung bunga majemuk.", 3),
-          atp("2.3", "Peserta didik dapat menghitung nilai masa depan suatu investasi.", 3),
-          atp("2.4", "Peserta didik dapat menghitung nilai sekarang suatu pinjaman.", 3),
+          atp("2.3", "Peserta didik dapat memodelkan investasi dengan bunga majemuk dan menghitung nilai masa depannya.", 3),
+          atp("2.4", "Peserta didik dapat memodelkan pinjaman dengan bunga majemuk dan menghitung nilai sekarangnya.", 3),
+          atp("2.5", "Peserta didik dapat memodelkan pinjaman dan investasi dengan anuitas, serta menyelidiki pengaruh suku bunga dan periode pembayaran dalam model tersebut.", 3),
         ],
       },
       {
@@ -463,9 +479,9 @@ export const CURRICULUM_SETS: CurriculumSet[] = [
         material: "Transformasi Grafik Fungsi",
         cpCode: "6.2",
         atps: [
-          atp("4.1", "Peserta didik dapat menentukan hasil translasi grafik suatu fungsi.", 3),
-          atp("4.2", "Peserta didik dapat menentukan hasil refleksi grafik suatu fungsi.", 3),
-          atp("4.3", "Peserta didik dapat menentukan hasil peregangan dan penyusutan grafik suatu fungsi.", 3),
+          atp("4.1", "Peserta didik dapat menentukan hasil translasi grafik suatu fungsi.", 2),
+          atp("4.2", "Peserta didik dapat menentukan hasil refleksi grafik suatu fungsi.", 2),
+          atp("4.3", "Peserta didik dapat menentukan hasil peregangan dan penyusutan grafik suatu fungsi.", 2),
         ],
       },
     ],
@@ -476,7 +492,7 @@ export const CURRICULUM_SETS: CurriculumSet[] = [
     phase: "Fase F",
     semester: "Genap",
     source: SUMBER_MATEMATIKA,
-    cps: onlyCps(CP_MATEMATIKA_FASE_F, "6.4"),
+    cps: onlyCps(CP_MATEMATIKA_FASE_F, "6.3", "6.4"),
     groups: [
       {
         code: "Materi 1",
@@ -487,7 +503,7 @@ export const CURRICULUM_SETS: CurriculumSet[] = [
           atp("1.1", "Peserta didik dapat menganalisis hubungan dua variabel kategorik dari tabel dua arah.", 3),
           atp("1.2", "Peserta didik dapat menganalisis hubungan dua variabel numerik dari diagram pencar.", 3),
           atp("1.3", "Peserta didik dapat menentukan dan menggunakan garis regresi linear.", 3),
-          atp("1.4", "Peserta didik dapat menafsirkan gradien garis regresi dalam konteks data.", 3),
+          atp("1.4", "Peserta didik dapat menafsirkan gradien garis regresi dalam konteks data dan membedakan hubungan asosiasi dari hubungan sebab-akibat.", 3),
         ],
       },
       {
@@ -512,6 +528,18 @@ export const CURRICULUM_SETS: CurriculumSet[] = [
           atp("3.2", "Peserta didik dapat menghitung peluang dari tabel dua arah.", 3),
           atp("3.3", "Peserta didik dapat menggunakan diagram pohon untuk menghitung peluang bersyarat.", 3),
           atp("3.4", "Peserta didik dapat mengenali dan menghitung peluang kejadian saling bebas.", 3),
+          atp("3.5", "Peserta didik dapat menghitung peluang kejadian saling lepas dan frekuensi harapan suatu kejadian majemuk.", 3),
+        ],
+      },
+      {
+        code: "Materi 4",
+        title: "Lingkaran",
+        material: "Lingkaran",
+        cpCode: "6.3",
+        atps: [
+          atp("4.1", "Peserta didik dapat menjelaskan unsur-unsur lingkaran dan hubungan antara sudut pusat dan sudut keliling serta tali busur.", 3),
+          atp("4.2", "Peserta didik dapat menghitung panjang busur dan luas juring lingkaran.", 3),
+          atp("4.3", "Peserta didik dapat menentukan sifat-sifat garis singgung lingkaran dan menggunakannya dalam perhitungan.", 3),
         ],
       },
     ],

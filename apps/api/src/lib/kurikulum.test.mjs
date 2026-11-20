@@ -9,7 +9,10 @@
 // utamanya: total JP dan jumlah ATP tiap set dikunci ke angka dokumen
 // sumber (ATP Matematika Kelas X/XI; ATP KKA Kelas X yang disetujui
 // 3 Nov 2026), jadi suntingan data yang keliru ketahuan di sini, bukan
-// di layar guru. Catatan jujur: dokumen KKA menyebut "44 ATP" pada
+// di layar guru. Pengecualian tercatat: total Matematika Kelas XI sejak
+// 20 Nov 2026 mengikuti dokumen REVISI ATP Kelas XI (Skema B, disetujui
+// guru) yang menyelaraskan ATP ke CP BSKAP 046/2025 — CP 6.3 Geometri
+// dimuat, Ganjil 16 ATP / 45 JP, Genap 16 ATP / 48 JP. Catatan jujur: dokumen KKA menyebut "44 ATP" pada
 // kakinya, tetapi baris yang terenumerasi di badannya 43 (6+12+6 ganjil,
 // 6+6+7 genap) — data mengikuti baris terenumerasi; total JP-nya cocok
 // persis (52 + 44 = 96).
@@ -46,8 +49,8 @@ check("identitas set (mapel, kelas, semester) unik", identities.size === CURRICU
 const EXPECTED = new Map([
   ["Matematika|Kelas X|Ganjil", { atpCount: 29, totalJp: 58 }],
   ["Matematika|Kelas X|Genap", { atpCount: 21, totalJp: 42 }],
-  ["Matematika|Kelas XI|Ganjil", { atpCount: 15, totalJp: 45 }],
-  ["Matematika|Kelas XI|Genap", { atpCount: 12, totalJp: 36 }],
+  ["Matematika|Kelas XI|Ganjil", { atpCount: 16, totalJp: 45 }],
+  ["Matematika|Kelas XI|Genap", { atpCount: 16, totalJp: 48 }],
   ["KKA|Kelas X|Ganjil", { atpCount: 24, totalJp: 52 }],
   ["KKA|Kelas X|Genap", { atpCount: 19, totalJp: 44 }],
   ["Informatika|Kelas X|Ganjil", { atpCount: 15, totalJp: 32 }],
@@ -97,6 +100,28 @@ check(
   "pencari toleran spasi di tepi parameter",
   findCurriculumSet(" Matematika ", " Kelas X ", " Ganjil ") === xGanjil,
 );
+// --- Revisi ATP Kelas XI (Skema B, 20 Nov 2026) ---------------------------
+const xiGanjil = findCurriculumSet("Matematika", "Kelas XI", "Ganjil");
+const xiGenap = findCurriculumSet("Matematika", "Kelas XI", "Genap");
+check(
+  "revisi XI Ganjil: ATP 2.5 anuitas ada dan 2.3/2.4 berumusan 'memodelkan'",
+  xiGanjil.groups[1].atps.some((a) => a.code === "2.5" && a.text.includes("anuitas")) &&
+    xiGanjil.groups[1].atps.every((a) => a.code < "2.3" || a.text.includes("memodelkan")),
+);
+check(
+  "revisi XI Ganjil: Materi 4 beralokasi 2 JP per ATP",
+  xiGanjil.groups[3].atps.every((a) => a.jp === 2),
+);
+check(
+  "revisi XI Genap: CP 6.3 Geometri dimuat dan dirujuk kelompok Lingkaran",
+  findCurriculumCp(xiGenap, "6.3")?.element === "Geometri" &&
+    xiGenap.groups.some((g) => g.material === "Lingkaran" && g.cpCode === "6.3" && g.atps.length === 3),
+);
+check(
+  "revisi XI Genap: ATP 3.5 (saling lepas) ada dan 1.4 menyebut sebab-akibat",
+  xiGenap.groups[2].atps.some((a) => a.code === "3.5" && a.text.includes("saling lepas")) &&
+    xiGenap.groups[0].atps[3].text.includes("sebab-akibat"),
+);
 check("set yang belum ada datanya → null (bukan set kosong)", findCurriculumSet("Matematika", "Kelas XII", "Ganjil") === null);
 check("mapel yang belum ada datanya → null", findCurriculumSet("Bahasa Indonesia", "Kelas X", "Ganjil") === null);
 
@@ -129,8 +154,8 @@ check("route kurikulum baca-saja: tanpa akses basis data", !routeSource.includes
 // --- Daftar kelompok materi untuk dropdown modul -------------------------
 const topicGroups = listTopicGroups();
 check(
-  "daftar kelompok memuat Matematika (14 kelompok), KKA (6 kelompok), dan Informatika (2 kelompok)",
-  topicGroups.find((e) => e.subject === "Matematika")?.groups.length === 14 &&
+  "daftar kelompok memuat Matematika (15 kelompok), KKA (6 kelompok), dan Informatika (2 kelompok)",
+  topicGroups.find((e) => e.subject === "Matematika")?.groups.length === 15 &&
     topicGroups.find((e) => e.subject === "KKA")?.groups.length === 6 &&
     topicGroups.find((e) => e.subject === "Informatika")?.groups.length === 2,
 );
@@ -139,9 +164,9 @@ check(
   topicGroupsForSubject("Informatika").includes("Literasi Digital"),
 );
 check(
-  "urutan kelompok Matematika mengikuti kurikulum (Eksponen pertama, Peluang Bersyarat terakhir)",
+  "urutan kelompok Matematika mengikuti kurikulum (Eksponen pertama, Lingkaran terakhir)",
   topicGroups.find((e) => e.subject === "Matematika")?.groups[0] === "Eksponen" &&
-    topicGroups.find((e) => e.subject === "Matematika")?.groups.at(-1) === "Peluang Bersyarat",
+    topicGroups.find((e) => e.subject === "Matematika")?.groups.at(-1) === "Lingkaran",
 );
 check(
   "mapel bebas 'Koding dan Kecerdasan Artifisial (KKA)' cocok ke kelompok KKA",

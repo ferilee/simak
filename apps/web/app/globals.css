@@ -2439,6 +2439,7 @@ button.wizard-library-link {
 }
 
 .murid-desktop-nav a {
+  position: relative;
   border-radius: 10px;
   padding: 10px 12px;
   color: var(--color-muted);
@@ -2447,10 +2448,29 @@ button.wizard-library-link {
   text-decoration: none;
 }
 
-.murid-desktop-nav a:hover,
-.murid-desktop-nav a.is-active {
+.murid-desktop-nav a:hover {
   background: var(--wizard-accent-soft);
   color: var(--wizard-accent-dark);
+}
+
+/* Penanda aktif Pilihan B (garis penanda): padanan vertikal dari garis
+   atas bilah bawah murid — garis aksen 3,5px di tepi kiri tautan aktif
+   + label biru #0B64C8, tanpa isian latar (isian lama hanya tinggal
+   untuk :hover). Garis absolut menempel tepi kiri tautan (tautan kini
+   position: relative), jadi lebar dan tata letak samping tidak berubah. */
+.murid-desktop-nav a.is-active {
+  color: #0B64C8;
+}
+
+.murid-desktop-nav a.is-active::before {
+  content: "";
+  position: absolute;
+  top: 22%;
+  bottom: 22%;
+  left: 0;
+  width: 3.5px;
+  border-radius: 0 4px 4px 0;
+  background: #0B84F3;
 }
 
 .murid-bottom-nav {
@@ -2492,9 +2512,31 @@ button.wizard-library-link {
   text-decoration: none;
 }
 
+/* Penanda aktif Pilihan B (garis penanda atas, disetujui guru
+   20 Nov 2026): butir aktif ditandai garis aksen 3,5px di tepi ATAS
+   bilah tepat di atas butirnya + ikon dan label biru #0B64C8, tanpa
+   isian latar/kapsul dan tanpa lingkaran ikon terisi. Warna sengaja
+   literal (bukan variabel --wizard-accent): variabel itu hanya terurai
+   di dalam .wizard-theme-murid, sedangkan bilah ini juga dirender di
+   halaman nilai/jurnal/modul/penugasan yang tidak bertema itu —
+   akibatnya gaya aktif lama runtuh menjadi label tebal polos di
+   halaman-halaman tersebut. Jangkar garis: butir position: relative
+   dan duduk 10px di bawah tepi atas bilah (padding-top
+   .murid-bottom-nav), jadi top: -10px menempelkan garis tepat di
+   tepi atas bilah; posisi absolut membuat tata letak tidak bergeser. */
 .murid-bottom-nav-item.is-active {
-  background: var(--wizard-accent-soft);
-  color: var(--wizard-accent-dark);
+  color: #0B64C8;
+}
+
+.murid-bottom-nav-item.is-active::before {
+  content: "";
+  position: absolute;
+  top: -10px;
+  right: 22%;
+  left: 22%;
+  height: 3.5px;
+  border-radius: 0 0 4px 4px;
+  background: #0B84F3;
 }
 
 .murid-bottom-nav-icon {
@@ -2505,11 +2547,6 @@ button.wizard-library-link {
   border-radius: 50%;
   font-size: 17px;
   line-height: 1;
-}
-
-.murid-bottom-nav-item.is-active .murid-bottom-nav-icon {
-  background: var(--wizard-accent);
-  color: white;
 }
 
 .murid-bottom-nav-dot {

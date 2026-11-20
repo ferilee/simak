@@ -574,11 +574,11 @@ export default function MuridPage() {
             </section>
           ) : null}
           <nav className="murid-desktop-nav" aria-label="Menu ruang murid">
-            <Link className={activeTab === "dashboard" ? "is-active" : ""} href="/murid">Dashboard</Link>
-            <Link className={activeTab === "materi" ? "is-active" : ""} href="/murid?tab=materi">Materi</Link>
-            <Link className={activeTab === "penugasan" ? "is-active" : ""} href="/murid?tab=penugasan">Penugasan</Link>
-            <Link className={activeTab === "nilai" ? "is-active" : ""} href="/murid/nilai">Nilai saya</Link>
-            <Link className={activeTab === "jurnal" ? "is-active" : ""} href="/murid/jurnal">Jurnal belajar</Link>
+            <Link className={activeTab === "dashboard" ? "is-active" : ""} aria-current={activeTab === "dashboard" ? "page" : undefined} href="/murid">Dashboard</Link>
+            <Link className={activeTab === "materi" ? "is-active" : ""} aria-current={activeTab === "materi" ? "page" : undefined} href="/murid?tab=materi">Materi</Link>
+            <Link className={activeTab === "penugasan" ? "is-active" : ""} aria-current={activeTab === "penugasan" ? "page" : undefined} href="/murid?tab=penugasan">Penugasan</Link>
+            <Link className={activeTab === "nilai" ? "is-active" : ""} aria-current={activeTab === "nilai" ? "page" : undefined} href="/murid/nilai">Nilai saya</Link>
+            <Link className={activeTab === "jurnal" ? "is-active" : ""} aria-current={activeTab === "jurnal" ? "page" : undefined} href="/murid/jurnal">Jurnal belajar</Link>
           </nav>
           <Link href="/murid/nilai" className="content-card content-link" style={{ marginTop: 16 }}>
             <strong style={{ display: "flex", alignItems: "center", gap: 8 }}>

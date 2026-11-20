@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { apiRequest } from "../../lib/api";
 import { decideBaruMarkers, readNilaiSayaBaseline } from "../../lib/nilai-saya";
 import { quoteOfTheDay, salamForHour } from "../../lib/sapaan";
-import { XP_EARN_WAYS, XP_INFO_NOTE, XP_INFO_TITLE, xpProgressLabel, type XpSummary } from "../../lib/xp";
+import { XP_EARN_WAYS, XP_INFO_NOTE, XP_INFO_TITLE, levelProgress, xpProgressLabel, type XpSummary } from "../../lib/xp";
 import { avatarImagePath, priceLabel, stateLabel, type AvatarCatalogItem, type AvatarsResponse } from "../../lib/avatar";
 import { allStepsDone, planAssignmentSteps, planReminderLevel, worksheetStatusFromProgress } from "../../lib/pengingat";
 import { circleAriaLabel, initialPagerIndex, planCircle } from "../../lib/navigasi-tugas";
@@ -288,6 +288,11 @@ export default function MuridPage() {
   // bagian itu sendiri — tanpa panggilan data baru.
   const kelasSectionChip = kelasChip(data.classes.length);
   const progresSectionChip = progresChip(data.xp?.total ?? null);
+  // Progres level kasat di kartu Progres belajar (Fitur Kilau Murid):
+  // pecahan + kalimat sisa dari total server lewat helper murni
+  // lib/xp — kartu ini yang terlihat di HP, tempat kartu XP sidebar
+  // desktop tidak tampil.
+  const homeLevel = data.xp ? levelProgress(data.xp.total) : null;
 
   // Mengganti saringan/kata cari membatalkan timpaan buka-tutup arsip:
   // keterbukaan arsip kembali mengikuti bawaan rencana (saringan
@@ -672,8 +677,30 @@ export default function MuridPage() {
                     <MuridSectionChipPill chip={progresSectionChip} />
                   </div>
                 </div>
-                {data.xp ? (
-                  <p className="content-muted">⭐ {data.xp.total} XP · Level {data.xp.levelName}</p>
+                {data.xp && homeLevel ? (
+                  <div className="murid-home-xp">
+                    <div className="murid-home-xp-head">
+                      <strong>⭐ {data.xp.total} XP</strong>
+                      <span className="murid-home-xp-level">Level {data.xp.levelName}</span>
+                    </div>
+                    {homeLevel.isTopLevel ? (
+                      <span className="murid-home-xp-note">🏆 {homeLevel.label}</span>
+                    ) : (
+                      <>
+                        <div
+                          className="xp-progress-track"
+                          role="progressbar"
+                          aria-valuenow={Math.round(homeLevel.fraction * 100)}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-label={`Kemajuan menuju level ${homeLevel.nextLevelName}: ${Math.round(homeLevel.fraction * 100)}%`}
+                        >
+                          <div className="xp-progress-fill" style={{ width: `${homeLevel.fraction * 100}%` }} />
+                        </div>
+                        <span className="murid-home-xp-note">{homeLevel.label}</span>
+                      </>
+                    )}
+                  </div>
                 ) : null}
                 {!hub || hub.progress.length === 0 ? (
                   <p className="empty-state">Belum ada rangkaian materi yang berjalan. Progres belajarmu tampil di sini mengikuti penugasan dari gurumu.</p>

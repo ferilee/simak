@@ -4699,6 +4699,34 @@ button.wizard-library-link {
   font-size: 13px;
   color: #7a5a17;
 }
+
+/* Progres level kasat di kartu Progres belajar beranda murid (Fitur
+   Kilau Murid): total + nama level + batang menuju level berikut +
+   kalimat sisa. Batangnya memakai ulang .xp-progress-track/.xp-progress-fill
+   milik kartu XP sidebar; di level tertinggi batang tidak dirender
+   sama sekali — hanya keadaan "Level tertinggi" yang tampil. */
+.murid-home-xp {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.murid-home-xp-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: #7a4d00;
+  font-size: 16px;
+}
+.murid-home-xp-level {
+  font-weight: 600;
+  font-size: 14px;
+  color: #9a6200;
+}
+.murid-home-xp-note {
+  font-size: 13px;
+  color: #7a5a17;
+}
 .xp-card-top {
   display: flex;
   align-items: center;

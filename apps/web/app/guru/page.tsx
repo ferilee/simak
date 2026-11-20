@@ -35,6 +35,12 @@ import {
   sortIntegrityAlerts,
 } from "../../lib/hasil-helpers";
 import {
+  filterWorksheetsByIds,
+  groupLkpdOptions,
+  resolveGradingSource,
+  worksheetIdsForClassFilter,
+} from "../../lib/grup-lkpd";
+import {
   EXIT_TICKET_CLASS_SECTIONS,
   exitTicketStudentMatches,
   filterExitAnswerGroups,
@@ -966,6 +972,16 @@ export default function GuruPage() {
     || gradingClassOptions.some((option) => gradingClassFilterValue(option) === gradingClassFilter)
     ? gradingClassFilter
     : "semua";
+  // Pemilih LKPD (Paket A, lib/grup-lkpd): saringan kelas yang aktif ikut
+  // menyusutkan pilihan LKPD — himpunan id-nya dirangkai dari penugasan
+  // yang menargetkan kelas itu + pengumpulan murid kelas itu (null =
+  // "Semua kelas", tanpa penyusutan). Pilihan dirender berkelompok per
+  // mapel — kelompok materi dengan arsip terpisah di kelompok terakhir.
+  // Sumber yang tersaring keluar gugur ke "Semua LKPD": nilai efektifnya
+  // dipakai nilai <select>, dan efek di bawah menegakkannya ke state.
+  const gradingWorksheetIds = worksheetIdsForClassFilter(gradingClassFilterActive, assignments, allAttempts, classes);
+  const gradingLkpdGroups = groupLkpdOptions(filterWorksheetsByIds(worksheets, gradingWorksheetIds), modules);
+  const gradingSourceEffective = resolveGradingSource(gradingSource, gradingWorksheetIds);
   const classFilteredAttempts = filterGradingAttemptsByClass(gradingAttempts, gradingClassFilterActive);
   const gradingCounts = countGradingAttempts(classFilteredAttempts);
   const visibleGradingAttempts = sortGradingAttempts(classFilteredAttempts)
@@ -1445,6 +1461,17 @@ export default function GuruPage() {
   useEffect(() => {
     setGradingRevealedCount(GRADING_PAGE_SIZE);
   }, [gradingSource, gradingClassFilterActive, gradingStatusFilter]);
+
+  // Saringan kelas yang menyaring keluar LKPD sumber aktif: tegakkan
+  // keguguran pilihan ke state ("Semua LKPD") — keputusan murninya
+  // resolveGradingSource di lib/grup-lkpd, nilai efektifnya sudah dipakai
+  // nilai <select> saat render agar kontrol tidak menampilkan pilihan
+  // yang sudah tidak ada di daftarnya.
+  useEffect(() => {
+    if (resolveGradingSource(gradingSource, gradingWorksheetIds) !== gradingSource) {
+      setGradingSource("semua");
+    }
+  }, [gradingSource, gradingWorksheetIds]);
 
   useEffect(() => {
     if (selectedWorksheetId && selectedAttemptId) void loadAttemptDetail(selectedWorksheetId, selectedAttemptId);
@@ -4759,12 +4786,18 @@ export default function GuruPage() {
           <div className="grading-sticky-controls">
           <div style={styles.moduleToolbar}>
             <select
-              value={gradingCombined ? "semua" : String(gradingSource)}
+              value={gradingSourceEffective === "semua" ? "semua" : String(gradingSourceEffective)}
               onChange={(event) => {
                 const value = event.target.value;
                 if (value === "semua") {
                   setGradingSource("semua");
                 } else {
+                  // Sumber diatur langsung di sini (bukan hanya lewat efek
+                  // pengikut selectedWorksheetId): sesudah keguguran oleh
+                  // saringan kelas, selectedWorksheetId bisa masih menunjuk
+                  // LKPD yang sama sehingga efeknya tidak berjalan lagi dan
+                  // pilihan guru akan tampak terabaikan.
+                  setGradingSource(Number(value));
                   setSelectedWorksheetId(Number(value));
                 }
               }}
@@ -4772,8 +4805,12 @@ export default function GuruPage() {
               style={{ ...styles.input, ...styles.moduleFilterSelect }}
             >
               <option value="semua">Semua LKPD</option>
-              {worksheets.map((worksheet) => (
-                <option key={worksheet.id} value={String(worksheet.id)}>{worksheet.title}</option>
+              {gradingLkpdGroups.map((group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.worksheets.map((worksheet) => (
+                    <option key={worksheet.id} value={String(worksheet.id)}>{worksheet.title}</option>
+                  ))}
+                </optgroup>
               ))}
             </select>
             <select

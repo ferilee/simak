@@ -75,7 +75,7 @@ check(
 );
 check(
   "TodayResponse membawa avatar_slug dan state awalnya null",
-  muridPage.includes("avatar_slug: string | null") && muridPage.includes("xp: null, avatar_slug: null"),
+  muridPage.includes("avatar_slug: string | null") && muridPage.includes("xp: null, week_activity: null, avatar_slug: null"),
 );
 check(
   "kartu XP merender gambar avatar terpasang dari avatar_slug",

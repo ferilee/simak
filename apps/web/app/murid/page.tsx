@@ -96,9 +96,16 @@ type AssignmentSummary = {
   locked_by_title: string | null;
 };
 
+// Strip aktivitas pekan berjalan dari GET /murid/today (dihitung
+// server di lib/pekan-aktivitas API): tujuh hari Senin–Minggu WIB
+// dengan penanda aktif per hari. BUKAN streak — tidak ada hitungan
+// beruntun; hari kosong netral.
+type WeekActivityDay = { date: string; weekday: string; active: boolean; isToday: boolean };
+type WeekActivity = { days: WeekActivityDay[]; activeCount: number };
+
 type TodayResponse = {
   ok: true;
-  data: { classes: ClassSummary[]; modules: ModuleSummary[]; assignments: AssignmentSummary[]; has_viewed_material: boolean; needs_welcome: boolean; xp: XpSummary | null; avatar_slug: string | null };
+  data: { classes: ClassSummary[]; modules: ModuleSummary[]; assignments: AssignmentSummary[]; has_viewed_material: boolean; needs_welcome: boolean; xp: XpSummary | null; week_activity: WeekActivity | null; avatar_slug: string | null };
 };
 
 type MeResponse = {
@@ -125,7 +132,7 @@ type HubResponse = {
 export default function MuridPage() {
   const router = useRouter();
   const [user, setUser] = useState<MeResponse["user"] | null>(null);
-  const [data, setData] = useState<TodayResponse["data"]>({ classes: [], modules: [], assignments: [], has_viewed_material: false, needs_welcome: false, xp: null, avatar_slug: null });
+  const [data, setData] = useState<TodayResponse["data"]>({ classes: [], modules: [], assignments: [], has_viewed_material: false, needs_welcome: false, xp: null, week_activity: null, avatar_slug: null });
   const [welcomeOpen, setWelcomeOpen] = useState(false);
   const [xpInfoOpen, setXpInfoOpen] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
@@ -700,6 +707,26 @@ export default function MuridPage() {
                         <span className="murid-home-xp-note">{homeLevel.label}</span>
                       </>
                     )}
+                  </div>
+                ) : null}
+                {data.week_activity ? (
+                  <div className="murid-week-strip">
+                    <div className="murid-week-strip-head">
+                      <span className="murid-week-strip-title">Aktivitas minggu ini</span>
+                      <span className="content-muted">{data.week_activity.activeCount} dari 7 hari</span>
+                    </div>
+                    <div className="murid-week-strip-days">
+                      {data.week_activity.days.map((day) => (
+                        <span
+                          key={day.date}
+                          className={`murid-week-day${day.active ? " is-active" : ""}${day.isToday ? " is-today" : ""}`}
+                          aria-label={`${day.weekday} ${day.date}${day.active ? ", ada aktivitas belajar" : ""}${day.isToday ? ", hari ini" : ""}`}
+                        >
+                          <span className="murid-week-day-dot" aria-hidden="true">{day.active ? "✓" : ""}</span>
+                          <span className="murid-week-day-label">{day.weekday}</span>
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 ) : null}
                 {!hub || hub.progress.length === 0 ? (

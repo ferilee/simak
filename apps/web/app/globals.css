@@ -4799,6 +4799,63 @@ button.wizard-library-link {
     transition: none;
   }
 }
+
+/* Strip aktivitas minggu ini di kartu Progres belajar (Fitur Kilau
+   Murid 3): tujuh penanda hari Senin–Minggu. Hari aktif berlingkaran
+   emas berisi centang; hari kosong lingkaran netral kosong — bukan
+   tanda gagal, sesuai batasan non-punitif strip ini (bukan streak).
+   Hari ini diberi cincin penanda + label tebal. */
+.murid-week-strip {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.murid-week-strip-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.murid-week-strip-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #344054;
+}
+.murid-week-strip-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+.murid-week-day {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: #667085;
+}
+.murid-week-day-dot {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 2px solid #e4e7ec;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #ffffff;
+  font-size: 13px;
+  line-height: 1;
+}
+.murid-week-day.is-active .murid-week-day-dot {
+  border-color: #f5a623;
+  background: #f5a623;
+}
+.murid-week-day.is-today .murid-week-day-dot {
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #9a6200;
+}
+.murid-week-day.is-today .murid-week-day-label {
+  font-weight: 700;
+  color: #7a4d00;
+}
 .xp-card-top {
   display: flex;
   align-items: center;

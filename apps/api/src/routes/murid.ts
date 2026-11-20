@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
 import { db, schema } from "@simak/db";
 import { contributionRatingsSchema, exitTicketSchema, presenceHeartbeatSchema, worksheetAnswersSchema } from "@simak/shared";
@@ -14,6 +14,8 @@ import { buildStudentGradeRow, chooseGradeAttempt, sortGradeRows, type GradeAtte
 import { buildUnansweredMessage, isSameAnswerValue, unansweredDetails, type SubmitGateAnswer } from "../lib/submit-gate";
 import { needsWelcome } from "../lib/sapaan";
 import { awardXp, summarizeXp, XP_POINTS, type XpSummary } from "../lib/xp";
+import { todayWib } from "../lib/jurnal";
+import { buildWeekActivity, wibWeekRangeUtc, type WeekActivity } from "../lib/pekan-aktivitas";
 import { countMaterialWords, minReadingSeconds } from "../lib/baca-wajar";
 import { avatarBadgeFields, avatarBySlug } from "../lib/avatar";
 import { assignmentLockedMessage, loadStudentAssignmentPlan, moduleLockedMessage, planAssignmentChains, planForAssignment, planModuleLock, planModuleRepresentative } from "../lib/rantai-penugasan";
@@ -472,6 +474,34 @@ muridRoutes.get("/today", async (c) => {
     // Abaikan — kartu XP tidak tampil.
   }
 
+  // Strip aktivitas pekan berjalan (Kilau Murid 3, lib/pekan-aktivitas):
+  // hari ditandai aktif bila murid punya baris xp_ledger berpoin
+  // positif pada hari WIB itu — baris negatif penukaran avatar bukan
+  // aktivitas belajar. BUKAN streak: tidak ada hitungan beruntun dan
+  // hari kosong netral. Satu query himpunan untuk sepekan; pola
+  // gagal-aman yang sama (kegagalan → strip tidak tampil). Entri
+  // jurnal tidak ikut dihitung — datanya tidak tersedia di payload
+  // beranda ini.
+  let weekActivity: WeekActivity | null = null;
+  try {
+    const now = new Date();
+    const range = wibWeekRangeUtc(now);
+    const rows = await db
+      .select({ createdAt: xpLedger.createdAt })
+      .from(xpLedger)
+      .where(
+        and(
+          eq(xpLedger.studentId, user.userId),
+          gt(xpLedger.points, 0),
+          gte(xpLedger.createdAt, range.start),
+          lt(xpLedger.createdAt, range.end),
+        ),
+      );
+    weekActivity = buildWeekActivity(now, new Set(rows.map((row) => todayWib(row.createdAt))));
+  } catch {
+    // Abaikan — strip aktivitas tidak tampil.
+  }
+
   // Checklist langkah per penugasan pada kartu beranda: ketuntasan
   // materi per modul dan pengiriman exit ticket per penugasan, masing-
   // masing SATU query himpunan untuk seluruh daftar (bukan per
@@ -558,6 +588,7 @@ muridRoutes.get("/today", async (c) => {
     data: {
       needs_welcome: showWelcome,
       xp: xpSummary,
+      week_activity: weekActivity,
       avatar_slug: equippedAvatarSlug,
       classes: memberships.map((membership) => ({
         id: membership.id,

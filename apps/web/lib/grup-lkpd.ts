@@ -116,6 +116,37 @@ function compareLkpdOptions(
 }
 
 /**
+ * Ember pengelompokan LKPD menurut aturan bersama: label dari modul
+ * pasangan (lkpdGroupLabel), arsip (isArchivedLkpd) selalu ke ember
+ * "Arsip Lama". Dipakai bersama oleh pemilih Langkah 5 dan daftar
+ * berkelompok Langkah 2 agar aturannya tidak menyimpang.
+ */
+function bucketLkpdByGroup<T extends LkpdOptionWorksheetLike>(
+  worksheets: readonly T[],
+  modules: readonly LkpdOptionModuleLike[],
+): Map<string, T[]> {
+  const moduleById = new Map(modules.map((module) => [module.id, module]));
+  const buckets = new Map<string, T[]>();
+  for (const worksheet of worksheets) {
+    const module = worksheet.module_id !== null ? moduleById.get(worksheet.module_id) ?? null : null;
+    const label = isArchivedLkpd(worksheet, module) ? LKPD_ARCHIVE_GROUP_LABEL : lkpdGroupLabel(module);
+    const bucket = buckets.get(label) ?? [];
+    bucket.push(worksheet);
+    buckets.set(label, bucket);
+  }
+  return buckets;
+}
+
+/** Urutan label kelompok: abjad (locale "id"), "Arsip Lama" selalu paling akhir. */
+function orderedGroupLabels(buckets: ReadonlyMap<string, unknown>): string[] {
+  const labels = [...buckets.keys()]
+    .filter((label) => label !== LKPD_ARCHIVE_GROUP_LABEL)
+    .sort((a, b) => a.localeCompare(b, "id"));
+  if (buckets.has(LKPD_ARCHIVE_GROUP_LABEL)) labels.push(LKPD_ARCHIVE_GROUP_LABEL);
+  return labels;
+}
+
+/**
  * Kelompokkan daftar LKPD untuk dirender sebagai <optgroup>: kelompok
  * mapel terurut abjad labelnya, "Arsip Lama" selalu paling akhir, dan
  * kelompok kosong tidak ditampilkan. Tidak mengubah array asal.
@@ -125,19 +156,8 @@ export function groupLkpdOptions(
   modules: readonly LkpdOptionModuleLike[],
 ): LkpdOptionGroup[] {
   const moduleById = new Map(modules.map((module) => [module.id, module]));
-  const buckets = new Map<string, LkpdOptionWorksheetLike[]>();
-  for (const worksheet of worksheets) {
-    const module = worksheet.module_id !== null ? moduleById.get(worksheet.module_id) ?? null : null;
-    const label = isArchivedLkpd(worksheet, module) ? LKPD_ARCHIVE_GROUP_LABEL : lkpdGroupLabel(module);
-    const bucket = buckets.get(label) ?? [];
-    bucket.push(worksheet);
-    buckets.set(label, bucket);
-  }
-  const labels = [...buckets.keys()]
-    .filter((label) => label !== LKPD_ARCHIVE_GROUP_LABEL)
-    .sort((a, b) => a.localeCompare(b, "id"));
-  if (buckets.has(LKPD_ARCHIVE_GROUP_LABEL)) labels.push(LKPD_ARCHIVE_GROUP_LABEL);
-  return labels.map((label) => ({
+  const buckets = bucketLkpdByGroup(worksheets, modules);
+  return orderedGroupLabels(buckets).map((label) => ({
     label,
     worksheets: [...(buckets.get(label) ?? [])].sort((a, b) => compareLkpdOptions(a, b, moduleById)),
   }));
@@ -221,4 +241,123 @@ export function resolveGradingSource(
 ): number | "semua" {
   if (source === "semua" || visibleIds === null) return source;
   return visibleIds.has(source) ? source : "semua";
+}
+
+// --- Langkah 2 "Siapkan LKPD": daftar kartu berkelompok + dropdown modul ---
+// Aturan pengelompokannya sama persis dengan pemilih Langkah 5 di atas
+// (ember + urutan label bersama): label "Mapel — Kelompok Materi" dari
+// modul pasangan, arsip selalu kelompok terakhir "Arsip Lama", kelompok
+// kosong tidak dirender. Bedanya hanya urutan DI DALAM kelompok untuk
+// daftar kartu: dropdown urutan Langkah 2 yang sudah ada ("Terakhir
+// diubah" / "Judul A–Z" / "Paling banyak dikerjakan") kini berlaku per
+// kelompok, dengan urutan kanonis ATP (compareLkpdOptions) sebagai
+// penentu seri — jadi makna kontrolnya tidak berubah, hanya lingkupnya
+// menyempit dari daftar datar menjadi per seksi.
+
+export type LkpdListSortMode = "terbaru" | "judul" | "dikerjakan";
+
+export type LkpdListWorksheetLike = LkpdOptionWorksheetLike & {
+  started_count?: number | null;
+  updated_at?: string | null;
+};
+
+export type LkpdListGroup<T extends LkpdListWorksheetLike = LkpdListWorksheetLike> = {
+  label: string;
+  worksheets: T[];
+};
+
+function lkpdUpdatedValue(worksheet: LkpdListWorksheetLike): number {
+  const time = worksheet.updated_at ? new Date(worksheet.updated_at).getTime() : Number.NaN;
+  return Number.isFinite(time) ? time : 0;
+}
+
+function compareLkpdListItems<T extends LkpdListWorksheetLike>(
+  a: T,
+  b: T,
+  sort: LkpdListSortMode,
+  moduleById: ReadonlyMap<number, LkpdOptionModuleLike>,
+): number {
+  if (sort === "judul") {
+    const byTitle = a.title.localeCompare(b.title, "id");
+    if (byTitle !== 0) return byTitle;
+  } else if (sort === "dikerjakan") {
+    const byStarted = (b.started_count ?? 0) - (a.started_count ?? 0);
+    if (byStarted !== 0) return byStarted;
+    const byTitle = a.title.localeCompare(b.title, "id");
+    if (byTitle !== 0) return byTitle;
+  } else {
+    const byUpdated = lkpdUpdatedValue(b) - lkpdUpdatedValue(a);
+    if (byUpdated !== 0) return byUpdated;
+  }
+  return compareLkpdOptions(a, b, moduleById);
+}
+
+/**
+ * Kelompokkan daftar LKPD Langkah 2 (yang sudah tersaring oleh
+ * pencarian/status/modul) menjadi seksi-seksi untuk dirender: label dan
+ * urutan kelompok mengikuti aturan bersama, isi tiap kelompok diurutkan
+ * menurut mode urutan Langkah 2 yang aktif. Kelompok yang kosong
+ * sesudah penyaringan tidak muncul. Tidak mengubah array asal.
+ */
+export function groupLkpdListSections<T extends LkpdListWorksheetLike>(
+  worksheets: readonly T[],
+  modules: readonly LkpdOptionModuleLike[],
+  sort: LkpdListSortMode,
+): LkpdListGroup<T>[] {
+  const moduleById = new Map(modules.map((module) => [module.id, module]));
+  const buckets = bucketLkpdByGroup(worksheets, modules);
+  return orderedGroupLabels(buckets).map((label) => ({
+    label,
+    worksheets: [...(buckets.get(label) ?? [])].sort((a, b) => compareLkpdListItems(a, b, sort, moduleById)),
+  }));
+}
+
+/** Modul arsip: statusnya "arsip" atau judulnya mengandung "Arsip". */
+export function isArchivedModule(module: LkpdOptionModuleLike): boolean {
+  return module.status === "arsip" || /arsip/i.test(module.title);
+}
+
+export type LkpdModuleGroup = {
+  label: string;
+  modules: LkpdOptionModuleLike[];
+};
+
+/** Banding dua modul dalam satu kelompok dropdown: nomor ATP dari judul menaik, lalu abjad judul, lalu id. */
+function compareModulesForFilter(a: LkpdOptionModuleLike, b: LkpdOptionModuleLike): number {
+  const atpA = parseAtpNumber(a.title);
+  const atpB = parseAtpNumber(b.title);
+  if (atpA !== null && atpB !== null) {
+    if (atpA.major !== atpB.major) return atpA.major - atpB.major;
+    if (atpA.minor !== atpB.minor) return atpA.minor - atpB.minor;
+  } else if (atpA !== null) {
+    return -1;
+  } else if (atpB !== null) {
+    return 1;
+  }
+  const byTitle = a.title.localeCompare(b.title, "id");
+  return byTitle !== 0 ? byTitle : a.id - b.id;
+}
+
+/**
+ * Kelompokkan modul untuk dropdown saringan "Semua modul" Langkah 2:
+ * <optgroup> per label bersama ("Mapel — Kelompok Materi" dari subject +
+ * topic_group modul itu sendiri), modul terurut ATP menaik di dalam
+ * kelompok, modul arsip ke kelompok terakhir "Arsip Lama", kelompok
+ * kosong tidak ditampilkan. Opsi "Semua modul" dirender komponen di
+ * luar kelompok-kelompok ini. Tidak mengubah array asal.
+ */
+export function groupModulesForFilter(
+  modules: readonly LkpdOptionModuleLike[],
+): LkpdModuleGroup[] {
+  const buckets = new Map<string, LkpdOptionModuleLike[]>();
+  for (const module of modules) {
+    const label = isArchivedModule(module) ? LKPD_ARCHIVE_GROUP_LABEL : lkpdGroupLabel(module);
+    const bucket = buckets.get(label) ?? [];
+    bucket.push(module);
+    buckets.set(label, bucket);
+  }
+  return orderedGroupLabels(buckets).map((label) => ({
+    label,
+    modules: [...(buckets.get(label) ?? [])].sort(compareModulesForFilter),
+  }));
 }

@@ -2168,6 +2168,42 @@ button.wizard-library-link {
   color: var(--wizard-accent-dark);
 }
 
+/* Seksi berkelompok daftar LKPD Langkah 2: kepala seksi berisi label
+   "Mapel — Kelompok Materi" + jumlah, bisa dilipat seperti grup arsip;
+   seksi arsip memakai kelas .archive-group yang sudah ada. */
+.lkpd-group-list {
+  display: grid;
+  gap: 12px;
+}
+
+.lkpd-group {
+  display: grid;
+  gap: 8px;
+}
+
+.lkpd-group-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  background: var(--color-surface-subtle);
+  color: var(--color-ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  text-align: left;
+}
+
+.lkpd-group-toggle:hover {
+  background: var(--wizard-accent-soft);
+  color: var(--wizard-accent-dark);
+}
+
 .module-row-archived {
   opacity: 0.75;
 }

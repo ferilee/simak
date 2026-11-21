@@ -35,8 +35,11 @@ import {
   sortIntegrityAlerts,
 } from "../../lib/hasil-helpers";
 import {
+  LKPD_ARCHIVE_GROUP_LABEL,
   filterWorksheetsByIds,
+  groupLkpdListSections,
   groupLkpdOptions,
+  groupModulesForFilter,
   resolveGradingSource,
   worksheetIdsForClassFilter,
 } from "../../lib/grup-lkpd";
@@ -385,6 +388,10 @@ export default function GuruPage() {
   const [moduleArchiveClosedAtQuery, setModuleArchiveClosedAtQuery] = useState<string | null>(null);
   const [worksheetArchiveOpen, setWorksheetArchiveOpen] = useState(false);
   const [worksheetArchiveClosedAtQuery, setWorksheetArchiveClosedAtQuery] = useState<string | null>(null);
+  // Seksi kelompok daftar LKPD Langkah 2 yang sedang dilipat guru
+  // (label kelompok; bawaan semua bentang, seksi arsip diatur terpisah
+  // oleh worksheetArchiveOpen di atas).
+  const [worksheetCollapsedGroups, setWorksheetCollapsedGroups] = useState<string[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [showCreateModule, setShowCreateModule] = useState(false);
   const [title, setTitle] = useState("");
@@ -815,18 +822,29 @@ export default function GuruPage() {
   }
 
   const normalizedWorksheetQuery = worksheetQuery.trim().toLowerCase();
-  const visibleWorksheets = worksheets
+  const filteredWorksheets = worksheets
     .filter((worksheet) => worksheetStatusFilter === "semua" || worksheet.status === worksheetStatusFilter)
     .filter((worksheet) => worksheetModuleFilter === "semua" || worksheet.module_id === Number(worksheetModuleFilter))
     .filter((worksheet) => normalizedWorksheetQuery === ""
       || worksheet.title.toLowerCase().includes(normalizedWorksheetQuery)
-      || (worksheet.instructions ?? "").toLowerCase().includes(normalizedWorksheetQuery))
+      || (worksheet.instructions ?? "").toLowerCase().includes(normalizedWorksheetQuery));
+  const visibleWorksheets = filteredWorksheets
     .slice()
     .sort((a, b) => {
       if (worksheetSort === "judul") return a.title.localeCompare(b.title, "id");
       if (worksheetSort === "dikerjakan") return b.started_count - a.started_count || a.title.localeCompare(b.title, "id");
       return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
     });
+  // Seksi berkelompok daftar LKPD Langkah 2 (aturan bersama
+  // lib/grup-lkpd, sama seperti pemilih Langkah 5): label "Mapel —
+  // Kelompok Materi" dari modul pasangan, "Arsip Lama" selalu terakhir,
+  // kelompok yang kosong sesudah penyaringan tidak dirender. Dropdown
+  // urutan di atas kini berlaku di dalam tiap seksi.
+  const worksheetSections = groupLkpdListSections(filteredWorksheets, modules, worksheetSort);
+  const worksheetArchiveSection = worksheetSections.find((section) => section.label === LKPD_ARCHIVE_GROUP_LABEL) ?? null;
+  // Kelompok modul untuk dropdown saringan "Semua modul": <optgroup>
+  // per label yang sama, modul arsip di kelompok terakhir.
+  const worksheetModuleGroups = groupModulesForFilter(modules);
 
   function resetWorksheetFilters() {
     setWorksheetQuery("");
@@ -835,6 +853,7 @@ export default function GuruPage() {
     setWorksheetSort("terbaru");
     setWorksheetArchiveOpen(false);
     setWorksheetArchiveClosedAtQuery(null);
+    setWorksheetCollapsedGroups([]);
   }
 
   // Saringan kelas + status daftar penugasan (Langkah 4): himpunan dasar,
@@ -857,13 +876,12 @@ export default function GuruPage() {
   const assignmentFiltersActive = assignmentStatusFilter !== "semua" || assignmentClassFilter !== "semua";
   const activeAssignmentFilterLabel = ASSIGNMENT_STATUS_FILTER_OPTIONS.find((option) => option.value === assignmentStatusFilter)?.label ?? "";
 
-  // Partisi daftar LKPD: sama seperti modul — aktif dan arsip, hanya
-  // dipakai saat saringan status "semua".
-  const activeWorksheets = visibleWorksheets.filter((worksheet) => worksheet.status !== "arsip");
-  const archivedWorksheets = visibleWorksheets.filter((worksheet) => worksheet.status === "arsip");
+  // Seksi arsip terbuka otomatis bila pencarian menyisakan LKPD arsip,
+  // kecuali guru menutupnya manual pada teks pencarian yang sama
+  // (pola yang sama seperti grup arsip daftar modul).
   const worksheetArchiveAutoOpen = worksheetStatusFilter === "semua"
     && normalizedWorksheetQuery !== ""
-    && archivedWorksheets.length > 0
+    && worksheetArchiveSection !== null
     && worksheetArchiveClosedAtQuery !== worksheetQuery;
   const worksheetArchiveGroupOpen = worksheetArchiveOpen || worksheetArchiveAutoOpen;
 
@@ -875,6 +893,12 @@ export default function GuruPage() {
       setWorksheetArchiveOpen(true);
       setWorksheetArchiveClosedAtQuery(null);
     }
+  }
+
+  function toggleWorksheetGroup(label: string) {
+    setWorksheetCollapsedGroups((previous) => previous.includes(label)
+      ? previous.filter((item) => item !== label)
+      : [...previous, label]);
   }
 
   // Lencana rollup penilaian pada baris penugasan (Langkah 4 + Rekap):
@@ -4138,8 +4162,12 @@ export default function GuruPage() {
               style={{ ...styles.input, ...styles.moduleFilterSelect }}
             >
               <option value="semua">Semua modul</option>
-              {modules.map((module) => (
-                <option key={module.id} value={String(module.id)}>{module.title}</option>
+              {worksheetModuleGroups.map((group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.modules.map((module) => (
+                    <option key={module.id} value={String(module.id)}>{module.title}</option>
+                  ))}
+                </optgroup>
               ))}
             </select>
             <select
@@ -4159,31 +4187,38 @@ export default function GuruPage() {
             <p style={{ margin: "0 0 10px" }}>Tidak ada LKPD yang cocok dengan pencarian/saringan ini.</p>
             <button type="button" onClick={resetWorksheetFilters} style={styles.secondaryButton}>Atur ulang saringan</button>
           </div>
-        ) : worksheetStatusFilter === "arsip" ? (
-          <div className="module-list">
-            {visibleWorksheets.map((worksheet) => renderWorksheetRow(worksheet))}
-          </div>
         ) : (
-          <>
-            {activeWorksheets.length > 0 ? (
-              <div className="module-list">
-                {activeWorksheets.map((worksheet) => renderWorksheetRow(worksheet))}
-              </div>
-            ) : null}
-            {archivedWorksheets.length > 0 ? (
-              <div className="archive-group">
-                <button type="button" className="archive-group-toggle" aria-expanded={worksheetArchiveGroupOpen} onClick={toggleWorksheetArchiveGroup}>
-                  <span>Arsip ({archivedWorksheets.length})</span>
-                  <span aria-hidden="true">{worksheetArchiveGroupOpen ? "▾" : "▸"}</span>
-                </button>
-                {worksheetArchiveGroupOpen ? (
-                  <div className="module-list">
-                    {archivedWorksheets.map((worksheet) => renderWorksheetRow(worksheet, true))}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-          </>
+          <div className="lkpd-group-list">
+            {worksheetSections.map((section) => {
+              const isArchiveSection = section.label === LKPD_ARCHIVE_GROUP_LABEL;
+              // Seksi arsip mengikuti saklar grup arsip yang sudah ada
+              // (dan selalu bentang saat saringan status "arsip" dipilih
+              // eksplisit); seksi lain bentang kecuali dilipat guru, dan
+              // pencarian yang aktif membentangkan semuanya agar hasil
+              // tidak tersembunyi di balik seksi terlipat.
+              const sectionOpen = isArchiveSection
+                ? worksheetStatusFilter === "arsip" || worksheetArchiveGroupOpen
+                : normalizedWorksheetQuery !== "" || !worksheetCollapsedGroups.includes(section.label);
+              return (
+                <div key={section.label} className={isArchiveSection ? "archive-group" : "lkpd-group"}>
+                  <button
+                    type="button"
+                    className={isArchiveSection ? "archive-group-toggle" : "lkpd-group-toggle"}
+                    aria-expanded={sectionOpen}
+                    onClick={isArchiveSection ? toggleWorksheetArchiveGroup : () => toggleWorksheetGroup(section.label)}
+                  >
+                    <span>{section.label} ({section.worksheets.length})</span>
+                    <span aria-hidden="true">{sectionOpen ? "▾" : "▸"}</span>
+                  </button>
+                  {sectionOpen ? (
+                    <div className="module-list">
+                      {section.worksheets.map((worksheet) => renderWorksheetRow(worksheet, isArchiveSection && worksheetStatusFilter !== "arsip"))}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
         )}
       </section>
 

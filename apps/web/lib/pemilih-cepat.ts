@@ -10,6 +10,14 @@ export type PickerOption = {
   title: string;
   /** Nama kelompok asal opsi (topic_group untuk modul); null bila tak berkelompok. */
   group: string | null;
+  /**
+   * Awalan identitas opsional (chip identitas materi, mis. "X1-MAT ·
+   * 1.1"): ditampilkan sebagai lencana kecil sebelum judul dan ikut
+   * dicari oleh filterPickerOptions, supaya guru bisa mengetik kode
+   * ("X1", "MAT", "1.1") untuk menemukan materi. Judul sendiri tidak
+   * pernah diubah awalan ini.
+   */
+  prefix?: string | null;
 };
 
 export type PickerGroup = {
@@ -45,14 +53,19 @@ function queryTokens(query: string): string[] {
 
 /**
  * Saring opsi menurut query: query dipecah menjadi token dan opsi
- * lolos bila SETIAP token muncul sebagai substring pada judul
- * ternormalisasi (bebas urutan). Query kosong mengembalikan semua.
+ * lolos bila SETIAP token muncul sebagai substring pada teks
+ * ternormalisasi (bebas urutan). Teks yang dicari adalah awalan
+ * identitas (bila ada) diikuti judul, jadi kode identitas seperti
+ * "X1"/"MAT"/"1.1" ikut cocok. Query kosong mengembalikan semua.
  */
-export function filterPickerOptions<T extends { title: string }>(options: readonly T[], query: string): T[] {
+export function filterPickerOptions<T extends { title: string; prefix?: string | null }>(
+  options: readonly T[],
+  query: string,
+): T[] {
   const tokens = queryTokens(query);
   if (tokens.length === 0) return [...options];
   return options.filter((option) => {
-    const haystack = normalizeText(option.title);
+    const haystack = normalizeText(`${option.prefix ?? ""} ${option.title}`);
     return tokens.every((token) => haystack.includes(token));
   });
 }

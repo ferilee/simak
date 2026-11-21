@@ -43,6 +43,7 @@ import {
   resolveGradingSource,
   worksheetIdsForClassFilter,
 } from "../../lib/grup-lkpd";
+import { moduleIdentity, worksheetIdentity } from "../../lib/identitas-materi";
 import {
   EXIT_TICKET_CLASS_SECTIONS,
   exitTicketStudentMatches,
@@ -769,6 +770,8 @@ export default function GuruPage() {
     // menyala (mematikannya membatalkan pengajuan) walau belum tayang.
     const moduleShareOn = shareToggleOn(module.share_status, module.is_shared);
     const moduleShareBadge = shareStatusBadge(module.share_status);
+    // Chip identitas sistem (lib/identitas-materi): judul tidak diubah.
+    const identity = moduleIdentity(module);
     return (
       <article
         key={module.id}
@@ -780,6 +783,7 @@ export default function GuruPage() {
         ) : null}
         <button type="button" onClick={() => setSelectedId(module.id)} className="module-row-main">
           <strong>{module.title}</strong>
+          {identity.chip ? <span className="identity-chip">{identity.chip}</span> : null}
           <span>{module.subject} · versi {module.version}</span>
           <span>{module.viewer_count > 0 ? `Dilihat ${module.viewer_count} murid` : "Belum ada murid yang melihat"}</span>
         </button>
@@ -936,10 +940,13 @@ export default function GuruPage() {
     // yang menunggu/ditolak mendapat lencana di samping saklarnya.
     const worksheetShareOn = shareToggleOn(worksheet.share_status, worksheet.is_shared);
     const worksheetShareBadge = shareStatusBadge(worksheet.share_status);
+    // Chip identitas dari modul pasangan (lib/identitas-materi).
+    const identity = worksheetIdentity(worksheet, modules.find((module) => module.id === worksheet.module_id) ?? null);
     return (
       <article key={worksheet.id} className={`module-row ${dimmed ? "module-row-archived" : ""} ${selectedWorksheetId === worksheet.id ? "is-selected" : ""}`}>
         <button type="button" onClick={() => setSelectedWorksheetId(worksheet.id)} className="module-row-main">
           <strong>{worksheet.title}</strong>
+          {identity.chip ? <span className="identity-chip">{identity.chip}</span> : null}
           <span>{worksheet.status}</span>
           <span>{worksheet.started_count > 0 ? `${worksheet.started_count} murid mengerjakan · ${worksheet.submitted_count} mengumpulkan` : "Belum ada murid yang mengerjakan"}</span>
         </button>
@@ -3461,9 +3468,26 @@ export default function GuruPage() {
     // sama dengan chip Materi saya; LKPD diurutkan ulang mengikuti
     // modul terpilih (pasangan ATP lebih dulu). Pergantian modul
     // TIDAK mereset pilihan LKPD — guru yang menentukannya.
-    const modulePickerGroups = groupModulesForPicker(modules, canonicalTopicOrder(topicGroups));
+    // Awalan identitas (lib/identitas-materi) ditempelkan pada opsi
+    // pemilih cepat: tampil sebagai lencana dan ikut dicari, supaya
+    // guru bisa menemukan materi lewat kode ("X1", "MAT", "1.1").
+    const modulePickerGroups = groupModulesForPicker(modules, canonicalTopicOrder(topicGroups)).map((group) => ({
+      ...group,
+      options: group.options.map((option) => {
+        const module = modules.find((candidate) => candidate.id === option.id);
+        return module ? { ...option, prefix: moduleIdentity(module).pickerPrefix } : option;
+      }),
+    }));
     const selectedModuleTitle = modules.find((module) => module.id === selectedId)?.title ?? null;
-    const worksheetPickerGroups = orderWorksheetsForPairing(worksheets, selectedModuleTitle);
+    const worksheetPickerGroups = orderWorksheetsForPairing(worksheets, selectedModuleTitle).map((group) => ({
+      ...group,
+      options: group.options.map((option) => {
+        const worksheet = worksheets.find((candidate) => candidate.id === option.id);
+        if (!worksheet) return option;
+        const module = modules.find((candidate) => candidate.id === worksheet.module_id) ?? null;
+        return { ...option, prefix: worksheetIdentity(worksheet, module).pickerPrefix };
+      }),
+    }));
     // Pemetaan RUAS formulir (Hub Murid Tahap 2): tautan yang terurai
     // menampilkan catatan deteksi otomatis; yang tidak terurai memberi
     // tempat pada pemilih topik di bawah kolom tautan.
@@ -4164,9 +4188,12 @@ export default function GuruPage() {
               <option value="semua">Semua modul</option>
               {worksheetModuleGroups.map((group) => (
                 <optgroup key={group.label} label={group.label}>
-                  {group.modules.map((module) => (
-                    <option key={module.id} value={String(module.id)}>{module.title}</option>
-                  ))}
+                  {group.modules.map((module) => {
+                    const prefix = moduleIdentity(module).optionPrefix;
+                    return (
+                      <option key={module.id} value={String(module.id)}>{prefix ? `${prefix} ${module.title}` : module.title}</option>
+                    );
+                  })}
                 </optgroup>
               ))}
             </select>
@@ -4846,9 +4873,15 @@ export default function GuruPage() {
               <option value="semua">Semua LKPD</option>
               {gradingLkpdGroups.map((group) => (
                 <optgroup key={group.label} label={group.label}>
-                  {group.worksheets.map((worksheet) => (
-                    <option key={worksheet.id} value={String(worksheet.id)}>{worksheet.title}</option>
-                  ))}
+                  {group.worksheets.map((worksheet) => {
+                    const prefix = worksheetIdentity(
+                      worksheet,
+                      modules.find((module) => module.id === worksheet.module_id) ?? null,
+                    ).optionPrefix;
+                    return (
+                      <option key={worksheet.id} value={String(worksheet.id)}>{prefix ? `${prefix} ${worksheet.title}` : worksheet.title}</option>
+                    );
+                  })}
                 </optgroup>
               ))}
             </select>

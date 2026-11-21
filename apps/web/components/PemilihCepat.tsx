@@ -185,7 +185,12 @@ export function PemilihCepat({
           }}
         >
           <span className={`pemilih-cepat-value${selectedOption ? "" : " is-placeholder"}`}>
-            {selectedOption ? selectedOption.title : placeholder}
+            {selectedOption ? (
+              <>
+                {selectedOption.prefix ? <span className="pemilih-cepat-prefix">{selectedOption.prefix}</span> : null}
+                {selectedOption.title}
+              </>
+            ) : placeholder}
           </span>
           <span className="pemilih-cepat-chevron" aria-hidden="true">▾</span>
         </button>
@@ -255,6 +260,7 @@ export function PemilihCepat({
                           onMouseEnter={() => setActiveId(option.id)}
                         >
                           <span className="pemilih-cepat-check" aria-hidden="true">{option.id === value ? "✓" : ""}</span>
+                          {option.prefix ? <span className="pemilih-cepat-prefix">{option.prefix}</span> : null}
                           <span className="pemilih-cepat-title">
                             {highlightParts(option.title, query).map((part, index) =>
                               part.match ? <mark key={index} className="pemilih-cepat-mark">{part.text}</mark> : <span key={index}>{part.text}</span>,

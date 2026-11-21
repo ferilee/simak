@@ -2066,6 +2066,22 @@ button.wizard-library-link {
   text-transform: capitalize;
 }
 
+/* Chip identitas materi di baris modul/LKPD guru (lib/identitas-materi):
+   token terstruktur "X1-MAT · Eksponen · 1.1" yang ditempelkan sistem
+   di bawah judul — judul lama tidak diubah, dan chip ini tidak pernah
+   dirender di tampilan murid. */
+.module-row-main .identity-chip {
+  justify-self: start;
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: #eef4ff;
+  color: #175cd3;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
 .module-status-terbit {
   background: #ecfdf3;
   color: #087a6f;
@@ -5301,6 +5317,19 @@ button.wizard-library-link {
   font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
+}
+.pemilih-cepat-prefix {
+  flex: none;
+  border-radius: 999px;
+  padding: 1px 7px;
+  background: #eef4ff;
+  color: #175cd3;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.pemilih-cepat-value .pemilih-cepat-prefix {
+  margin-right: 6px;
 }
 .pemilih-cepat-empty {
   margin: 0;

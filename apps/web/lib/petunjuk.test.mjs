@@ -1,4 +1,5 @@
-// Tests for the instruction-text block parser (calon v1.0.86). Teacher
+// Tests for the instruction-text block parser (calon v1.0.86; kartu
+// penugasan beranda/tab Penugasan murid menyusul di v1.0.87). Teacher
 // instructions written as numbered lines must render as one real <ol>
 // instead of a single run-on paragraph; plain text keeps its old shape.
 // Run with bun from apps/web:  bun lib/petunjuk.test.mjs
@@ -93,6 +94,7 @@ const assignmentPage = readFileSync(join(here, "../app/murid/assignments/[id]/pa
 const worksheetPage = readFileSync(join(here, "../app/murid/worksheets/[id]/page.tsx"), "utf8");
 const guruPage = readFileSync(join(here, "../app/guru/page.tsx"), "utf8");
 const libraryPanel = readFileSync(join(here, "../components/LibraryPanel.tsx"), "utf8");
+const muridHomePage = readFileSync(join(here, "../app/murid/page.tsx"), "utf8");
 
 check("komponen memakai pengurai + MathText per butir", component.includes("parseInstructionBlocks") && component.includes("MathText"));
 check("komponen merender <ol> untuk blok daftar", component.includes("<ol"));
@@ -117,6 +119,24 @@ check(
 check(
   "pratinjau Perpustakaan Bersama memakai InstructionText",
   libraryPanel.includes("<InstructionText text={data.instructions}"),
+);
+// Kartu penugasan beranda/tab Penugasan murid (v1.0.87): teks petunjuk
+// tampil penuh di kartu, jadi harus serapi halaman detail.
+check(
+  "beranda murid mengimpor InstructionText",
+  muridHomePage.includes('from "../../components/InstructionText"'),
+);
+check(
+  "kartu penugasan murid memakai InstructionText untuk petunjuk penugasan",
+  muridHomePage.includes("<InstructionText text={assignment.instructions}"),
+);
+check(
+  "kartu penugasan murid tidak lagi merender petunjuk sebagai teks polos",
+  !muridHomePage.includes("{assignment.instructions ??"),
+);
+check(
+  "kartu penugasan murid tetap menyediakan teks cadangan bila petunjuk kosong",
+  muridHomePage.includes("Buka detail penugasan untuk mulai."),
 );
 
 console.log(`\n${passed} passed, ${failed} failed`);

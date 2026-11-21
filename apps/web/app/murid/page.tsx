@@ -17,6 +17,7 @@ import { muridTabFromSearch, type MuridHomeTab } from "../../lib/tab-murid";
 import { submissionStatusLabel } from "../lib/labels";
 import { Toast } from "../../components/Toast";
 import { Modal } from "../../components/Modal";
+import { InstructionText } from "../../components/InstructionText";
 import { MuridBottomNav, type MuridTab } from "../../components/MuridBottomNav";
 
 type ClassSummary = {
@@ -1124,7 +1125,18 @@ function AssignmentCard({ assignment }: { assignment: AssignmentSummary }) {
       {assignment.work_mode === "kelompok" ? (
         <span className="group-mode-badge" style={{ alignSelf: "flex-start" }}>👥 Kelompok{assignment.group ? ` · ${assignment.group.name}` : ""}</span>
       ) : null}
-      <span className="content-muted">{assignment.instructions ?? "Buka detail penugasan untuk mulai."}</span>
+      {/* Petunjuk tampil PENUH di kartu ini (bukan ringkasan), jadi
+          dirender dengan InstructionText yang sama persis seperti
+          halaman detail (v1.0.87): poin bernomor menjadi daftar yang
+          rata, bukan satu paragraf mengalir. Margin vertikal bawaan
+          .instruction-text dinolkan lewat style agar ritme jarak kartu
+          (grid gap 6px) tetap seragam; warna & tinggi baris tetap dari
+          .content-muted seperti span lama. */}
+      {assignment.instructions ? (
+        <InstructionText text={assignment.instructions} className="content-muted" style={{ margin: 0 }} />
+      ) : (
+        <span className="content-muted">Buka detail penugasan untuk mulai.</span>
+      )}
       {reminder.level !== "none" ? (
         <span className={`assign-reminder assign-reminder--${reminder.level}`} role="note">
           ⏰ {reminder.level === "mendesak" ? (reminder.overdue ? "Sudah lewat tenggat" : "Tenggat dekat") : "Segera tenggat"} — {reminder.missingLabels.join(" · ")}

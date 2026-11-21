@@ -37,6 +37,7 @@ import {
 } from "../lib/perpustakaan";
 import { ModuleBlockPreview, type ModulePreviewBlockData } from "./ModuleBlockPreview";
 import { MathText } from "./MathContent";
+import { InstructionText } from "./InstructionText";
 import { Toast } from "./Toast";
 import { useConfirm } from "./ConfirmDialog";
 
@@ -804,7 +805,7 @@ function PreviewView({
         oleh {data.owner_name}
         {formatSharedDate(data.shared_at) ? ` · Dibagikan ${formatSharedDate(data.shared_at)}` : ""}
       </p>
-      {data.instructions ? <p style={styles.muted}><MathText text={data.instructions} /></p> : null}
+      {data.instructions ? <InstructionText text={data.instructions} style={styles.muted} /> : null}
       <div style={styles.cardActions}>
         <button type="button" onClick={() => onCopy(entry)} disabled={copyingId === `worksheet:${data.id}`} style={styles.primaryButton}>
           {copyingId === `worksheet:${data.id}` ? <><span className="action-icon" aria-hidden="true">📋</span>Menyalin...</> : <><span className="action-icon" aria-hidden="true">📋</span>Salin ke punya saya</>}

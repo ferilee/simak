@@ -9,7 +9,7 @@ import { submissionStatusLabel } from "../../../lib/labels";
 import { Toast } from "../../../../components/Toast";
 import { StudentNameBadge } from "../../../../components/StudentNameBadge";
 import { MuridBottomNav } from "../../../../components/MuridBottomNav";
-import { MathText } from "../../../../components/MathContent";
+import { InstructionText } from "../../../../components/InstructionText";
 
 type AssignmentDetail = {
   assignment: {
@@ -199,7 +199,7 @@ export default function AssignmentPage() {
       <Link href="/murid" style={styles.back}>← Ruang murid</Link>
       <p style={styles.eyebrow}>SIMAK · PENUGASAN</p>
       <h1 style={styles.title}>{data.assignment.title}</h1>
-      {data.assignment.instructions ? <p style={styles.instructions}><MathText text={data.assignment.instructions} /></p> : null}
+      {data.assignment.instructions ? <InstructionText text={data.assignment.instructions} style={styles.instructions} /> : null}
       <p style={styles.meta}>Status: <strong>{submissionStatusLabel(data.assignment.progress)}</strong> · batas {formatDate(data.assignment.due_at)}</p>
       {data.assignment.work_mode === "kelompok" ? (
         data.assignment.group ? (

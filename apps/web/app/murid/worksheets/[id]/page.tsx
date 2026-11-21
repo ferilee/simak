@@ -14,6 +14,7 @@ import { StudentNameBadge } from "../../../../components/StudentNameBadge";
 import { MuridBottomNav } from "../../../../components/MuridBottomNav";
 import { useConfirm } from "../../../../components/ConfirmDialog";
 import { MathText } from "../../../../components/MathContent";
+import { InstructionText } from "../../../../components/InstructionText";
 
 type WorksheetItem = {
   id: number;
@@ -812,7 +813,7 @@ export default function WorksheetPage() {
       )}
       <p style={styles.eyebrow}>SIMAK · LKPD</p>
       <h1 style={styles.title}>{data.worksheet.title}</h1>
-      {data.worksheet.instructions ? <p style={styles.instructions}><MathText text={data.worksheet.instructions} /></p> : null}
+      {data.worksheet.instructions ? <InstructionText text={data.worksheet.instructions} style={styles.instructions} /> : null}
       {groupInfo ? (
         <div style={styles.groupCard}>
           <strong>👥 {groupInfo.name} · {groupInfo.class_name}</strong>

@@ -59,6 +59,7 @@ import { Modal } from "../../components/Modal";
 import { closeDecision, sameIdList } from "../../lib/modal";
 import { neighborIndex, nextUngradedIndex, progressLabel } from "../../lib/lembar-nilai";
 import { MathText } from "../../components/MathContent";
+import { InstructionText } from "../../components/InstructionText";
 import { markdownToHtml, htmlToMarkdown } from "../../components/markdown";
 import { RichTextEditor, sanitizeBlockHtml } from "../../components/RichTextEditor";
 import { LibraryPanel } from "../../components/LibraryPanel";
@@ -5072,7 +5073,7 @@ export default function GuruPage() {
                   <p style={styles.modalNote}>LKPD ini belum terbit; murid belum dapat melihatnya.</p>
                 ) : null}
                 {previewWorksheet.instructions ? (
-                  <p style={styles.muted}><MathText text={previewWorksheet.instructions} /></p>
+                  <InstructionText text={previewWorksheet.instructions} style={styles.muted} />
                 ) : null}
                 {previewWorksheet.started_count > 0 ? (
                   <p style={styles.muted}>

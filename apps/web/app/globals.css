@@ -1137,6 +1137,38 @@ a {
   font-weight: 750;
 }
 
+/* Teks petunjuk guru (components/InstructionText): poin bernomor per baris
+   menjadi daftar yang rata — nomor di jalur gantung standar daftar, baris
+   lanjutan sejajar teks butir, bukan di bawah nomor. */
+.instruction-text {
+  margin: 12px 0;
+}
+
+.instruction-text p {
+  margin: 0 0 10px;
+}
+
+.instruction-text ol {
+  margin: 0 0 10px;
+  padding-left: 1.5em;
+  display: grid;
+  gap: 6px;
+}
+
+.instruction-text p:last-child,
+.instruction-text ol:last-child {
+  margin-bottom: 0;
+}
+
+.instruction-text li {
+  padding-left: 0.2em;
+}
+
+.instruction-text li::marker {
+  color: #475467;
+  font-weight: 700;
+}
+
 .empty-state {
   margin: 0;
   border: 1px dashed var(--color-border);

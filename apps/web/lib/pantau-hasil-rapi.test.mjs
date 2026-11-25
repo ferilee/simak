@@ -84,8 +84,9 @@ check(
   page.includes('? gradingClassFilter\n    : "semua";') || page.includes(': "semua";'),
 );
 check(
-  "lompat otomatis penilaian juga melewati saringan kelas",
-  page.includes(".filter((attempt) => matchesGradingClassFilter(attempt, gradingClassFilterActive))"),
+  "tidak ada lompat otomatis sesudah simpan; daftar tampil tetap melewati saringan kelas",
+  page.includes("filterGradingAttemptsByClass(gradingAttempts, gradingClassFilterActive)") &&
+    !page.includes("advanceAfterGrading"),
 );
 check(
   "kartu attempt menampilkan nama kelas / Tanpa kelas pada baris meta",
@@ -198,8 +199,8 @@ check(
     page.includes("const [gradingRevealedCount, setGradingRevealedCount] = useState(GRADING_PAGE_SIZE);"),
 );
 check(
-  "lompat otomatis memperluas tampilan sampai target terlihat",
-  page.includes("if (nextIndex >= gradingRevealedCount) {") && page.includes("setGradingRevealedCount(revealedCountForIndex(nextIndex));"),
+  "navigasi manual (tetangga lembar / Simpan & Berikutnya) memperluas tampilan sampai target terlihat",
+  page.includes("if (targetIndex >= gradingRevealedCount) {") && page.includes("setGradingRevealedCount(revealedCountForIndex(targetIndex));"),
 );
 check(
   "baris saringan dibungkus wadah lengket; CSS-nya lengket di bawah bilah tab",

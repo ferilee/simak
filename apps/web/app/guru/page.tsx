@@ -21,7 +21,6 @@ import {
   matchesGradingClassFilter,
   matchesGradingStatusFilter,
   nextRevealedCount,
-  pickNextUngradedAttempt,
   quickScoreDrafts,
   revealedCountForIndex,
   revealedSliceCount,
@@ -2700,10 +2699,10 @@ export default function GuruPage() {
   // Inti simpan menyeluruh penilaian: validasi draf + satu PATCH ke
   // endpoint attempt, TANPA kelanjutan antreannya. Mengembalikan true
   // hanya bila nilai benar-benar tersimpan di server; pesan galat dan
-  // muatan kirimannya persis jalur lama. saveGrades menambahkan
-  // lompatan antrean lama di atas inti ini, sedangkan navigasi Lembar
-  // Nilai memakai intinya langsung lalu menentukan sendiri tujuannya
-  // (tetangga daftar / antrean berikutnya) sesudah simpan berhasil.
+  // muatan kirimannya persis jalur lama. saveGrades tetap pada lembar
+  // yang sama di atas inti ini, sedangkan navigasi Lembar Nilai memakai
+  // intinya langsung lalu menentukan sendiri tujuannya (tetangga daftar
+  // / antrean berikutnya) sesudah simpan berhasil.
   async function saveGradesCore(): Promise<boolean> {
     if (!selectedWorksheetId || !selectedAttemptId || !attemptDetail) return false;
     const savedWorksheetId = selectedWorksheetId;
@@ -2740,39 +2739,16 @@ export default function GuruPage() {
     const savedWorksheetId = selectedWorksheetId;
     const savedAttemptId = selectedAttemptId;
     if (await saveGradesCore()) {
-      await advanceAfterGrading(savedWorksheetId, savedAttemptId);
-    }
-  }
-
-  // Sesudah satu attempt selesai dinilai (simpan menyeluruh maupun butir
-  // terakhir pada autosave cicilan): muat ulang daftar dari server lalu
-  // lanjutkan antrean — buka pengumpulan berikutnya yang belum dinilai
-  // menurut urutan tampilan saat ini (yang baru disimpan dilewati).
-  // Perpindahan LKPD pada mode gabungan meniru persis mekanisme klik
-  // manual pada daftar.
-  async function advanceAfterGrading(savedWorksheetId: number, savedAttemptId: number) {
-    const freshAttempts = await loadAttempts(savedWorksheetId);
-    const freshAllAttempts = gradingCombined ? await loadAllAttempts() : null;
-    const sourceAttempts: (WorksheetAttemptSummary & { worksheet_id?: number; worksheet_title?: string })[] = gradingCombined ? (freshAllAttempts ?? allAttempts) : (freshAttempts ?? attempts);
-    const displayAttempts = sortGradingAttempts(sourceAttempts)
-      .filter((attempt) => matchesGradingClassFilter(attempt, gradingClassFilterActive))
-      .filter((attempt) => matchesGradingStatusFilter(attempt, gradingStatusFilter));
-    const nextAttempt = pickNextUngradedAttempt(displayAttempts, savedAttemptId);
-    if (nextAttempt) {
+      // Sesudah simpan, lembar TETAP pada pengumpulan yang sama — tidak
+      // ada lagi lompatan antrean otomatis (lompatan lama pernah membuat
+      // nilai mendarat di lembar yang salah karena halaman berpindah
+      // sendiri di tengah pengisian). Segarkan daftar dan rincian
+      // pengumpulan ini dari server; guru berpindah sendiri lewat
+      // navigasi lembar (‹ Sebelumnya / Berikutnya › atau tombol
+      // Simpan & Berikutnya yang memang dipilihnya sendiri).
       setMessage("Penilaian disimpan.");
-      // Tampilkan bertahap: bila target lompatan berada di luar lipatan,
-      // perluas tampilan sampai targetnya ikut terlihat.
-      const nextIndex = displayAttempts.findIndex((attempt) => attempt.id === nextAttempt.id);
-      if (nextIndex >= gradingRevealedCount) {
-        setGradingRevealedCount(revealedCountForIndex(nextIndex));
-      }
-      if (gradingCombined && nextAttempt.worksheet_id && nextAttempt.worksheet_id !== savedWorksheetId) {
-        gradingPickRef.current = true;
-        setSelectedWorksheetId(nextAttempt.worksheet_id);
-      }
-      setSelectedAttemptId(nextAttempt.id);
-    } else {
-      setMessage("Penilaian disimpan. Semua pengumpulan pada daftar ini sudah dinilai.");
+      await loadAttempts(savedWorksheetId);
+      if (gradingCombined) await loadAllAttempts();
       await loadAttemptDetail(savedWorksheetId, savedAttemptId);
     }
   }
@@ -2781,7 +2757,8 @@ export default function GuruPage() {
   // seketika (klik chip cepat, atau komitmen kolom nilai/catatan), sehingga
   // penilaian dapat dicicil dan dilanjutkan lain waktu. Nilai yang sama
   // dengan potret tersimpan tidak dikirim ulang. Bila butir ini adalah yang
-  // terakhir, server menuntaskan attempt ini dan antrean lanjut seperti
+  // terakhir, server menuntaskan attempt ini dan guru diberi tahu lewat
+  // pesan halaman — lembar tetap pada pengumpulan ini, sama seperti
   // sesudah simpan menyeluruh.
   async function commitGradeItem(item: WorksheetAttemptItem, scoreText: string, noteText: string) {
     if (!selectedWorksheetId || !selectedAttemptId || !attemptDetail) return;
@@ -2837,7 +2814,11 @@ export default function GuruPage() {
       setAttempts((current) => applyProgress(current));
       setAllAttempts((current) => applyProgress(current));
       if (response.data.complete) {
-        await advanceAfterGrading(worksheetId, attemptId);
+        // Tuntas dinilai — tetapi lembar TETAP pada pengumpulan ini:
+        // tidak ada lompatan otomatis (lihat saveGrades). Penanda
+        // kemajuan pada rincian dan daftar sudah disegarkan dari respons
+        // server di atas; guru berpindah sendiri lewat navigasi lembar.
+        setMessage("Penilaian disimpan.");
       }
     } catch (error) {
       setItemSaveStates((current) => ({ ...current, [item.id]: "error" }));
@@ -2890,7 +2871,7 @@ export default function GuruPage() {
     if (gradingDirty && !(await saveGradesCore())) return;
     // Target di luar lipatan tampilan: perluas daftar sampai ikut
     // terlihat, memakai mekanisme tampil-bertahap panel yang sama
-    // seperti lompat otomatis penilaian.
+    // seperti Simpan & Berikutnya.
     if (targetIndex >= gradingRevealedCount) {
       setGradingRevealedCount(revealedCountForIndex(targetIndex));
     }
@@ -2898,7 +2879,7 @@ export default function GuruPage() {
   }
 
   // "Simpan & Berikutnya": simpan pengumpulan ini (bila ada suntingan),
-  // segarkan kedua sumber daftar seperti lompatan antrean lama, lalu
+  // segarkan kedua sumber daftar lebih dulu, lalu
   // buka pengumpulan berikutnya yang masih antre nilai SESUDAH posisi
   // pengumpulan ini pada urutan tampil terbaru. Bila tidak ada lagi,
   // lembar ditutup dan guru diberi tahu lewat toast pesan halaman.

@@ -193,16 +193,19 @@ check(
   page.includes("async function saveGradesCore(): Promise<boolean>"),
 );
 check(
-  "saveGrades lama tetap memajukan antrean sesudah inti berhasil",
-  page.includes("if (await saveGradesCore()) {\n      await advanceAfterGrading(savedWorksheetId, savedAttemptId);\n    }"),
+  "saveGrades tetap pada lembar yang sama sesudah inti berhasil (tanpa lompatan antrean)",
+  page.includes("if (await saveGradesCore()) {")
+    && page.includes('setMessage("Penilaian disimpan.");')
+    && page.includes("await loadAttemptDetail(savedWorksheetId, savedAttemptId);")
+    && !page.includes("advanceAfterGrading"),
 );
 check(
   "navigasi dan Simpan & Berikutnya sama-sama simpan-dulu bila kotor, batal bila gagal",
   count(page, "if (gradingDirty && !(await saveGradesCore())) return;") === 2,
 );
-check("footer Simpan penilaian memanggil saveGrades yang lama", page.includes("onClick={() => void saveGrades()}>Simpan penilaian</button>"));
+check("footer Simpan penilaian memanggil saveGrades", page.includes("onClick={() => void saveGrades()}>Simpan penilaian</button>"));
 check(
-  "Simpan & Berikutnya menyegarkan kedua sumber daftar seperti lompatan lama",
+  "Simpan & Berikutnya menyegarkan kedua sumber daftar sebelum berpindah",
   page.includes("const freshAttempts = await loadAttempts(worksheetId);")
     && page.includes("const freshAllAttempts = gradingCombined ? await loadAllAttempts() : null;"),
 );

@@ -71,8 +71,9 @@ console.log("Case 3: autosave per butir di halaman guru (statis)");
   check("nilai tak berubah tidak dikirim ulang (potret tersimpan)", guru.includes("savedGradeRef") && guru.includes("saved.score === score && saved.note === note"));
   check("penanda Tersimpan ✓ per butir", guru.includes("Tersimpan ✓") && guru.includes('itemSaveStates[item.id] === "saved"'));
   check("penanda Menyimpan… per butir", guru.includes("Menyimpan nilai…"));
-  check("tuntas autosave → antrean lanjut seperti simpan menyeluruh", guru.includes("if (response.data.complete) {\n        await advanceAfterGrading(worksheetId, attemptId);"));
-  check("simpan menyeluruh tetap memakai alur lanjut yang sama", guru.includes("await advanceAfterGrading(savedWorksheetId, savedAttemptId);"));
+  check("tuntas autosave → pesan Penilaian disimpan, lembar tetap pada pengumpulan yang sama", guru.includes("if (response.data.complete)") && guru.includes('setMessage("Penilaian disimpan.");'));
+  check("tidak ada lagi pemicu lompatan antrean otomatis sesudah simpan", !guru.includes("advanceAfterGrading"));
+  check("simpan menyeluruh menyegarkan rincian lembar yang sama sesudah simpan", guru.includes("await loadAttemptDetail(savedWorksheetId, savedAttemptId);"));
   check("tombol Simpan penilaian tetap ada", guru.includes(">Simpan penilaian</button>"));
 }
 

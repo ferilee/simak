@@ -691,7 +691,9 @@ muridRoutes.post("/welcome/seen", async (c) => {
 });
 
 // Halaman "Nilai Saya": rangkuman semua nilai LKPD murid yang meminta yang
-// sudah terbit — satu baris per penugasan yang menjadi sasarannya (anggota
+// penugasannya sudah terbit ATAU sudah ditutup (status "draf" tetap gugur:
+// nilai yang sudah dinilai tidak hilang dari halaman ini hanya karena
+// gurunya menutup penugasannya) — satu baris per penugasan yang menjadi sasarannya (anggota
 // kelas tujuan ATAU murid sasaran langsung, gabungan yang sama dengan
 // /today) dan attempt-nya untuk konteks penugasan itu sudah dinilai.
 // Resolusi attempt meniru persis GET /assignments/:id (attempt individu +
@@ -712,13 +714,13 @@ muridRoutes.get("/nilai", async (c) => {
         .select()
         .from(assignments)
         .innerJoin(assignmentClasses, eq(assignmentClasses.assignmentId, assignments.id))
-        .where(and(eq(assignments.status, "terbit"), inArray(assignmentClasses.classId, classIds)))
+        .where(and(inArray(assignments.status, ["terbit", "ditutup"]), inArray(assignmentClasses.classId, classIds)))
     : [];
   const directRows = await db
     .select()
     .from(assignments)
     .innerJoin(assignmentStudents, eq(assignmentStudents.assignmentId, assignments.id))
-    .where(and(eq(assignments.status, "terbit"), eq(assignmentStudents.studentId, user.userId)));
+    .where(and(inArray(assignments.status, ["terbit", "ditutup"]), eq(assignmentStudents.studentId, user.userId)));
   const uniqueAssignments = [...new Map([...assignmentRows, ...directRows].map((row) => [row.assignments.id, row.assignments])).values()]
     .filter((assignment) => assignment.worksheetId !== null);
 

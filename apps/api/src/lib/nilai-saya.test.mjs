@@ -193,7 +193,7 @@ console.log("Case 8: kabel route — kepemilikan data + kelayakan sasaran");
   const handler = source.slice(nilaiStart, nilaiEnd);
   check("sasaran via kelas tujuan (assignmentClasses)", handler.includes("assignmentClasses"));
   check("sasaran langsung siswa tertentu (assignmentStudents)", handler.includes("assignmentStudents"));
-  check("hanya penugasan terbit", handler.includes('eq(assignments.status, "terbit")'));
+  check("penugasan terbit atau ditutup diterima, draf tetap gugur", (handler.split('inArray(assignments.status, ["terbit", "ditutup"])').length - 1) === 2 && !handler.includes('eq(assignments.status, "terbit")'));
   check("attempt individu terlingkup murid yang meminta", handler.includes("eq(worksheetAttempts.studentId, user.userId)"));
   check("kelompok dimuat untuk murid yang meminta", handler.includes("loadStudentGroup(assignment.id, user.userId)"));
   check("attempt kelompok terlingkup kelompok murid itu", handler.includes("eq(worksheetAttempts.groupId, group.id)"));

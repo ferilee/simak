@@ -1,7 +1,7 @@
 import { pickEffectiveAttempt } from "./groups";
 
 // Halaman "Nilai Saya" murid (v1.0.35): satu halaman yang merangkum semua
-// nilai LKPD murid yang sudah terbit, tanpa harus membuka detail tiap
+// nilai LKPD murid yang penugasannya sudah terbit atau ditutup, tanpa harus membuka detail tiap
 // penugasan. Berkas ini memuat aturan murninya (tanpa basis data) supaya
 // perilakunya terkunci oleh tes unit.
 //

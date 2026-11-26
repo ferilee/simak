@@ -30,7 +30,14 @@ function renderInline(text: string, codeSegments: string[]): string {
     .replace(/\*\*([\s\S]+?)\*\*/g, "<strong>$1</strong>")
     .replace(/__([\s\S]+?)__/g, "<strong>$1</strong>")
     .replace(/\*([^*\n]+)\*/g, "<em>$1</em>")
-    .replace(/(?<![\w])_([^_\n]+)_(?![\w])/g, "<em>$1</em>")
+    // Tanpa pola intip-belakang (lookbehind): JavaScriptCore Safari < 16.4
+    // (iOS ≤ 16.3) menolak pola itu sebagai SyntaxError saat berkas dimuat,
+    // sehingga
+    // seluruh halaman materi runtuh di iPhone lama (kasus Rafael, iOS
+    // 16.3.1, 26 Nov 2026). Karakter pembatas ditangkap sebagai grup $1
+    // dan dipancarkan kembali — semantiknya sama: garis bawah di dalam
+    // kata (snake_case) tidak menjadi miring.
+    .replace(/(^|[^\w])_([^_\n]+)_(?![\w])/gm, "$1<em>$2</em>")
     .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, label: string, url: string) =>
       /^https?:\/\//i.test(url)
         ? `<a href="${url}" target="_blank" rel="noreferrer">${label}</a>`

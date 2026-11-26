@@ -4,7 +4,7 @@
 // what is missing instead of thinking the button is dead.
 // Run with bun from apps/web:  bun lib/label-kumpulkan.test.mjs
 import { readFileSync } from "node:fs";
-import { ITEM_TYPE_LABELS, itemTypeLabel, submitButtonLabel } from "./label-kumpulkan.ts";
+import { ITEM_TYPE_LABELS, itemTypeLabel, submitButtonLabel, submitDoneLabel, submittedAtCaption } from "./label-kumpulkan.ts";
 
 let passed = 0;
 let failed = 0;
@@ -99,6 +99,46 @@ console.log("Case 5: responsif — baris tombol membungkus, tidak meluber di lay
   check(
     "bilah kemajuan induk memang sudah membungkus sejak sebelumnya",
     page.includes('progressBar: { position: "sticky" as const, top: 0, zIndex: 10, display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" as const'),
+  );
+}
+
+console.log("Case 6: keadaan akhir tombol — label 'Sudah dikumpulkan'/'Sudah dinilai' + gaya abu-abu + keterangan waktu");
+{
+  check("terkumpul → 'Sudah dikumpulkan'", submitDoneLabel("terkumpul") === "Sudah dikumpulkan");
+  check("dinilai → 'Sudah dinilai'", submitDoneLabel("dinilai") === "Sudah dinilai");
+  check("draf → null (label kumpulkan biasa)", submitDoneLabel("draf") === null);
+  check("status kosong/tak dikenal → null", submitDoneLabel(null) === null && submitDoneLabel(undefined) === null && submitDoneLabel("aneh") === null);
+  check(
+    "keterangan waktu dari submitted_at (UTC → Asia/Jakarta)",
+    submittedAtCaption("2026-11-26T03:44:00.000Z") === "Dikumpulkan 26 Nov 2026 pukul 10.44",
+    submittedAtCaption("2026-11-26T03:44:00.000Z"),
+  );
+  check("submitted_at kosong → tanpa keterangan", submittedAtCaption(null) === null && submittedAtCaption(undefined) === null && submittedAtCaption("") === null);
+  check("submitted_at rusak → tanpa keterangan", submittedAtCaption("bukan-tanggal") === null);
+  check("halaman mengimpor helper keadaan akhir", page.includes('import { submitDoneLabel, submittedAtCaption } from "../../../../lib/label-kumpulkan";'));
+  check("tipe respons attempt menyatakan submitted_at", page.includes("submitted_at?: string | null;"));
+  check("submitted_at diterapkan dari respons attempt", page.includes("setSubmittedAt(attemptData.submitted_at ?? null);"));
+  check("label keadaan akhir dihitung dari status", page.includes("const doneLabel = submitDoneLabel(status);"));
+  check("keterangan waktu hanya pada keadaan bukan draf", page.includes('const submittedCaption = status !== "draf" ? submittedAtCaption(submittedAt) : null;'));
+  check(
+    "tombol bawah: keadaan akhir dirender sebagai tombol abu-abu berlabel keadaan",
+    page.includes("style={styles.primaryButtonDone}>{doneLabel}</button>"),
+  );
+  check(
+    "tombol bawah: tombol keadaan akhir tetap nonaktif di luar draf",
+    page.includes('disabled={saving || status !== "draf"} onClick={() => void submitWorksheet()} style={styles.primaryButtonDone}'),
+  );
+  check(
+    "gaya nonaktif abu-abu persis (latar #eaecf0, teks #667085, kursor bawaan)",
+    page.includes('primaryButtonDone: { border: "1px solid #eaecf0", borderRadius: 8, background: "#eaecf0", color: "#667085", padding: "11px 14px", fontWeight: 700, cursor: "default" }'),
+  );
+  check(
+    "keterangan waktu dirender di dekat tombol bawah",
+    page.includes("{submittedCaption ? <p style={styles.submittedNote}>{submittedCaption}</p> : null}"),
+  );
+  check(
+    "pengumpulan sendiri langsung mengisi waktu kumpul (tanpa muat ulang)",
+    page.includes("setSubmittedAt(new Date().toISOString());"),
   );
 }
 

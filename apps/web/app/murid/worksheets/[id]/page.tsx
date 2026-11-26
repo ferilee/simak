@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { apiRequest } from "../../../../lib/api";
 import { ITEM_TYPE_LABELS, itemTypeLabel, submitButtonLabel } from "../../../../lib/label-kumpulkan";
+import { submitDoneLabel, submittedAtCaption } from "../../../../lib/label-kumpulkan";
 import { materialBannerVisible } from "../../../../lib/pengingat";
 import { advanceSavedSnapshot, diffAnswersPayload, mergeLiveAnswers, type LiveAnswer, type LivePayloadEntry } from "../../../../lib/live-kelompok";
 import { prepareImageForUpload } from "../../../../lib/prepare-image";
@@ -44,6 +45,9 @@ type AttemptResponse = {
   ok: true;
   data: {
     status: "draf" | "terkumpul" | "dinilai" | null;
+    // Waktu pengumpulan dari server (API sudah mengirimnya); dipakai
+    // keterangan kecil di dekat tombol kumpulkan pada keadaan akhir.
+    submitted_at?: string | null;
     assignment_id?: number | null;
     // Konteks materi dari server untuk banner pengingat: modul milik
     // penugasan attempt ini + apakah murid sudah menuntaskannya.
@@ -124,6 +128,7 @@ export default function WorksheetPage() {
   const [contributionDrafts, setContributionDrafts] = useState<Record<number, number>>({});
   const [contributionSaving, setContributionSaving] = useState(false);
   const [status, setStatus] = useState<"draf" | "terkumpul" | "dinilai">("draf");
+  const [submittedAt, setSubmittedAt] = useState<string | null>(null);
   // Banner pengingat materi: konteksnya dari respons attempt (server),
   // penutupannya hanya state lokal sesi halaman ini — tidak disimpan
   // ke mana pun, jadi banner muncul lagi pada kunjungan berikutnya
@@ -223,6 +228,7 @@ export default function WorksheetPage() {
     }));
     setData(worksheetData);
     setStatus(attemptData.status ?? "draf");
+    setSubmittedAt(attemptData.submitted_at ?? null);
     setMaterialInfo(attemptData.material ?? null);
     setGroupInfo(attemptData.group ?? null);
     if (attemptData.last_edited_by) {
@@ -690,6 +696,10 @@ export default function WorksheetPage() {
         });
       }
       setStatus("terkumpul");
+      // Waktu kumpul lokal (≈ waktu server yang baru tercatat) agar
+      // keterangan di dekat tombol langsung tampil tanpa muat ulang;
+      // muatan attempt berikutnya menimpanya dengan nilai server.
+      setSubmittedAt(new Date().toISOString());
       setLivePresence([]);
       const xpAwarded = submitResult.data.xp_awarded ?? 0;
       // Perolehan > 0 dirayakan lewat panel perayaan (yang memuat
@@ -782,6 +792,12 @@ export default function WorksheetPage() {
   // yang terlihat). Label polos kembali begitu semua soal terjawab.
   // Semantik disabled tombol tidak berubah: hanya `saving`/status.
   const submitLabel = (base: string) => submitButtonLabel(base, answeredCount, totalCount);
+  // Keadaan akhir tombol bilah aksi bawah: sesudah terkumpul/dinilai
+  // tombolnya tetap tampil (nonaktif) tetapi berlabel keadaannya dan
+  // bergaya abu-abu, plus keterangan waktu pengumpulannya — supaya
+  // anggota kelompok lain tahu LKPD ini sudah dikumpulkan.
+  const doneLabel = submitDoneLabel(status);
+  const submittedCaption = status !== "draf" ? submittedAtCaption(submittedAt) : null;
   // Mode paginasi hanya untuk attempt yang masih bisa diedit; tampilan
   // terkumpul/dinilai tetap daftar penuh read-only seperti sebelumnya.
   const pagedMode = status === "draf" && data.items.length > 0;
@@ -1081,9 +1097,14 @@ export default function WorksheetPage() {
       ) : (
         <div style={styles.actions}>
           <button type="button" disabled={saving || status !== "draf"} onClick={() => void saveDraft()} style={styles.secondaryButton}>Simpan draf</button>
-          <button type="button" disabled={saving || status !== "draf"} onClick={() => void submitWorksheet()} style={styles.primaryButton}>{submitLabel(groupInfo ? "Kumpulkan atas nama kelompok" : "Kumpulkan LKPD")}</button>
+          {doneLabel ? (
+            <button type="button" disabled={saving || status !== "draf"} onClick={() => void submitWorksheet()} style={styles.primaryButtonDone}>{doneLabel}</button>
+          ) : (
+            <button type="button" disabled={saving || status !== "draf"} onClick={() => void submitWorksheet()} style={styles.primaryButton}>{submitLabel(groupInfo ? "Kumpulkan atas nama kelompok" : "Kumpulkan LKPD")}</button>
+          )}
         </div>
       )}
+      {submittedCaption ? <p style={styles.submittedNote}>{submittedCaption}</p> : null}
 
       {incompleteGate ? (
         <div
@@ -1326,5 +1347,10 @@ const styles = {
   notice: { color: "#667085", background: "#f8f9fc", padding: 12, borderRadius: 8 },
   actions: { display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" as const, marginTop: 24 },
   primaryButton: { border: 0, borderRadius: 8, background: "#175cd3", color: "white", padding: "11px 14px", fontWeight: 700 },
+  // Keadaan akhir tombol kumpulkan (terkumpul/dinilai): abu-abu jelas
+  // dari palet halaman ini (latar #eaecf0, teks #667085 — seperti chip
+  // reviewChipTodo), kursor bawaan: terbaca selesai, bukan tombol aktif.
+  primaryButtonDone: { border: "1px solid #eaecf0", borderRadius: 8, background: "#eaecf0", color: "#667085", padding: "11px 14px", fontWeight: 700, cursor: "default" },
+  submittedNote: { color: "#667085", fontSize: 13, textAlign: "right" as const, margin: "8px 0 0" },
   secondaryButton: { border: "1px solid #d0d5dd", borderRadius: 8, background: "white", padding: "11px 14px" },
 };

@@ -52,3 +52,36 @@ export function submitButtonLabel(baseLabel: string, answered: number, total: nu
   if (remaining === 0) return baseLabel;
   return `${baseLabel} · ${remaining} soal belum terjawab`;
 }
+
+/**
+ * Label tombol kumpulkan pada keadaan SESUDAH pengumpulan: tombol bilah
+ * aksi bawah halaman LKPD tetap tampil pada attempt terkumpul/dinilai
+ * (nonaktif), dan labelnya menyebut keadaannya — memakai istilah resmi
+ * yang sama dengan app/lib/labels.ts ("Sudah dikumpulkan"/"Sudah
+ * dinilai") — agar anggota kelompok lain langsung tahu LKPD kelompoknya
+ * sudah dikumpulkan salah satu anggota, bukan mengira tombolnya rusak.
+ * Status draf (dan nilai tak dikenal) menghasilkan null: pemanggil
+ * memakai label kumpulkan biasa.
+ */
+export function submitDoneLabel(status: string | null | undefined): string | null {
+  if (status === "terkumpul") return "Sudah dikumpulkan";
+  if (status === "dinilai") return "Sudah dinilai";
+  return null;
+}
+
+/**
+ * Keterangan kecil waktu pengumpulan di dekat tombol: "Dikumpulkan
+ * {tanggal} pukul {jam}" (Bahasa Indonesia, zona Asia/Jakarta — pola
+ * yang sama dengan penanda "Terakhir diubah oleh" di halaman LKPD).
+ * Berasal dari bidang submitted_at respons attempt; null/kosong/rusak
+ * menghasilkan null (keterangan tidak ditampilkan). Nama pengumpul
+ * tidak ditampilkan: ia memang tidak tercatat di basis data.
+ */
+export function submittedAtCaption(submittedAt: string | null | undefined): string | null {
+  if (!submittedAt) return null;
+  const date = new Date(submittedAt);
+  if (Number.isNaN(date.getTime())) return null;
+  const tanggal = new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeZone: "Asia/Jakarta" }).format(date);
+  const jam = new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "Asia/Jakarta" }).format(date);
+  return `Dikumpulkan ${tanggal} pukul ${jam}`;
+}

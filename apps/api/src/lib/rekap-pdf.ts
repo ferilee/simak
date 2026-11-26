@@ -124,7 +124,9 @@ export function planRekapCellFill(kolom: RekapFillColumn, keadaan: RekapRowState
       if (keadaan.lkpdStatus === "draf") return "kuning";
       return null; // terkumpul / dinilai
     case "nilai":
-      if (keadaan.nilai !== null) return null;
+      // Nilai angka: di bawah ambang 60 berblok merah (perhatian
+      // guru), 60 ke atas polos — angka menang atas status LKPD.
+      if (keadaan.nilai !== null) return keadaan.nilai < 60 ? "merah" : null;
       // Belum ada nilai: merah hanya bila LKPD-nya sendiri belum
       // dimulai; draf/terkumpul (dan tepi dinilai tanpa angka) kuning.
       return keadaan.lkpdStatus === "belum" ? "merah" : "kuning";
@@ -211,11 +213,12 @@ export function wrapLinesByChars(value: string, maxChars: number): string[] {
   return lines.length > 0 ? lines : [""];
 }
 
-// Sel kolom Murid berbentuk "Nama (username)": dua baris logis —
-// nama, lalu "(username)". Lebar kolom diukur per baris logis ini.
+// Sel kolom Murid kini berisi nama tampilan SAJA — username tidak
+// lagi ditampilkan pada PDF sesi — jadi sel selalu tepat satu baris
+// logis: nama utuh. Fungsi ini dipertahankan sebagai titik ukur
+// tunggal kolom bungkus pada perencana lebar di bawah.
 export function rekapNameLines(text: string): string[] {
-  const match = /^(.*) (\([^()]*\))$/.exec(text);
-  return match ? [match[1]!, match[2]!] : [text];
+  return [text];
 }
 
 function longestWordLength(text: string): number {
@@ -259,10 +262,9 @@ export function planRekapColumnWidths(options: RekapColumnWidthOptions): RekapCo
   for (let index = 0; index < columnCount; index += 1) {
     const header = headers[index]!;
     if (index === wrapColumnIndex) {
-      // Kolom bungkus: lebar dari baris logis terpanjang (nama /
-      // (username) diukur terpisah); chars = panjang baris logis
-      // terpanjang supaya pembungkus mematahkan tepat di antara
-      // kedua baris logis itu dan tidak memotong kata.
+      // Kolom bungkus: lebar dari baris logis terpanjang (sel Murid
+      // kini satu baris logis: nama utuh); chars = panjang baris
+      // logis terpanjang supaya pembungkus tidak memotong kata.
       let contentWidth = measure(header, headerFontSize);
       let contentChars = header.length;
       for (const row of rows) {
@@ -287,6 +289,37 @@ export function planRekapColumnWidths(options: RekapColumnWidthOptions): RekapCo
       }
       widths.push(roundUp1(contentWidth + padding));
       chars.push(contentChars);
+    }
+  }
+
+  // Pelebaran: bila total lebar isi di bawah lebar cetak, sisa ruang
+  // dibagikan proporsional terhadap lebar tiap kolom hingga total
+  // TEPAT selebar cetak — tabel memenuhi kertas antar-margin, bukan
+  // menggantung sempit di kiri. Dihitung dalam persepuluhan pt bulat
+  // supaya jumlah akhirnya persis; sisa pembulatan proporsional
+  // (kurang dari satu persepuluhan per kolom) diberikan ke kolom
+  // bungkus (Murid), atau kolom terlebar bila indeks bungkus tak sah.
+  const totalAwal = widths.reduce((sum, width) => sum + width, 0);
+  if (totalAwal < maxTableWidth) {
+    const tenths = widths.map((width) => Math.round(width * 10));
+    const totalTenths = tenths.reduce((sum, width) => sum + width, 0);
+    const targetTenths = Math.round(maxTableWidth * 10);
+    if (totalTenths > 0 && targetTenths > totalTenths) {
+      const surplus = targetTenths - totalTenths;
+      let distributed = 0;
+      for (let index = 0; index < columnCount; index += 1) {
+        const share = Math.floor((surplus * tenths[index]!) / totalTenths);
+        tenths[index] = tenths[index]! + share;
+        distributed += share;
+      }
+      const remainder = surplus - distributed;
+      if (remainder > 0) {
+        const targetIndex = wrapColumnIndex >= 0 && wrapColumnIndex < columnCount
+          ? wrapColumnIndex
+          : tenths.indexOf(Math.max(...tenths));
+        tenths[targetIndex] = tenths[targetIndex]! + remainder;
+      }
+      for (let index = 0; index < columnCount; index += 1) widths[index] = tenths[index]! / 10;
     }
   }
 

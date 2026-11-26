@@ -11,15 +11,20 @@
 //    persisnya, dan warna kolom Materi/Modul yang melekat padanya.
 //  - planRekapCellFill untuk semua aturan yang disetujui, termasuk
 //    tepi: materi dari keadaan membacanya sendiri, LKPD belum/draf/
-//    terkumpul/dinilai, nilai "-" pada tiga keadaan LKPD, exit
-//    sudah/belum, RUAS berlaku vs tidak berlaku.
+//    terkumpul/dinilai, nilai angka < 60 merah & >= 60 polos (tepi
+//    persis 0 / 59.99 / 60 / 100), nilai "-" pada tiga keadaan LKPD,
+//    exit sudah/belum, RUAS berlaku vs tidak berlaku.
 //  - measurePdfText = lebar Helvetica baku atas teks tersanitasi
 //    (sama seperti pdfText generator).
 //  - planRekapColumnWidths: lebar >= isi terpanjang (kasus nyata
 //    "terkumpul" TIDAK lagi terpotong seperti lebar tetap lama),
-//    kepala bisa menjadi yang terpanjang, nama dua baris diukur per
-//    baris logis, dan saat total melebihi lebar cetak HANYA kolom
-//    Murid yang menyusut (lantai kata terpanjang dihormati).
+//    kepala bisa menjadi yang terpanjang, nama diukur sebagai satu
+//    baris logis utuh (nama tampilan saja, tanpa username), saat
+//    total di bawah lebar cetak tabel DILEBARKAN proporsional hingga
+//    total tepat selebar cetak (Murid terlebar, sisa pembulatan
+//    persepuluhan ke kolom Murid), dan saat total melebihi lebar
+//    cetak HANYA kolom Murid yang menyusut (lantai kata terpanjang
+//    dihormati).
 //  - Wiring: createSessionPdf memakai perencana warna + lebar +
 //    warna kepala; lebar tetap lama untuk tabel sesi hilang; PDF
 //    Rentang (createRangePdf) TIDAK berubah perilakunya.
@@ -96,7 +101,12 @@ check("lkpd draf -> kuning", planRekapCellFill("lkpd", S({ lkpdStatus: "draf" })
 check("lkpd terkumpul -> tanpa warna", planRekapCellFill("lkpd", S({ lkpdStatus: "terkumpul" })) === null);
 check("lkpd dinilai -> tanpa warna", planRekapCellFill("lkpd", S({ lkpdStatus: "dinilai" })) === null);
 // Nilai
-check("nilai ada angka -> tanpa warna (status apa pun)", planRekapCellFill("nilai", S({ lkpdStatus: "belum", nilai: 0 })) === null);
+check("nilai 0 -> merah (di bawah ambang 60)", planRekapCellFill("nilai", S({ nilai: 0 })) === "merah");
+check("nilai 59.99 -> merah (tepat di bawah ambang)", planRekapCellFill("nilai", S({ nilai: 59.99 })) === "merah");
+check("nilai 60 -> tanpa warna (ambang itu sendiri lulus)", planRekapCellFill("nilai", S({ nilai: 60 })) === null);
+check("nilai 100 -> tanpa warna", planRekapCellFill("nilai", S({ nilai: 100 })) === null);
+check("nilai < 60 merah pada status LKPD apa pun", planRekapCellFill("nilai", S({ lkpdStatus: "terkumpul", nilai: 45 })) === "merah" && planRekapCellFill("nilai", S({ lkpdStatus: "belum", nilai: 45 })) === "merah");
+check("nilai >= 60 polos walau LKPD belum (angka menang atas status)", planRekapCellFill("nilai", S({ lkpdStatus: "belum", nilai: 80 })) === null);
 check("nilai kosong + draf -> kuning", planRekapCellFill("nilai", S({ lkpdStatus: "draf", nilai: null })) === "kuning");
 check("nilai kosong + terkumpul -> kuning", planRekapCellFill("nilai", S({ lkpdStatus: "terkumpul", nilai: null })) === "kuning");
 check("nilai kosong + belum -> merah", planRekapCellFill("nilai", S({ lkpdStatus: "belum", nilai: null })) === "merah");
@@ -116,6 +126,9 @@ check("baris A (draf, belum exit): materi kuning, lkpd kuning, nilai kuning, exi
 const fillsC = planRekapRowFills(S({ lkpdStatus: "terkumpul", nilai: null, ruasScore: 76 }));
 check("baris C (terkumpul belum dinilai): hanya nilai kuning",
   fillsC.materi === null && fillsC.lkpd === null && fillsC.nilai === "kuning" && fillsC.exit === null && fillsC.ruas === null, JSON.stringify(fillsC));
+const fillsLow = planRekapRowFills(S({ nilai: 45 }));
+check("baris nilai 45 (di bawah ambang): hanya nilai merah",
+  fillsLow.materi === null && fillsLow.lkpd === null && fillsLow.nilai === "merah" && fillsLow.exit === null && fillsLow.ruas === null, JSON.stringify(fillsLow));
 const fillsZ = planRekapRowFills(S({ materiState: "belum", lkpdStatus: "belum", nilai: null, exitTicketSubmitted: false, ruasScore: null }));
 check("baris belum menyentuh apa pun + kuis berlaku: kelimanya merah",
   fillsZ.materi === "merah" && fillsZ.lkpd === "merah" && fillsZ.nilai === "merah" && fillsZ.exit === "merah" && fillsZ.ruas === "merah", JSON.stringify(fillsZ));
@@ -132,40 +145,46 @@ check("teks kosong lebar 0", measurePdfText("", 8) === 0);
 // --- wrapLinesByChars (cermin pembungkus generator) --------------------------
 check("wrap 'terkumpul' pada 8 karakter terpecah (akar keluhan lama)", JSON.stringify(wrapLinesByChars("terkumpul", 8)) === JSON.stringify(["terkumpu", "l"]));
 check("wrap mematahkan pada batas kata", JSON.stringify(wrapLinesByChars("Budi Santoso (budi)", 12)) === JSON.stringify(["Budi Santoso", "(budi)"]));
-check("nama dipecah menjadi dua baris logis", JSON.stringify(rekapNameLines("Muhamad Noval Yan Prayoga (noval_tkja)")) === JSON.stringify(["Muhamad Noval Yan Prayoga", "(noval_tkja)"]));
-check("nama tanpa username tetap satu baris", JSON.stringify(rekapNameLines("Nama Saja")) === JSON.stringify(["Nama Saja"]));
+check("nama kini satu baris logis utuh (username tidak lagi dipecah)", JSON.stringify(rekapNameLines("Muhamad Noval Yan Prayoga")) === JSON.stringify(["Muhamad Noval Yan Prayoga"]));
+check("teks mirip format lama pun tetap satu baris logis", JSON.stringify(rekapNameLines("Nama (sesuatu)")) === JSON.stringify(["Nama (sesuatu)"]));
 
 // --- planRekapColumnWidths ----------------------------------------------------
 const HEADERS = ["No.", "Murid", "Kelas", "Materi/Modul", "LKPD", "Nilai", "Exit", "RUAS"];
 const REF_ROWS = [
-  ["1", "Muhamad Noval Yan Prayoga (noval_tkja)", "X TKJ A", "Belum tuntas", "draf", "-", "Belum", "75"],
-  ["2", "Feli Dwi Wijaya (feli_tkja)", "X TKJ A", "Tuntas", "dinilai", "75", "Sudah", "78"],
-  ["3", "Muhamad Evan Ainuridho (evan_tkja)", "X TKJ A", "Tuntas", "terkumpul", "-", "Sudah", "76"],
+  ["1", "Muhamad Noval Yan Prayoga", "X TKJ A", "Belum tuntas", "draf", "-", "Belum", "75"],
+  ["2", "Feli Dwi Wijaya", "X TKJ A", "Tuntas", "dinilai", "75", "Sudah", "78"],
+  ["3", "Muhamad Evan Ainuridho", "X TKJ A", "Tuntas", "terkumpul", "-", "Sudah", "76"],
 ];
 const planRef = planRekapColumnWidths({ headers: HEADERS, rows: REF_ROWS, measure: measurePdfText, headerFontSize: 8, bodyFontSize: 7.5, cellPaddingX: 4, maxTableWidth: 523, wrapColumnIndex: 1 });
 check("kolom LKPD muat 'terkumpul' utuh: chars = 9 (lama 8 yang memotong)", planRef.chars[4] === "terkumpul".length && planRef.chars[4] > 8, String(planRef.chars[4]));
 check("kolom LKPD selebar isinya + padding", planRef.widths[4] >= measurePdfText("terkumpul", 7.5) + 8 - 0.001, String(planRef.widths[4]));
 check("kolom Materi/Modul muat 'Belum tuntas' utuh", planRef.chars[3] >= "Belum tuntas".length && planRef.widths[3] >= measurePdfText("Belum tuntas", 7.5) + 8 - 0.001);
-check("kolom Murid diukur per baris logis, bukan string penuh",
-  planRef.widths[1] >= Math.max(measurePdfText("Muhamad Noval Yan Prayoga", 7.5), measurePdfText("(noval_tkja)", 7.5)) + 8 - 0.001 &&
-  planRef.widths[1] < measurePdfText("Muhamad Noval Yan Prayoga (noval_tkja)", 7.5) + 8, String(planRef.widths[1]));
-check("total rencana referensi muat lebar cetak 523 -> nama tidak menyusut",
-  planRef.widths.reduce((a, b) => a + b, 0) <= 523 && planRef.namaMembungkus === false,
+check("kolom Murid diukur dari nama utuh satu baris (tanpa username)",
+  planRef.widths[1] >= measurePdfText("Muhamad Noval Yan Prayoga", 7.5) + 8 - 0.001, String(planRef.widths[1]));
+check("pelebaran: total rencana referensi tepat selebar cetak 523",
+  near(planRef.widths.reduce((a, b) => a + b, 0), 523),
   `total=${planRef.widths.reduce((a, b) => a + b, 0)}`);
+check("pelebaran: kolom Murid menjadi yang terlebar",
+  planRef.widths[1] === Math.max(...planRef.widths), JSON.stringify(planRef.widths));
+check("pelebaran bukan penyusutan: namaMembungkus tetap false", planRef.namaMembungkus === false);
 check("semua kolom non-bungkus: chars >= teks terpanjangnya",
   HEADERS.every((_, i) => i === 1 || planRef.chars[i] >= Math.max(HEADERS[i].length, ...REF_ROWS.map((r) => r[i].length))));
 
-// Kepala sebagai teks terpanjang
-const planHeader = planRekapColumnWidths({ headers: ["Nilai RUAS"], rows: [["5"], ["100"]], measure: measurePdfText, headerFontSize: 8, bodyFontSize: 7.5, cellPaddingX: 4, maxTableWidth: 523, wrapColumnIndex: -1 });
-check("kepala terpanjang menentukan lebar ('Nilai RUAS')", planHeader.widths[0] >= measurePdfText("Nilai RUAS", 8) + 8 - 0.001 && planHeader.widths[0] < measurePdfText("Nilai RUAS", 8) + 8 + 1, String(planHeader.widths[0]));
+// Kepala sebagai teks terpanjang (lebar cetak disetel tepat selebar
+// isi alami supaya pelebaran/penyusutan tidak ikut bermain)
+const headerNatural = Math.ceil((measurePdfText("Nilai RUAS", 8) + 8) * 10) / 10;
+const planHeader = planRekapColumnWidths({ headers: ["Nilai RUAS"], rows: [["5"], ["100"]], measure: measurePdfText, headerFontSize: 8, bodyFontSize: 7.5, cellPaddingX: 4, maxTableWidth: headerNatural, wrapColumnIndex: -1 });
+check("kepala terpanjang menentukan lebar ('Nilai RUAS')", near(planHeader.widths[0], headerNatural) && planHeader.widths[0] >= measurePdfText("Nilai RUAS", 8) + 8 - 0.001, String(planHeader.widths[0]));
 
 // Skenario menyusut: ukur suntikan seragam 10pt/karakter
 const flatMeasure = (text) => text.length * 10;
 const LONG_ROWS = [
-  ["1", "Budi Santoso (budi_tkja)", "X TKJ A", "Tuntas", "terkumpul", "80", "Sudah", "75"],
-  ["2", "Alexander Christopher Wijaya (alexander_tkj)", "X TKJ A", "Belum tuntas", "draf", "-", "Belum", "-"],
+  ["1", "Budi Santoso", "X TKJ A", "Tuntas", "terkumpul", "80", "Sudah", "75"],
+  ["2", "Alexander Christopher Wijaya", "X TKJ A", "Belum tuntas", "draf", "-", "Belum", "-"],
 ];
-const planNatural = planRekapColumnWidths({ headers: HEADERS, rows: LONG_ROWS, measure: flatMeasure, headerFontSize: 8, bodyFontSize: 7.5, cellPaddingX: 4, maxTableWidth: 100000, wrapColumnIndex: 1 });
+// Lebar cetak 794 = total alami persis: pelebaran dan penyusutan
+// sama-sama tidak bermain, rencana = lebar isi murni.
+const planNatural = planRekapColumnWidths({ headers: HEADERS, rows: LONG_ROWS, measure: flatMeasure, headerFontSize: 8, bodyFontSize: 7.5, cellPaddingX: 4, maxTableWidth: 794, wrapColumnIndex: 1 });
 const planShrunk = planRekapColumnWidths({ headers: HEADERS, rows: LONG_ROWS, measure: flatMeasure, headerFontSize: 8, bodyFontSize: 7.5, cellPaddingX: 4, maxTableWidth: 700, wrapColumnIndex: 1 });
 check("rencana alami: total 794, Murid 288", near(planNatural.widths.reduce((a, b) => a + b, 0), 794) && near(planNatural.widths[1], 288), JSON.stringify(planNatural.widths));
 check("menyusut: hanya kolom Murid yang berubah", planShrunk.widths.every((w, i) => i === 1 || near(w, planNatural.widths[i])), JSON.stringify(planShrunk.widths));
@@ -175,7 +194,15 @@ check("menyusut: chars Murid 20 (baris simulasi muat lebar dalam)",
   `chars=${planShrunk.chars[1]} width=${planShrunk.widths[1]}`);
 // Lantai kata terpanjang: lebar cetak mustahil kecil -> Murid berhenti di lantai
 const planFloor = planRekapColumnWidths({ headers: HEADERS, rows: LONG_ROWS, measure: flatMeasure, headerFontSize: 8, bodyFontSize: 7.5, cellPaddingX: 4, maxTableWidth: 100, wrapColumnIndex: 1 });
-check("lantai: Murid berhenti pada kata terpanjang '(alexander_tkj)' = 158", near(planFloor.widths[1], 158) && planFloor.chars[1] >= "(alexander_tkj)".length, `width=${planFloor.widths[1]} chars=${planFloor.chars[1]}`);
+check("lantai: Murid berhenti pada kata terpanjang 'Christopher' = 118", near(planFloor.widths[1], 118) && planFloor.chars[1] >= "Christopher".length, `width=${planFloor.widths[1]} chars=${planFloor.chars[1]}`);
+
+// Pelebaran proporsional persis (ukur seragam): lebar isi 18 & 48,
+// sisa 100pt dibagi menurut lebar isi (27.2 & 72.7), sisa pembulatan
+// persepuluhan (0.1) jatuh ke kolom Murid -> 45.2 & 120.8.
+const planWide = planRekapColumnWidths({ headers: ["A", "BB"], rows: [["x", "yyyy"]], measure: flatMeasure, headerFontSize: 8, bodyFontSize: 7.5, cellPaddingX: 4, maxTableWidth: 166, wrapColumnIndex: 1 });
+check("pelebaran proporsional: 18 & 48 -> 45.2 & 120.8, total tepat 166",
+  near(planWide.widths[0], 45.2) && near(planWide.widths[1], 120.8) && near(planWide.widths.reduce((a, b) => a + b, 0), 166),
+  JSON.stringify(planWide.widths));
 
 // --- Wiring generator (routes/reports.ts) --------------------------------------
 const reports = readFileSync(new URL("../routes/reports.ts", import.meta.url), "utf8");
@@ -193,6 +220,7 @@ check("kedua CSV berkepala Materi/Modul dengan nilai keadaan membaca", reports.i
 check("lebar tetap lama tabel sesi hilang", !reports.includes('width: 150, chars: 24') && !reports.includes('{ title: "LKPD", width: 55, chars: 8 }'));
 check("judul & subjudul sesi tidak berubah", sessionFn.includes("`SIMAK - Rekap Sesi: ${data.assignment.title}`") && sessionFn.includes("Batas: ${pdfDate(data.assignment.due_at)}"));
 check("isi sel sesi lain tidak berubah", sessionFn.includes('student.exit_ticket_submitted ? "Sudah" : "Belum"') && sessionFn.includes('student.submission_status'));
+check("sel Murid PDF sesi = nama tampilan saja (username tidak tampil di PDF)", sessionFn.includes("String(index + 1), student.name, student.class_name") && !sessionFn.includes("student.username"));
 const rangeFn = reports.slice(reports.indexOf("function createRangePdf"), reports.indexOf("type TabularPdfOptions"));
 check("PDF Rentang tidak disentuh: kolom tetap lama + tanpa opsi warna", rangeFn.includes('{ title: "Penugasan", width: 190, chars: 30 }') && !rangeFn.includes("cellFills") && !rangeFn.includes("headerColor"));
 check("renderer menggambar isian sel dari perencana", reports.includes("pdfCellFill") && reports.includes("rekapFillPdfColor(fill)"));

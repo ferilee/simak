@@ -307,10 +307,13 @@ function createSessionPdf(data: SessionReportData) {
   // Kolom keempat kini keadaan membaca materi (Tuntas/Belum tuntas/
   // Belum) dari sinyal activity_logs per modul penugasan — kolom
   // Presensi era daring diganti untuk pembelajaran tatap muka.
-  const rows = data.students.map((student, index) => [String(index + 1), `${student.name} (${student.username})`, student.class_name, readingTextOf(student), student.submission_status, student.total_score === null ? "-" : String(student.total_score), student.exit_ticket_submitted ? "Sudah" : "Belum", student.ruas_score === null ? "-" : String(student.ruas_score)]);
+  // Kolom Murid pada PDF sesi hanya nama tampilan — username tidak
+  // ditampilkan (tetap ada pada CSV dan JSON).
+  const rows = data.students.map((student, index) => [String(index + 1), student.name, student.class_name, readingTextOf(student), student.submission_status, student.total_score === null ? "-" : String(student.total_score), student.exit_ticket_submitted ? "Sudah" : "Belum", student.ruas_score === null ? "-" : String(student.ruas_score)]);
   // Lebar kolom mengikuti isi (lib/rekap-pdf): tidak ada lagi teks
   // terpotong seperti "terkumpul" pada lebar tetap lama. Lebar cetak
-  // halaman A4 potret di antara margin 36pt kiri/kanan = 523pt.
+  // halaman A4 potret di antara margin 36pt kiri/kanan = 523pt, dan
+  // perencana melebarkan tabel hingga tepat memenuhi lebar itu.
   const widthPlan = planRekapColumnWidths({ headers, rows, measure: measurePdfText, headerFontSize: 8, bodyFontSize: 7.5, cellPaddingX: 4, maxTableWidth: 523, wrapColumnIndex: 1 });
   const columns = headers.map((title, index) => ({ title, width: widthPlan.widths[index]!, chars: widthPlan.chars[index]! }));
   // Warna latar sel menurut ketuntasan (lib/rekap-pdf). Penugasan

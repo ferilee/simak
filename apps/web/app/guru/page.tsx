@@ -3140,10 +3140,18 @@ export default function GuruPage() {
     }
   }
 
+  // Jalur tutup panel kelompok — satu-satunya jalan menutup tampilan
+  // kelompok: dipakai sakelar tombol Kelompok dan onClose modal
+  // Kelompok. Kedua keadaan penandanya di-null-kan, sehingga membuka
+  // lagi selalu memuat ulang dari server (perilaku lama dipertahankan).
+  function closeGroupsPanel() {
+    setSelectedGroupAssignmentId(null);
+    setAssignmentGroups(null);
+  }
+
   function toggleGroupsPanel(assignment: AssignmentSummary) {
     if (selectedGroupAssignmentId === assignment.id) {
-      setSelectedGroupAssignmentId(null);
-      setAssignmentGroups(null);
+      closeGroupsPanel();
       return;
     }
     setSelectedGroupAssignmentId(assignment.id);
@@ -4374,143 +4382,8 @@ export default function GuruPage() {
         ) : null}
         {assignments.length === 0 ? <p style={styles.empty}>Belum ada penugasan.</p> : visibleAssignments.length === 0 ? (
           <p style={styles.empty}>{assignmentClassFilter !== "semua" ? "Tidak ada penugasan yang cocok dengan saringan kelas dan status saat ini." : `Tidak ada penugasan berstatus ${activeAssignmentFilterLabel}.`}</p>
-        ) : <div className="module-list">{visibleAssignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.target_type === "siswa" ? `${assignment.students.length} siswa tertentu` : assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}{assignment.work_mode === "kelompok" ? <> · <span className="group-mode-badge">👥 Kelompok · {assignment.group_size ?? 4} orang</span></> : null}{assignment.target_type === "siswa" ? <> · <span className="group-mode-badge">Siswa tertentu</span></> : null}</span>{gradingBadgeVisible(assignment) ? renderGradingRollup(assignment, gradingForClassFilter(assignment, assignmentClassFilter)) : null}</div><div className="resource-row-actions">{assignment.work_mode === "kelompok" ? <button type="button" onClick={() => toggleGroupsPanel(assignment)} className={`row-action-button is-outline${selectedGroupAssignmentId === assignment.id ? " is-active" : ""}`} aria-pressed={selectedGroupAssignmentId === assignment.id}><span className="action-icon" aria-hidden="true">👥</span>Kelompok</button> : null}{assignment.status !== "ditutup" ? <button type="button" onClick={() => startEditAssignment(assignment)} className="row-action-button is-outline"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>Edit</button> : null}<button type="button" onClick={() => void changeAssignmentStatus(assignment)} className={assignment.status === "terbit" ? "row-action-button is-outline" : "row-action-button is-primary"}>{assignment.status === "terbit" ? <><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>Tutup</> : <><span className="action-icon" aria-hidden="true">🚀</span>Terbitkan</>}</button>{assignment.status === "terbit" ? <a href={`https://wa.me/?text=${encodeURIComponent(buildWhatsAppShareMessage(assignment, typeof window !== "undefined" ? window.location.origin : ""))}`} target="_blank" rel="noreferrer" className="row-action-button is-whatsapp"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.6L3 21l1.9-5.6A8.5 8.5 0 1 1 21 11.5Z" /></svg>Bagikan WA</a> : null}</div></article>)}</div>}
+        ) : <div className="module-list">{visibleAssignments.map((assignment) => <article key={assignment.id} className="resource-row resource-row-assignment"><div className="module-row-main"><strong>{assignment.title}</strong><span>{assignment.target_type === "siswa" ? `${assignment.students.length} siswa tertentu` : assignment.classes.map((kelas) => kelas.name).join(", ") || "Tanpa kelas"}</span><span>{assignment.status} · batas {formatDate(assignment.due_at)}{assignment.work_mode === "kelompok" ? <> · <span className="group-mode-badge">👥 Kelompok · {assignment.group_size ?? 4} orang</span></> : null}{assignment.target_type === "siswa" ? <> · <span className="group-mode-badge">Siswa tertentu</span></> : null}</span>{gradingBadgeVisible(assignment) ? renderGradingRollup(assignment, gradingForClassFilter(assignment, assignmentClassFilter)) : null}</div><div className="resource-row-actions">{assignment.work_mode === "kelompok" ? <button type="button" onClick={() => toggleGroupsPanel(assignment)} className={`row-action-button action-slot-kelompok is-outline${selectedGroupAssignmentId === assignment.id ? " is-active" : ""}`} aria-pressed={selectedGroupAssignmentId === assignment.id}><span className="action-icon" aria-hidden="true">👥</span>Kelompok</button> : null}{assignment.status !== "ditutup" ? <button type="button" onClick={() => startEditAssignment(assignment)} className="row-action-button action-slot-edit is-outline"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>Edit</button> : null}<button type="button" onClick={() => void changeAssignmentStatus(assignment)} className={assignment.status === "terbit" ? "row-action-button action-slot-status is-outline" : "row-action-button action-slot-status is-primary"}>{assignment.status === "terbit" ? <><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>Tutup</> : <><span className="action-icon" aria-hidden="true">🚀</span>Terbitkan</>}</button>{assignment.status === "terbit" ? <a href={`https://wa.me/?text=${encodeURIComponent(buildWhatsAppShareMessage(assignment, typeof window !== "undefined" ? window.location.origin : ""))}`} target="_blank" rel="noreferrer" className="row-action-button action-slot-bagikan is-whatsapp"><svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.6L3 21l1.9-5.6A8.5 8.5 0 1 1 21 11.5Z" /></svg>Bagikan WA</a> : null}</div></article>)}</div>}
       </section>
-
-      {selectedGroupAssignmentId ? (
-        <section className="wizard-step-panel" data-active={langkahTampil && guruStep === 3} style={styles.panel}>
-          <h2 style={styles.sectionTitle}>Kelompok penugasan</h2>
-          {(() => {
-            const panelAssignment = assignments.find((assignment) => assignment.id === selectedGroupAssignmentId);
-            return panelAssignment ? <p style={styles.muted}>{panelAssignment.title} · {panelAssignment.group_size ?? 4} anggota per kelompok · dibentuk acak oleh sistem</p> : null;
-          })()}
-          {assignmentGroupsLoading && !assignmentGroups ? <p style={styles.muted}>Memuat kelompok...</p> : null}
-          {!assignmentGroupsLoading && assignmentGroups ? (
-            assignmentGroups.classes.length === 0 ? <p style={styles.empty}>Belum ada kelas tujuan yang aktif.</p> : (
-              <div style={{ display: "grid", gap: 20 }}>
-                {assignmentGroups.classes.map((kelas) => (
-                  <div key={kelas.class_id} style={{ display: "grid", gap: 10 }}>
-                    <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
-                      <h3 style={{ ...styles.contentListTitle, margin: 0 }}>{kelas.class_name}</h3>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                        {kelas.groups.length > 0 ? (
-                          <button
-                            type="button"
-                            className="copy-list-button"
-                            onClick={() => void copyClassGroupsList(assignments.find((assignment) => assignment.id === selectedGroupAssignmentId)?.title ?? "", kelas)}
-                          >
-                            {copiedGroupClassId === kelas.class_id ? <><span className="action-icon" aria-hidden="true">📋</span>Tersalin ✓</> : <><span className="action-icon" aria-hidden="true">📋</span>Salin daftar</>}
-                          </button>
-                        ) : null}
-                        {kelas.groups.length === 0 ? (
-                          <button type="button" disabled={assignmentGroupsLoading} onClick={() => void generateAssignmentGroups(selectedGroupAssignmentId)} style={styles.secondaryButton}><span className="action-icon" aria-hidden="true">👥</span>Bentuk kelompok</button>
-                        ) : kelas.shuffle_locked ? (
-                          <span style={styles.muted}>Semua kelompok sudah terkunci dan tidak ada murid yang belum berkelompok.</span>
-                        ) : (
-                          <button type="button" disabled={assignmentGroupsLoading} onClick={() => void shuffleAssignmentClassGroups(selectedGroupAssignmentId, kelas.class_id, kelas.class_name)} style={styles.secondaryButton}><span className="action-icon" aria-hidden="true">🎲</span>Acak ulang</button>
-                        )}
-                      </div>
-                    </div>
-                    {!kelas.shuffle_locked && kelas.groups.some((group) => group.locked) ? (
-                      <p style={styles.muted}>Kelompok yang sudah penuh atau sudah mulai mengerjakan tidak ikut diacak ulang.</p>
-                    ) : null}
-                    {kelas.copy_sources.length > 0 && (kelas.groups.length === 0 || !kelas.shuffle_locked) ? (
-                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                        <span style={styles.muted}>Salin dari penugasan lain:</span>
-                        <select
-                          value={groupCopySelection[kelas.class_id] ?? (kelas.copy_sources[0]?.assignment_id ?? "")}
-                          onChange={(event) => setGroupCopySelection((current) => ({ ...current, [kelas.class_id]: Number(event.target.value) }))}
-                          aria-label={`Pilih penugasan sumber kelompok untuk kelas ${kelas.class_name}`}
-                          style={{ ...styles.input, flex: "0 1 260px" }}
-                        >
-                          {kelas.copy_sources.map((source) => <option key={source.assignment_id} value={source.assignment_id}>{source.title}</option>)}
-                        </select>
-                        <button
-                          type="button"
-                          disabled={assignmentGroupsLoading}
-                          onClick={() => void copyAssignmentGroups(selectedGroupAssignmentId, kelas.class_id, kelas.class_name, groupCopySelection[kelas.class_id] ?? kelas.copy_sources[0]?.assignment_id, kelas.groups.length > 0)}
-                          style={styles.secondaryButton}
-                        >
-                          <span className="action-icon" aria-hidden="true">📋</span>Salin kelompok
-                        </button>
-                      </div>
-                    ) : null}
-                    {kelas.groups.length === 0 ? (
-                      <p style={styles.muted}>Belum ada kelompok untuk kelas ini. Kelompok terbentuk otomatis saat penugasan diterbitkan, atau bentuk sekarang dengan tombol di atas.</p>
-                    ) : (
-                      <div className="module-list">
-                        {kelas.groups.map((group) => {
-                          const progress = groupProgressChip(group.attempt_status);
-                          return (
-                          <article key={group.id} className="group-card">
-                            <div className="group-card-header">
-                              <strong className="group-card-title">👥 {group.name}</strong>
-                              <span className="group-card-count">{group.members.length} anggota</span>
-                              {group.locked ? <span className="group-locked-chip">🔒 Terkunci</span> : null}
-                              <span className={progress.className}>{progress.label}</span>
-                            </div>
-                            <div className="group-card-members">
-                              {group.members.map((member) => {
-                                const removalLocked = group.attempt_status === "terkumpul" || group.attempt_status === "dinilai";
-                                return (
-                                  <span key={member.id} className="member-chip">
-                                    {member.name}
-                                    <button
-                                      type="button"
-                                      className="member-chip-remove"
-                                      disabled={assignmentGroupsLoading || removalLocked}
-                                      title={removalLocked ? "Anggota tidak dapat dikeluarkan karena kelompoknya sudah mengumpulkan." : `Keluarkan ${member.name} dari ${group.name}`}
-                                      aria-label={`Keluarkan ${member.name} dari ${group.name}`}
-                                      onClick={() => void removeAssignmentGroupMember(selectedGroupAssignmentId, group.id, group.name, member)}
-                                    >
-                                      ×
-                                    </button>
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          </article>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {kelas.ungrouped.length > 0 ? (
-                      <div style={{ display: "grid", gap: 8 }}>
-                        <strong>Belum berkelompok ({kelas.ungrouped.length})</strong>
-                        {kelas.ungrouped.map((student) => (
-                          <div key={student.id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                            <span style={{ flex: "1 1 160px" }}>{student.name} <span style={styles.muted}>({student.username})</span></span>
-                            <select
-                              value={groupAddSelection[student.id] ?? (kelas.groups[0]?.id ?? "")}
-                              onChange={(event) => setGroupAddSelection((current) => ({ ...current, [student.id]: Number(event.target.value) }))}
-                              aria-label={`Pilih kelompok untuk ${student.name}`}
-                              style={{ ...styles.input, flex: "0 1 180px" }}
-                            >
-                              {kelas.groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
-                            </select>
-                            <button
-                              type="button"
-                              disabled={assignmentGroupsLoading || kelas.groups.length === 0}
-                              onClick={() => {
-                                const targetGroupId = groupAddSelection[student.id] ?? kelas.groups[0]?.id;
-                                if (targetGroupId) void addAssignmentGroupMember(selectedGroupAssignmentId, targetGroupId, student.id);
-                              }}
-                              style={styles.secondaryButton}
-                            >
-                              <span className="action-icon" aria-hidden="true">+</span>Tambah
-                            </button>
-                          </div>
-                        ))}
-                        {kelas.groups.length === 0 ? <p style={styles.muted}>Bentuk kelompok terlebih dahulu sebelum menambahkan murid.</p> : null}
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            )
-          ) : null}
-        </section>
-      ) : null}
 
       {langkahTampil && guruStep === 4 ? (
         <nav className="hasil-tabs" aria-label="Bagian pantau hasil">
@@ -5194,6 +5067,157 @@ export default function GuruPage() {
       >
         {gradingSheetProgress ? <p style={styles.muted}>{gradingSheetProgress}</p> : null}
         {attemptDetail ? renderAttemptReview() : <p style={styles.muted}>Memuat rincian pengumpulan…</p>}
+      </Modal>
+
+      {/* Modal Kelompok penugasan — dirender di akar halaman, di luar
+          panel langkah, meniru titik pasang modal edit dan Lembar Nilai.
+          Isinya panel kelompok yang sama seperti sebelumnya (per kelas:
+          Bentuk/Acak ulang/Salin kelompok, kartu kelompok + chip anggota,
+          daftar Belum berkelompok) — yang berubah hanya rumahnya: dulu
+          section tersendiri di bawah seluruh daftar penugasan, kini modal
+          lebar yang fokus. Keadaan dan semua handlernya tidak berubah;
+          onClose memakai jalur tutup yang sama dengan sakelar tombol
+          Kelompok (closeGroupsPanel), jadi membuka lagi selalu memuat
+          ulang dari server. */}
+      <Modal
+        open={selectedGroupAssignmentId !== null}
+        title="Kelompok penugasan"
+        subtitle={(() => {
+          const panelAssignment = assignments.find((assignment) => assignment.id === selectedGroupAssignmentId);
+          return panelAssignment ? `${panelAssignment.title} · ${panelAssignment.group_size ?? 4} anggota per kelompok · dibentuk acak oleh sistem` : undefined;
+        })()}
+        wide
+        onClose={closeGroupsPanel}
+      >
+        {selectedGroupAssignmentId !== null ? (
+          <>
+          {assignmentGroupsLoading && !assignmentGroups ? <p style={styles.muted}>Memuat kelompok...</p> : null}
+          {!assignmentGroupsLoading && assignmentGroups ? (
+            assignmentGroups.classes.length === 0 ? <p style={styles.empty}>Belum ada kelas tujuan yang aktif.</p> : (
+              <div style={{ display: "grid", gap: 20 }}>
+                {assignmentGroups.classes.map((kelas) => (
+                  <div key={kelas.class_id} style={{ display: "grid", gap: 10 }}>
+                    <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+                      <h3 style={{ ...styles.contentListTitle, margin: 0 }}>{kelas.class_name}</h3>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                        {kelas.groups.length > 0 ? (
+                          <button
+                            type="button"
+                            className="copy-list-button"
+                            onClick={() => void copyClassGroupsList(assignments.find((assignment) => assignment.id === selectedGroupAssignmentId)?.title ?? "", kelas)}
+                          >
+                            {copiedGroupClassId === kelas.class_id ? <><span className="action-icon" aria-hidden="true">📋</span>Tersalin ✓</> : <><span className="action-icon" aria-hidden="true">📋</span>Salin daftar</>}
+                          </button>
+                        ) : null}
+                        {kelas.groups.length === 0 ? (
+                          <button type="button" disabled={assignmentGroupsLoading} onClick={() => void generateAssignmentGroups(selectedGroupAssignmentId)} style={styles.secondaryButton}><span className="action-icon" aria-hidden="true">👥</span>Bentuk kelompok</button>
+                        ) : kelas.shuffle_locked ? (
+                          <span style={styles.muted}>Semua kelompok sudah terkunci dan tidak ada murid yang belum berkelompok.</span>
+                        ) : (
+                          <button type="button" disabled={assignmentGroupsLoading} onClick={() => void shuffleAssignmentClassGroups(selectedGroupAssignmentId, kelas.class_id, kelas.class_name)} style={styles.secondaryButton}><span className="action-icon" aria-hidden="true">🎲</span>Acak ulang</button>
+                        )}
+                      </div>
+                    </div>
+                    {!kelas.shuffle_locked && kelas.groups.some((group) => group.locked) ? (
+                      <p style={styles.muted}>Kelompok yang sudah penuh atau sudah mulai mengerjakan tidak ikut diacak ulang.</p>
+                    ) : null}
+                    {kelas.copy_sources.length > 0 && (kelas.groups.length === 0 || !kelas.shuffle_locked) ? (
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                        <span style={styles.muted}>Salin dari penugasan lain:</span>
+                        <select
+                          value={groupCopySelection[kelas.class_id] ?? (kelas.copy_sources[0]?.assignment_id ?? "")}
+                          onChange={(event) => setGroupCopySelection((current) => ({ ...current, [kelas.class_id]: Number(event.target.value) }))}
+                          aria-label={`Pilih penugasan sumber kelompok untuk kelas ${kelas.class_name}`}
+                          style={{ ...styles.input, flex: "0 1 260px" }}
+                        >
+                          {kelas.copy_sources.map((source) => <option key={source.assignment_id} value={source.assignment_id}>{source.title}</option>)}
+                        </select>
+                        <button
+                          type="button"
+                          disabled={assignmentGroupsLoading}
+                          onClick={() => void copyAssignmentGroups(selectedGroupAssignmentId, kelas.class_id, kelas.class_name, groupCopySelection[kelas.class_id] ?? kelas.copy_sources[0]?.assignment_id, kelas.groups.length > 0)}
+                          style={styles.secondaryButton}
+                        >
+                          <span className="action-icon" aria-hidden="true">📋</span>Salin kelompok
+                        </button>
+                      </div>
+                    ) : null}
+                    {kelas.groups.length === 0 ? (
+                      <p style={styles.muted}>Belum ada kelompok untuk kelas ini. Kelompok terbentuk otomatis saat penugasan diterbitkan, atau bentuk sekarang dengan tombol di atas.</p>
+                    ) : (
+                      <div className="module-list">
+                        {kelas.groups.map((group) => {
+                          const progress = groupProgressChip(group.attempt_status);
+                          return (
+                          <article key={group.id} className="group-card">
+                            <div className="group-card-header">
+                              <strong className="group-card-title">👥 {group.name}</strong>
+                              <span className="group-card-count">{group.members.length} anggota</span>
+                              {group.locked ? <span className="group-locked-chip">🔒 Terkunci</span> : null}
+                              <span className={progress.className}>{progress.label}</span>
+                            </div>
+                            <div className="group-card-members">
+                              {group.members.map((member) => {
+                                const removalLocked = group.attempt_status === "terkumpul" || group.attempt_status === "dinilai";
+                                return (
+                                  <span key={member.id} className="member-chip">
+                                    {member.name}
+                                    <button
+                                      type="button"
+                                      className="member-chip-remove"
+                                      disabled={assignmentGroupsLoading || removalLocked}
+                                      title={removalLocked ? "Anggota tidak dapat dikeluarkan karena kelompoknya sudah mengumpulkan." : `Keluarkan ${member.name} dari ${group.name}`}
+                                      aria-label={`Keluarkan ${member.name} dari ${group.name}`}
+                                      onClick={() => void removeAssignmentGroupMember(selectedGroupAssignmentId, group.id, group.name, member)}
+                                    >
+                                      ×
+                                    </button>
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </article>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {kelas.ungrouped.length > 0 ? (
+                      <div style={{ display: "grid", gap: 8 }}>
+                        <strong>Belum berkelompok ({kelas.ungrouped.length})</strong>
+                        {kelas.ungrouped.map((student) => (
+                          <div key={student.id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                            <span style={{ flex: "1 1 160px" }}>{student.name} <span style={styles.muted}>({student.username})</span></span>
+                            <select
+                              value={groupAddSelection[student.id] ?? (kelas.groups[0]?.id ?? "")}
+                              onChange={(event) => setGroupAddSelection((current) => ({ ...current, [student.id]: Number(event.target.value) }))}
+                              aria-label={`Pilih kelompok untuk ${student.name}`}
+                              style={{ ...styles.input, flex: "0 1 180px" }}
+                            >
+                              {kelas.groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+                            </select>
+                            <button
+                              type="button"
+                              disabled={assignmentGroupsLoading || kelas.groups.length === 0}
+                              onClick={() => {
+                                const targetGroupId = groupAddSelection[student.id] ?? kelas.groups[0]?.id;
+                                if (targetGroupId) void addAssignmentGroupMember(selectedGroupAssignmentId, targetGroupId, student.id);
+                              }}
+                              style={styles.secondaryButton}
+                            >
+                              <span className="action-icon" aria-hidden="true">+</span>Tambah
+                            </button>
+                          </div>
+                        ))}
+                        {kelas.groups.length === 0 ? <p style={styles.muted}>Bentuk kelompok terlebih dahulu sebelum menambahkan murid.</p> : null}
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )
+          ) : null}
+          </>
+        ) : null}
       </Modal>
 
       {/* Menu mobile guru (calon v1.0.73): FAB + bottom sheet untuk

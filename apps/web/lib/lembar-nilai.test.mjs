@@ -256,8 +256,11 @@ check(
 );
 check("CSS: modal-footer adalah bilah berbatas atas", blockAfter(css, ".modal-footer").includes("border-top"));
 check(
-  "ketiga modal Tahap 1 tidak memakai wide/footer (tidak terpengaruh)",
-  count(page, "footer={") === 1 && count(page, "\n        wide\n") === 1,
+  // wide kini dipakai tepat dua modal: Lembar Nilai dan modal Kelompok
+  // penugasan; footer tetap khusus Lembar Nilai. Ketiga modal formulir
+  // Tahap 1 tetap tidak memakai keduanya (tidak terpengaruh).
+  "wide hanya di Lembar Nilai + modal Kelompok, footer hanya di Lembar Nilai",
+  count(page, "footer={") === 1 && count(page, "\n        wide\n") === 2,
 );
 
 console.log(`\nlembar-nilai (web): ${passed} passed, ${failed} failed`);

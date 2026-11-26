@@ -17,6 +17,7 @@ function check(label, condition) {
 }
 
 const guru = readFileSync(new URL("../app/guru/page.tsx", import.meta.url), "utf8");
+const guruCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 const muridHome = readFileSync(new URL("../app/murid/page.tsx", import.meta.url), "utf8");
 const muridAssignment = readFileSync(new URL("../app/murid/assignments/[id]/page.tsx", import.meta.url), "utf8");
 const muridWorksheet = readFileSync(new URL("../app/murid/worksheets/[id]/page.tsx", import.meta.url), "utf8");
@@ -41,6 +42,22 @@ check("tombol Acak ulang memanggil shuffle", guru.includes("/groups/shuffle") &&
 check("keadaan terkunci dijelaskan", guru.includes("Semua kelompok sudah terkunci dan tidak ada murid yang belum berkelompok."));
 check("daftar belum berkelompok + tombol Tambah", guru.includes("Belum berkelompok") && guru.includes("Tambah"));
 check("tambah anggota memanggil endpoint members", guru.includes("/members`"));
+
+console.log("Kasus B2: modal kelompok di akar halaman + grid tombol penugasan 2×2");
+const modalTitleIdx = guru.indexOf('title="Kelompok penugasan"');
+const modalWindow = modalTitleIdx >= 0 ? guru.slice(Math.max(0, modalTitleIdx - 200), modalTitleIdx + 700) : "";
+check("modal Kelompok terpasang (open mengikuti penugasan terpilih)", modalWindow.includes("open={selectedGroupAssignmentId !== null}"));
+check("modal Kelompok memakai varian wide", modalWindow.includes("wide"));
+check("modal Kelompok menutup lewat closeGroupsPanel", modalWindow.includes("onClose={closeGroupsPanel}"));
+check("subjudul modal mengikuti subjudul panel lama", guru.includes("anggota per kelompok · dibentuk acak oleh sistem"));
+check("section panel lama di bawah daftar sudah tidak ada", !guru.includes('<h2 style={styles.sectionTitle}>Kelompok penugasan</h2>'));
+check("closeGroupsPanel menutup jalur yang sama dengan sakelar (dua state null)", guru.includes("function closeGroupsPanel()") && guru.includes("closeGroupsPanel();") && guru.split("setSelectedGroupAssignmentId(null)").length - 1 === 1 && guru.split("setAssignmentGroups(null)").length - 1 >= 2);
+check("kelas slot pada keempat tombol penugasan", guru.includes("action-slot-kelompok") && guru.includes("action-slot-edit") && guru.includes("action-slot-status") && guru.includes("action-slot-bagikan"));
+check("CSS: wadah aksi menjadi grid dua kolom", /\.resource-row-actions\s*\{\s*display: grid;\s*grid-template-columns: repeat\(2, minmax\(max-content, 1fr\)\);/.test(guruCss));
+check("CSS: Kelompok menetap di sel atas-kiri", /\.action-slot-kelompok\s*\{\s*grid-column: 1;\s*grid-row: 1;\s*\}/.test(guruCss));
+check("CSS: Edit menetap di sel atas-kanan", /\.action-slot-edit\s*\{\s*grid-column: 2;\s*grid-row: 1;\s*\}/.test(guruCss));
+check("CSS: Tutup/Terbitkan menetap di sel bawah-kiri", /\.action-slot-status\s*\{\s*grid-column: 1;\s*grid-row: 2;\s*\}/.test(guruCss));
+check("CSS: Bagikan WA menetap di sel bawah-kanan", /\.action-slot-bagikan\s*\{\s*grid-column: 2;\s*grid-row: 2;\s*\}/.test(guruCss));
 
 console.log("Kasus C: penilaian guru menampilkan pengumpulan kelompok");
 check("tipe attempt membawa is_group + member_names", guru.includes("is_group?: boolean") && guru.includes("member_names?: string[]"));

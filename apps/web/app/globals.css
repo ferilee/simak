@@ -2313,11 +2313,42 @@ button.wizard-library-link {
   align-items: start;
 }
 
+/* Bilah aksi baris penugasan: grid tetap 2 baris × 2 kolom. Tiap tombol
+   menempati selnya lewat kelas action-slot-* (penempatan eksplisit di
+   bawah), jadi tombol bersyarat yang tidak tampil meninggalkan selnya
+   kosong tanpa menggeser posisi tombol lain. Lebar kolom minimal selebar
+   isi tombol terlebar di kolomnya (label tidak pernah terpotong) dan
+   sisa ruang dibagi rata oleh fr. Baris Rekap Langkah 5 memakai wadah
+   yang sama dengan dua tombol tanpa kelas slot — keduanya terpasang
+   otomatis berdampingan pada baris pertama. */
 .resource-row-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(max-content, 1fr));
   gap: 8px;
+}
+
+.resource-row-actions .row-action-button {
+  justify-content: center;
+}
+
+.resource-row-actions .action-slot-kelompok {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.resource-row-actions .action-slot-edit {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.resource-row-actions .action-slot-status {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.resource-row-actions .action-slot-bagikan {
+  grid-column: 2;
+  grid-row: 2;
 }
 
 /* Tombol aksi baris guru (penugasan Langkah 4 + pemicu panel Langkah 5):
@@ -3443,7 +3474,8 @@ button.wizard-library-link {
   }
 
   .resource-row-actions {
-    justify-content: flex-start;
+    /* Grid 2×2 yang sama seperti desktop, mengisi lebar kartu. */
+    width: 100%;
   }
 
   .integrity-alert-row {

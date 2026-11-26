@@ -4,7 +4,8 @@ import { zValidator } from "@hono/zod-validator";
 import { db, schema } from "@simak/db";
 import { integrityEventSchema } from "@simak/shared";
 import { requireRole } from "../middleware/auth";
-import { studentIsAssignmentTarget } from "../lib/assignment-target";
+import { loadAssignmentSubject, studentIsAssignmentTarget } from "../lib/assignment-target";
+import { loadTeacherClassMemberships, resolveStudentClass } from "../lib/student-class";
 
 const integrityRoutes = new Hono();
 const { assignments, integrityEvents, users } = schema;
@@ -55,25 +56,44 @@ integrityRoutes.get("/alerts", requireRole("guru"), async (c) => {
     return c.json({ ok: false, message: "assignmentId tidak valid." }, 400);
   }
 
-  const rows = await db
-    .select({
-      assignment_id: assignments.id,
-      assignment_title: assignments.title,
-      student_id: users.id,
-      student_name: users.name,
-      username: users.username,
-      event: integrityEvents.event,
-      created_at: integrityEvents.createdAt,
-    })
-    .from(integrityEvents)
-    .innerJoin(assignments, eq(assignments.id, integrityEvents.assignmentId))
-    .innerJoin(users, eq(users.id, integrityEvents.studentId))
-    .where(and(
-      eq(assignments.teacherId, user.userId),
-      assignmentFilter ? eq(assignments.id, assignmentFilter) : undefined,
-    ))
-    .orderBy(desc(integrityEvents.createdAt))
-    .limit(500);
+  // Kelas tiap murid diselesaikan dengan aturan yang sama seperti panel
+  // penilaian (lib/student-class): keanggotaan kelas guru dimuat satu kueri,
+  // mapel pembandingnya berasal dari modul LKPD penugasan asal sinyal.
+  const [rows, membershipsByStudent] = await Promise.all([
+    db
+      .select({
+        assignment_id: assignments.id,
+        assignment_title: assignments.title,
+        assignment_module_id: assignments.moduleId,
+        assignment_worksheet_id: assignments.worksheetId,
+        student_id: users.id,
+        student_name: users.name,
+        username: users.username,
+        event: integrityEvents.event,
+        created_at: integrityEvents.createdAt,
+      })
+      .from(integrityEvents)
+      .innerJoin(assignments, eq(assignments.id, integrityEvents.assignmentId))
+      .innerJoin(users, eq(users.id, integrityEvents.studentId))
+      .where(and(
+        eq(assignments.teacherId, user.userId),
+        assignmentFilter ? eq(assignments.id, assignmentFilter) : undefined,
+      ))
+      .orderBy(desc(integrityEvents.createdAt))
+      .limit(500),
+    loadTeacherClassMemberships(user.userId),
+  ]);
+
+  const subjectByAssignment = new Map<number, string | null>();
+  const assignmentRefs = new Map<number, { moduleId: number | null; worksheetId: number | null }>();
+  for (const row of rows) {
+    if (!assignmentRefs.has(row.assignment_id)) {
+      assignmentRefs.set(row.assignment_id, { moduleId: row.assignment_module_id, worksheetId: row.assignment_worksheet_id });
+    }
+  }
+  await Promise.all([...assignmentRefs.entries()].map(async ([assignmentId, ref]) => {
+    subjectByAssignment.set(assignmentId, await loadAssignmentSubject(ref));
+  }));
 
   const grouped = new Map<string, {
     assignment_id: number;
@@ -104,12 +124,18 @@ integrityRoutes.get("/alerts", requireRole("guru"), async (c) => {
     const total = [...alert.events.values()].reduce((sum, value) => sum + value, 0);
     const clipboard = (alert.events.get("copy_attempt") ?? 0) + (alert.events.get("paste_attempt") ?? 0);
     const risk = total >= 6 || clipboard >= 3 ? "peringatan" : total >= 3 ? "perlu_ditinjau" : "info";
+    const studentClass = resolveStudentClass(
+      membershipsByStudent.get(alert.student_id) ?? [],
+      subjectByAssignment.get(alert.assignment_id) ?? null,
+    );
     return {
       assignment_id: alert.assignment_id,
       assignment_title: alert.assignment_title,
       student_id: alert.student_id,
       student_name: alert.student_name,
       username: alert.username,
+      class_id: studentClass?.id ?? null,
+      class_name: studentClass?.name ?? null,
       total_events: total,
       risk,
       last_event: alert.last_event,

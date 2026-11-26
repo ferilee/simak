@@ -29,8 +29,10 @@ import {
 } from "../../lib/grading-helpers";
 import {
   distinctIntegrityAssignments,
+  distinctIntegrityClasses,
   filterAssignmentsByQuery,
   filterIntegrityAlerts,
+  integrityClassFilterValue,
   sortIntegrityAlerts,
 } from "../../lib/hasil-helpers";
 import {
@@ -305,6 +307,8 @@ type IntegrityAlert = {
   student_id: number;
   student_name: string;
   username: string;
+  class_id: number | null;
+  class_name: string | null;
   total_events: number;
   risk: "info" | "perlu_ditinjau" | "peringatan";
   last_event: string;
@@ -564,6 +568,7 @@ export default function GuruPage() {
   // (kelipatan GRADING_PAGE_SIZE); diatur ulang setiap saringan berubah.
   const [gradingRevealedCount, setGradingRevealedCount] = useState(GRADING_PAGE_SIZE);
   const [integrityAssignmentFilter, setIntegrityAssignmentFilter] = useState<number | "semua">("semua");
+  const [integrityClassFilter, setIntegrityClassFilter] = useState("semua");
   const [integrityRiskFilter, setIntegrityRiskFilter] = useState("semua");
   const [integrityQuery, setIntegrityQuery] = useState("");
   const [rekapQuery, setRekapQuery] = useState("");
@@ -1069,8 +1074,17 @@ export default function GuruPage() {
   // Indikasi integritas: semua saringan di klien; urutan tampil ditegakkan
   // di sini (risiko terberat dulu), bukan mengikuti urutan API.
   const integrityAssignmentOptions = distinctIntegrityAssignments(integrityAlerts);
+  const integrityClassOptions = distinctIntegrityClasses(integrityAlerts);
+  // Meniru penjaga saringan kelas panel Pengumpulan: pilihan kelas yang
+  // hilang dari daftar indikasi aktif berlaku sebagai "semua" tanpa
+  // menghapus pilihan tersimpan.
+  const integrityClassFilterActive = integrityClassFilter === "semua"
+    || integrityClassOptions.some((option) => integrityClassFilterValue(option) === integrityClassFilter)
+    ? integrityClassFilter
+    : "semua";
   const visibleIntegrityAlerts = sortIntegrityAlerts(filterIntegrityAlerts(integrityAlerts, {
     assignmentId: integrityAssignmentFilter,
+    classId: integrityClassFilterActive,
     risk: integrityRiskFilter,
     query: integrityQuery,
   }));
@@ -4541,6 +4555,17 @@ export default function GuruPage() {
                 <option value="semua">Semua penugasan</option>
                 {integrityAssignmentOptions.map((option) => (
                   <option key={option.id} value={String(option.id)}>{option.title}</option>
+                ))}
+              </select>
+              <select
+                value={integrityClassFilterActive}
+                onChange={(event) => setIntegrityClassFilter(event.target.value)}
+                aria-label="Saring kelas indikasi integritas"
+                style={{ ...styles.input, ...styles.moduleFilterSelect }}
+              >
+                <option value="semua">Semua kelas</option>
+                {integrityClassOptions.map((option) => (
+                  <option key={integrityClassFilterValue(option)} value={integrityClassFilterValue(option)}>{option.name}</option>
                 ))}
               </select>
               <input

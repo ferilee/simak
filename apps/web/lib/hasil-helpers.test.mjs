@@ -2,9 +2,12 @@
 // Run with bun from apps/web:  bun lib/hasil-helpers.test.mjs
 import {
   distinctIntegrityAssignments,
+  distinctIntegrityClasses,
   filterAssignmentsByQuery,
   filterIntegrityAlerts,
+  integrityClassFilterValue,
   integrityRiskRank,
+  matchesIntegrityClassFilter,
   sortIntegrityAlerts,
 } from "./hasil-helpers.ts";
 
@@ -23,11 +26,11 @@ function check(label, condition, detail = "") {
 
 // Urutan API: menurut kejadian terbaru saja (bukan tingkat risiko).
 const alerts = [
-  { assignment_id: 2, assignment_title: "Tugas Bunga Majemuk", student_name: "Citra Lestari", username: "citra_xi", total_events: 2, risk: "info", last_event: "2026-11-02T09:00:00Z" },
-  { assignment_id: 1, assignment_title: "Tugas Bunga Tunggal", student_name: "Andi Pratama", username: "andi_xi", total_events: 4, risk: "perlu_ditinjau", last_event: "2026-11-02T08:00:00Z" },
-  { assignment_id: 1, assignment_title: "Tugas Bunga Tunggal", student_name: "Budi Santoso", username: "budi_xi", total_events: 8, risk: "peringatan", last_event: "2026-11-02T07:00:00Z" },
-  { assignment_id: 2, assignment_title: "Tugas Bunga Majemuk", student_name: "Dewi Anggraini", username: "dewi_xi", total_events: 12, risk: "peringatan", last_event: "2026-11-02T06:00:00Z" },
-  { assignment_id: 1, assignment_title: "Tugas Bunga Tunggal", student_name: "Eko Wijaya", username: "eko_xi", total_events: 3, risk: "perlu_ditinjau", last_event: "2026-11-02T10:00:00Z" },
+  { assignment_id: 2, assignment_title: "Tugas Bunga Majemuk", student_name: "Citra Lestari", username: "citra_xi", class_id: 11, class_name: "XI TKJ A", total_events: 2, risk: "info", last_event: "2026-11-02T09:00:00Z" },
+  { assignment_id: 1, assignment_title: "Tugas Bunga Tunggal", student_name: "Andi Pratama", username: "andi_xi", class_id: 12, class_name: "XI DPIB", total_events: 4, risk: "perlu_ditinjau", last_event: "2026-11-02T08:00:00Z" },
+  { assignment_id: 1, assignment_title: "Tugas Bunga Tunggal", student_name: "Budi Santoso", username: "budi_xi", class_id: 11, class_name: "XI TKJ A", total_events: 8, risk: "peringatan", last_event: "2026-11-02T07:00:00Z" },
+  { assignment_id: 2, assignment_title: "Tugas Bunga Majemuk", student_name: "Dewi Anggraini", username: "dewi_xi", class_id: null, class_name: null, total_events: 12, risk: "peringatan", last_event: "2026-11-02T06:00:00Z" },
+  { assignment_id: 1, assignment_title: "Tugas Bunga Tunggal", student_name: "Eko Wijaya", username: "eko_xi", class_id: 12, class_name: "XI DPIB", total_events: 3, risk: "perlu_ditinjau", last_event: "2026-11-02T10:00:00Z" },
 ];
 
 console.log("Case 1: peringkat dan urutan tingkat risiko");
@@ -51,7 +54,7 @@ check(
 check("daftar kosong menghasilkan opsi kosong", distinctIntegrityAssignments([]).length === 0);
 
 console.log("Case 3: saringan indikasi (penugasan, risiko, pencarian)");
-const noFilter = { assignmentId: "semua", risk: "semua", query: "" };
+const noFilter = { assignmentId: "semua", classId: "semua", risk: "semua", query: "" };
 check("tanpa saringan semua lolos", filterIntegrityAlerts(alerts, noFilter).length === 5);
 check(
   "saring penugasan 1 menyisakan attempt penugasan itu",
@@ -70,9 +73,51 @@ check("pencarian cocok pada username", filterIntegrityAlerts(alerts, { ...noFilt
 check("pencarian dengan spasi tepi tetap bekerja", filterIntegrityAlerts(alerts, { ...noFilter, query: "  andi  " }).length === 1);
 check(
   "gabungan penugasan + risiko + pencarian",
-  JSON.stringify(filterIntegrityAlerts(alerts, { assignmentId: 1, risk: "perlu_ditinjau", query: "eko" }).map((a) => a.username)) === JSON.stringify(["eko_xi"]),
+  JSON.stringify(filterIntegrityAlerts(alerts, { assignmentId: 1, classId: "semua", risk: "perlu_ditinjau", query: "eko" }).map((a) => a.username)) === JSON.stringify(["eko_xi"]),
 );
 check("tidak ada yang cocok menghasilkan daftar kosong", filterIntegrityAlerts(alerts, { ...noFilter, query: "zzz" }).length === 0);
+
+console.log("Case 3b: saringan kelas indikasi integritas");
+const classOptions = distinctIntegrityClasses(alerts);
+check(
+  "opsi kelas terurut nama, Tanpa kelas paling akhir",
+  JSON.stringify(classOptions) === JSON.stringify([
+    { id: 12, name: "XI DPIB" },
+    { id: 11, name: "XI TKJ A" },
+    { id: null, name: "Tanpa kelas" },
+  ]),
+  JSON.stringify(classOptions),
+);
+check("daftar kosong menghasilkan opsi kelas kosong", distinctIntegrityClasses([]).length === 0);
+check(
+  "tanpa indikasi tak berkelas, opsi Tanpa kelas tidak muncul",
+  JSON.stringify(distinctIntegrityClasses(alerts.filter((a) => a.class_id !== null))) === JSON.stringify([
+    { id: 12, name: "XI DPIB" },
+    { id: 11, name: "XI TKJ A" },
+  ]),
+);
+check("nilai saringan opsi: id jadi string, null jadi tanpa_kelas",
+  integrityClassFilterValue({ id: 11, name: "XI TKJ A" }) === "11" && integrityClassFilterValue({ id: null, name: "Tanpa kelas" }) === "tanpa_kelas");
+check("matches: semua selalu cocok", matchesIntegrityClassFilter(alerts[0], "semua") === true);
+check("matches: tanpa_kelas hanya untuk class_id null", matchesIntegrityClassFilter(alerts[3], "tanpa_kelas") === true && matchesIntegrityClassFilter(alerts[0], "tanpa_kelas") === false);
+check("matches: id kelas harus sama persis", matchesIntegrityClassFilter(alerts[0], "11") === true && matchesIntegrityClassFilter(alerts[0], "12") === false);
+check(
+  "saring kelas 11 menyisakan murid kelas itu",
+  JSON.stringify(filterIntegrityAlerts(alerts, { ...noFilter, classId: "11" }).map((a) => a.username)) === JSON.stringify(["citra_xi", "budi_xi"]),
+);
+check(
+  "saring tanpa_kelas menyisakan murid tanpa kelas saja",
+  JSON.stringify(filterIntegrityAlerts(alerts, { ...noFilter, classId: "tanpa_kelas" }).map((a) => a.username)) === JSON.stringify(["dewi_xi"]),
+);
+check(
+  "gabungan kelas + risiko bergabung AND",
+  JSON.stringify(filterIntegrityAlerts(alerts, { ...noFilter, classId: "12", risk: "perlu_ditinjau" }).map((a) => a.username)) === JSON.stringify(["andi_xi", "eko_xi"]),
+);
+check(
+  "gabungan kelas + penugasan + pencarian bergabung AND",
+  JSON.stringify(filterIntegrityAlerts(alerts, { assignmentId: 1, classId: "11", risk: "semua", query: "budi" }).map((a) => a.username)) === JSON.stringify(["budi_xi"]),
+);
+check("kelas yang tidak ada menghasilkan daftar kosong", filterIntegrityAlerts(alerts, { ...noFilter, classId: "99" }).length === 0);
 
 console.log("Case 4: pencarian Rekap penugasan (judul dan nama kelas)");
 const assignments = [

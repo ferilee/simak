@@ -143,7 +143,7 @@ console.log("Case 6: saringan kelas Langkah 4 guru (statis)");
 {
   check("state saringan kelas ada", guru.includes('const [assignmentClassFilter, setAssignmentClassFilter] = useState<string>("semua");'));
   check("select saringan kelas di samping chip status", guru.includes('aria-label="Saring kelas penugasan"') && guru.includes('<option value="semua">Semua kelas</option>'));
-  check("opsi per kelas dari daftar kelas guru", guru.includes("{classes.map((kelas) => <option key={kelas.id} value={String(kelas.id)}>{kelas.name}</option>)}"));
+  check("opsi per kelas dari daftar kelas guru", guru.includes("{activeClasses.map((kelas) => <option key={kelas.id} value={String(kelas.id)}>{kelas.name}</option>)}"));
   check("opsi Siswa tertentu ada", guru.includes('<option value="siswa">Siswa tertentu</option>'));
   check("halaman menyaring kelas lewat lib hitungan-penugasan", guru.includes("const classFilteredAssignments = filterAssignmentsByClass(assignments, assignmentClassFilter);"));
   check("kelas terpilih menyaring lewat classes penugasan", hitungan.includes("assignment.classes.some((kelas) => kelas.id === classId)"));

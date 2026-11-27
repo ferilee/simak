@@ -68,7 +68,8 @@ check("Simpan data LKPD 💾", page.includes(pair("💾", "Simpan data LKPD</but
 check("Buat draf +", page.includes(pair("+", "Buat draf</button>")));
 check("Buat kelas +", page.includes(pair("+", "Buat kelas</button>")));
 check("Buat LKPD dari modul terpilih +", page.includes(pair("+", "Buat LKPD dari modul terpilih</button>")));
-check("Batal ✕ di kelima formulir/editor", count(page, pair("✕", "Batal</button>")) === 5);
+check("Simpan data kelas 💾", page.includes(pair("💾", "Simpan data kelas</button>")));
+check("Batal ✕ di keenam formulir/editor", count(page, pair("✕", "Batal</button>")) === 6);
 check(
   "kirim blok: ikon mengikuti keadaan (💾 simpan / 📥 lampiran / + tambah)",
   page.includes('editingBlock ? <span className="action-icon" aria-hidden="true">💾</span> : blockType === "lampiran" ? <span className="action-icon" aria-hidden="true">📥</span> : <span className="action-icon" aria-hidden="true">+</span>') &&
@@ -164,8 +165,8 @@ check(
 // Total rentang ikon dikunci persis — tambahan ikon di luar daftar paket
 // ini (termasuk di navigasi) akan mengubah hitungannya dan harus disengaja.
 check(
-  "total rentang .action-icon terkunci (halaman guru 57, panel perpustakaan 11)",
-  count(page, 'className="action-icon"') === 57 && count(lib, 'className="action-icon"') === 11,
+  "total rentang .action-icon terkunci (halaman guru 59, panel perpustakaan 11)",
+  count(page, 'className="action-icon"') === 59 && count(lib, 'className="action-icon"') === 11,
   `guru=${count(page, 'className="action-icon"')} lib=${count(lib, 'className="action-icon"')}`,
 );
 check(

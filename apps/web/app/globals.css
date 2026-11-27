@@ -3354,6 +3354,204 @@ button.wizard-library-link {
   font-weight: 600;
 }
 
+/* Baris kelas ramping Langkah 3 ruang guru (fitur Edit Kelas): daftar
+   kelas aktif berkelompok jenjang + seksi Diarsipkan terlipat. Satu
+   baris per kelas (±44px): titik status, nama + meta sebaris, chip
+   kode gabung yang tersembunyi bawaan, tombol Edit. Menggantikan
+   kartu .resource-row bertumpuk khusus seksi ini; baris penugasan
+   dan modul tidak berubah. */
+.kelas-row-group {
+  margin-top: 16px;
+}
+
+.kelas-row-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.kelas-row-group-count {
+  color: var(--color-muted);
+  font-weight: 600;
+}
+
+.kelas-row-list {
+  display: grid;
+  gap: 8px;
+}
+
+.kelas-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.kelas-row--arsip {
+  opacity: 0.72;
+}
+
+.kelas-row-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-success);
+}
+
+.kelas-row-dot--arsip {
+  background: var(--color-muted);
+}
+
+.kelas-row-main {
+  display: flex;
+  align-items: baseline;
+  flex: 1 1 220px;
+  gap: 8px;
+  min-width: 0;
+}
+
+.kelas-row-name {
+  flex: 0 0 auto;
+  font-size: 15px;
+}
+
+.kelas-row-meta {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-muted);
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.kelas-row-arsip-label {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: var(--color-surface-subtle);
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.kelas-row-code {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  padding: 4px 6px 4px 12px;
+  background: var(--color-surface-subtle);
+  font-size: 13px;
+}
+
+.kelas-row-code-label {
+  color: var(--color-muted);
+  font-weight: 600;
+}
+
+.kelas-row-code-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.kelas-row-code-button {
+  border: 0;
+  border-radius: 999px;
+  padding: 3px 9px;
+  background: var(--color-surface);
+  color: var(--color-brand-700);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.kelas-row-code-button:hover {
+  background: var(--color-brand-50);
+}
+
+.kelas-row-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.kelas-row-edit:hover {
+  border-color: var(--color-brand-500);
+  color: var(--color-brand-700);
+}
+
+.kelas-row-archive {
+  margin-top: 18px;
+  border-top: 1px solid var(--color-border-soft);
+  padding-top: 12px;
+}
+
+.kelas-row-archive-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  border: 0;
+  padding: 6px 2px;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.kelas-row-archive .kelas-row-list {
+  margin-top: 8px;
+}
+
+/* Bagian kode gabung di dalam modal Edit Kelas: kode tampil penuh
+   (modal adalah ruang privat guru), dengan aksi salin + buat baru. */
+.kelas-edit-code {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin: 16px 0;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  background: var(--color-surface-subtle);
+}
+
+.kelas-edit-code-label {
+  color: var(--color-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.kelas-edit-code-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
 .wizard-footer {
   display: flex;
   justify-content: space-between;

@@ -45,6 +45,7 @@ import {
   worksheetIdsForClassFilter,
 } from "../../lib/grup-lkpd";
 import { moduleIdentity, worksheetIdentity } from "../../lib/identitas-materi";
+import { groupClassesByLevel } from "../../lib/kelompok-kelas";
 import {
   EXIT_TICKET_CLASS_SECTIONS,
   exitTicketStudentMatches,
@@ -448,6 +449,18 @@ export default function GuruPage() {
   const [className, setClassName] = useState("");
   const [classSubject, setClassSubject] = useState("");
   const [classAcademicYear, setClassAcademicYear] = useState("2026/2027");
+  // Langkah 3 ringkas (Edit Kelas): formulir buat kelas dibuka dari tombol
+  // kepala seksi; kode gabung per baris tersembunyi sampai diminta; seksi
+  // Diarsipkan terlipat. Modal edit kelas memakai keadaan kolom sendiri,
+  // meniru pola modal metadata modul/LKPD.
+  const [createClassOpen, setCreateClassOpen] = useState(false);
+  const [visibleCodeClassId, setVisibleCodeClassId] = useState<number | null>(null);
+  const [archivedClassesOpen, setArchivedClassesOpen] = useState(false);
+  const [editingClass, setEditingClass] = useState<ClassSummary | null>(null);
+  const [editClassName, setEditClassName] = useState("");
+  const [editClassSubject, setEditClassSubject] = useState("");
+  const [editClassAcademicYear, setEditClassAcademicYear] = useState("");
+  const [classEditBusy, setClassEditBusy] = useState(false);
   const [assignments, setAssignments] = useState<AssignmentSummary[]>([]);
   const [assignmentStatusFilter, setAssignmentStatusFilter] = useState<"semua" | "draf" | "terbit" | "ditutup">("semua");
   // Saringan kelas daftar penugasan (Langkah 4): "semua", "siswa" (sasaran
@@ -535,6 +548,7 @@ export default function GuruPage() {
   // modal (requestEditModalClose) memakainya untuk memutuskan perlu
   // tidaknya konfirmasi buang perubahan. Dibersihkan saat edit berakhir.
   const moduleMetaBaseline = useRef<{ title: string; subject: string; topicGroup: string; description: string; coverKey: string | null } | null>(null);
+  const classMetaBaseline = useRef<{ name: string; subject: string; academicYear: string } | null>(null);
   const worksheetMetaBaseline = useRef<{ title: string; instructions: string } | null>(null);
   const assignmentEditBaseline = useRef<{
     selectedId: number | null;
@@ -687,6 +701,14 @@ export default function GuruPage() {
     { title: "Pantau hasil", mobileTitle: "Hasil", description: "Nilai dan lihat rekap" },
   ];
 
+  // State `classes` kini memuat SEMUA kelas (aktif + arsip) agar Langkah 3
+  // dapat menampilkan seksi Diarsipkan. Semua pemakai lama yang secara
+  // historis hanya menerima kelas aktif (keadaan dulu disaring saat muat)
+  // wajib memakai turunan ini — jangan pakai `classes` mentah di luar
+  // Langkah 3.
+  const activeClasses = classes.filter((kelas) => !kelas.is_archived);
+  const archivedClasses = classes.filter((kelas) => kelas.is_archived);
+
   // Tanda selesai langkah hanya dari syarat nyata, bukan posisi wizard:
   // Materi = ada modul, LKPD = ada lembar kerja, Kelas = ada kelas,
   // Penugasan = ada penugasan. Langkah Hasil tidak punya sinyal global
@@ -694,7 +716,7 @@ export default function GuruPage() {
   const guruStepComplete = [
     modules.length > 0,
     worksheets.length > 0,
-    classes.length > 0,
+    activeClasses.length > 0,
     assignments.length > 0,
     false,
   ];
@@ -702,7 +724,7 @@ export default function GuruPage() {
   // Peta murid → nama + kelas asal untuk chip murid terpilih pada pemilih
   // sasaran siswa tertentu (sumbernya daftar anggota per kelas dari API).
   const assignmentStudentInfoById = new Map<number, { name: string; className: string; avatar_slug?: string | null; avatar_emoji?: string | null }>();
-  for (const kelas of classes) {
+  for (const kelas of activeClasses) {
     for (const member of kelas.members ?? []) {
       if (!assignmentStudentInfoById.has(member.id)) {
         assignmentStudentInfoById.set(member.id, { name: member.name, className: kelas.name, avatar_slug: member.avatar_slug, avatar_emoji: member.avatar_emoji });
@@ -1019,7 +1041,7 @@ export default function GuruPage() {
   // mapel — kelompok materi dengan arsip terpisah di kelompok terakhir.
   // Sumber yang tersaring keluar gugur ke "Semua LKPD": nilai efektifnya
   // dipakai nilai <select>, dan efek di bawah menegakkannya ke state.
-  const gradingWorksheetIds = worksheetIdsForClassFilter(gradingClassFilterActive, assignments, allAttempts, classes);
+  const gradingWorksheetIds = worksheetIdsForClassFilter(gradingClassFilterActive, assignments, allAttempts, activeClasses);
   const gradingLkpdGroups = groupLkpdOptions(filterWorksheetsByIds(worksheets, gradingWorksheetIds), modules);
   const gradingSourceEffective = resolveGradingSource(gradingSource, gradingWorksheetIds);
   const classFilteredAttempts = filterGradingAttemptsByClass(gradingAttempts, gradingClassFilterActive);
@@ -1198,7 +1220,10 @@ export default function GuruPage() {
         pendingCopiedDraftRef.current = null;
         selectDraftFromLists(pendingDraft.kind, pendingDraft.id, response.data, worksheetResponse.data);
       }
-      setClasses(classResponse.data.filter((kelas) => !kelas.is_archived));
+      // Semua kelas dimuat (aktif + arsip): Langkah 3 menampilkan seksi
+      // Diarsipkan dari daftar yang sama. Pemakai lain memakai turunan
+      // activeClasses agar kelas arsip tidak bocor ke pemilih penugasan.
+      setClasses(classResponse.data);
       setAssignments(assignmentResponse.data);
       setIntegrityAlerts(integrityResponse.data);
       setRuasImportAssignmentId((current) => current ?? assignmentResponse.data[0]?.id ?? null);
@@ -1724,12 +1749,134 @@ export default function GuruPage() {
       });
       setClassName("");
       setClassSubject("");
+      setCreateClassOpen(false);
       setAssignmentClassIds((current) => [...current, response.data.id]);
       setMessage(`Kelas dibuat. Kode gabung: ${response.data.join_code}`);
       await loadModules();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Kelas belum dapat dibuat.");
     }
+  }
+
+  // --- Edit Kelas (Langkah 3): label kelas, kode gabung, arsip -----------
+  // Semua mutasi mengganti baris lokal dari balikan server (payload kelas
+  // penuh termasuk anggota), jadi daftar tidak perlu dimuat ulang.
+
+  function replaceClassRow(updated: ClassSummary) {
+    setClasses((current) => current.map((kelas) => (kelas.id === updated.id ? updated : kelas)));
+    setEditingClass((current) => (current && current.id === updated.id ? updated : current));
+  }
+
+  function startEditClass(kelas: ClassSummary) {
+    setEditingClass(kelas);
+    setEditClassName(kelas.name);
+    setEditClassSubject(kelas.subject);
+    setEditClassAcademicYear(kelas.academic_year);
+    classMetaBaseline.current = { name: kelas.name, subject: kelas.subject, academicYear: kelas.academic_year };
+  }
+
+  function cancelEditClass() {
+    classMetaBaseline.current = null;
+    setEditingClass(null);
+  }
+
+  async function saveClassMeta(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingClass || classEditBusy) return;
+    setClassEditBusy(true);
+    try {
+      const response = await apiRequest<{ ok: true; data: ClassSummary }>(`/classes/${editingClass.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: editClassName, subject: editClassSubject, academicYear: editClassAcademicYear }),
+      });
+      replaceClassRow(response.data);
+      classMetaBaseline.current = null;
+      setEditingClass(null);
+      setMessage("Data kelas disimpan.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Data kelas belum dapat disimpan.");
+    } finally {
+      setClassEditBusy(false);
+    }
+  }
+
+  async function copyJoinCode(kelas: ClassSummary) {
+    try {
+      await navigator.clipboard.writeText(kelas.join_code);
+      setMessage(`Kode gabung ${kelas.name} disalin.`);
+    } catch {
+      // Papan klip tidak tersedia (izin konteks): tampilkan kodenya di
+      // baris agar dapat disalin manual, jangan diam-diam gagal.
+      setVisibleCodeClassId(kelas.id);
+      setMessage("Kode gabung ditampilkan — salin manual dari baris kelasnya.");
+    }
+  }
+
+  async function regenerateClassCode() {
+    if (!editingClass || classEditBusy) return;
+    if (!(await confirmDialog(`Buat kode gabung baru untuk kelas ${editingClass.name}? Kode lama langsung tidak berlaku — murid yang belum bergabung tidak bisa lagi memakai kode lama.`, { confirmLabel: "Buat kode baru" }))) return;
+    setClassEditBusy(true);
+    try {
+      const response = await apiRequest<{ ok: true; data: ClassSummary }>(`/classes/${editingClass.id}/regenerate-code`, { method: "POST" });
+      replaceClassRow(response.data);
+      setMessage(`Kode gabung baru ${response.data.name}: ${response.data.join_code}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Kode gabung baru belum dapat dibuat.");
+    } finally {
+      setClassEditBusy(false);
+    }
+  }
+
+  async function toggleClassArchived() {
+    if (!editingClass || classEditBusy) return;
+    const target = editingClass;
+    if (!target.is_archived) {
+      if (!(await confirmDialog(`Arsipkan kelas ${target.name}? Murid tidak lagi dapat bergabung atau melihat materi dari kelas ini. Penugasan dan nilai yang sudah ada tidak dihapus.`, { confirmLabel: "Arsipkan" }))) return;
+    }
+    setClassEditBusy(true);
+    try {
+      const response = await apiRequest<{ ok: true; data: ClassSummary }>(`/classes/${target.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ is_archived: !target.is_archived }),
+      });
+      replaceClassRow(response.data);
+      classMetaBaseline.current = null;
+      setEditingClass(null);
+      setMessage(target.is_archived ? `Kelas ${target.name} diaktifkan kembali.` : `Kelas ${target.name} diarsipkan.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Status kelas belum dapat diubah.");
+    } finally {
+      setClassEditBusy(false);
+    }
+  }
+
+  // Baris kelas ramping Langkah 3: satu baris per kelas — titik status,
+  // nama + meta sebaris, chip kode gabung tersembunyi, tombol Edit.
+  // Dipakai daftar aktif berkelompok jenjang maupun seksi Diarsipkan.
+  function renderClassRow(kelas: ClassSummary) {
+    const codeVisible = visibleCodeClassId === kelas.id;
+    return (
+      <article key={kelas.id} className={`kelas-row${kelas.is_archived ? " kelas-row--arsip" : ""}`}>
+        <span className={`kelas-row-dot${kelas.is_archived ? " kelas-row-dot--arsip" : ""}`} aria-hidden="true" />
+        <div className="kelas-row-main">
+          <strong className="kelas-row-name">{kelas.name}</strong>
+          <span className="kelas-row-meta">{kelas.subject} · {kelas.academic_year} · {(kelas.members ?? []).length} murid</span>
+          {kelas.is_archived ? <span className="kelas-row-arsip-label">Diarsipkan</span> : null}
+        </div>
+        {kelas.is_archived ? null : (
+          <span className="kelas-row-code">
+            <span className="kelas-row-code-label">Kode</span>
+            <code className="kelas-row-code-value">{codeVisible ? kelas.join_code : "••••••••"}</code>
+            <button type="button" className="kelas-row-code-button" aria-expanded={codeVisible} onClick={() => setVisibleCodeClassId(codeVisible ? null : kelas.id)}>{codeVisible ? "Sembunyikan" : "Tampilkan"}</button>
+            <button type="button" className="kelas-row-code-button" onClick={() => void copyJoinCode(kelas)}>Salin</button>
+          </span>
+        )}
+        <button type="button" className="kelas-row-edit" onClick={() => startEditClass(kelas)}>
+          <svg className="row-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>
+          Edit
+        </button>
+      </article>
+    );
   }
 
   async function changeStatus(module: ModuleSummary) {
@@ -3299,6 +3446,12 @@ export default function GuruPage() {
     ? editWorksheetTitle !== worksheetMetaBase.title
       || editWorksheetInstructions !== worksheetMetaBase.instructions
     : false;
+  const classMetaBase = classMetaBaseline.current;
+  const classMetaDirty = editingClass !== null && classMetaBase !== null
+    ? editClassName !== classMetaBase.name
+      || editClassSubject !== classMetaBase.subject
+      || editClassAcademicYear !== classMetaBase.academicYear
+    : false;
   const assignmentBase = assignmentEditBaseline.current;
   const assignmentEditDirty = editingAssignment !== null && assignmentBase !== null
     ? selectedId !== assignmentBase.selectedId
@@ -3529,7 +3682,7 @@ export default function GuruPage() {
         {assignmentTargetType === "kelas" ? (
           <div style={styles.checkboxList}>
             <span style={styles.label}>Kelas tujuan</span>
-            {classes.map((kelas) => <label key={kelas.id} style={styles.checkbox}><input type="checkbox" checked={assignmentClassIds.includes(kelas.id)} onChange={(event) => setAssignmentClassIds((current) => event.target.checked ? [...current, kelas.id] : current.filter((id) => id !== kelas.id))} />{kelas.name} · {kelas.subject}</label>)}
+            {activeClasses.map((kelas) => <label key={kelas.id} style={styles.checkbox}><input type="checkbox" checked={assignmentClassIds.includes(kelas.id)} onChange={(event) => setAssignmentClassIds((current) => event.target.checked ? [...current, kelas.id] : current.filter((id) => id !== kelas.id))} />{kelas.name} · {kelas.subject}</label>)}
           </div>
         ) : (
           <div style={styles.checkboxList}>
@@ -3574,7 +3727,7 @@ export default function GuruPage() {
                 </div>
               );
             })}
-            {classes.every((kelas) => (kelas.members ?? []).length === 0) ? <p style={styles.empty}>Belum ada murid di kelas mana pun. Murid masuk kelas lewat kode gabung di Langkah 3.</p> : null}
+            {activeClasses.every((kelas) => (kelas.members ?? []).length === 0) ? <p style={styles.empty}>Belum ada murid di kelas mana pun. Murid masuk kelas lewat kode gabung di Langkah 3.</p> : null}
           </div>
         )}
         <label style={styles.label}>Dibuka pada<input type="datetime-local" value={assignmentOpensAt} onChange={(event) => setAssignmentOpensAt(event.target.value)} style={styles.input} /></label>
@@ -3909,19 +4062,48 @@ export default function GuruPage() {
         <div className="module-section-heading">
           <div>
             <h2 style={styles.sectionTitle}>Kelas saya</h2>
-            <p className="module-section-summary">{classes.length} kelas aktif · kode gabung tersedia di setiap baris</p>
+            <p className="module-section-summary">{activeClasses.length} kelas aktif{archivedClasses.length > 0 ? ` · ${archivedClasses.length} diarsipkan` : ""}</p>
           </div>
+          <button type="button" style={styles.secondaryButton} aria-expanded={createClassOpen || classes.length === 0} onClick={() => setCreateClassOpen((current) => !current)}>+ Buat kelas</button>
         </div>
-        <details className="guru-collapsible" open={classes.length === 0}>
-          <summary>+ Buat kelas</summary>
+        {createClassOpen || classes.length === 0 ? (
           <form onSubmit={createClass} style={styles.form}>
             <input required value={className} onChange={(event) => setClassName(event.target.value)} placeholder="Nama kelas, misalnya XI DPIB" style={styles.input} />
             <input required value={classSubject} onChange={(event) => setClassSubject(event.target.value)} placeholder="Mata pelajaran" style={styles.input} />
             <input required value={classAcademicYear} onChange={(event) => setClassAcademicYear(event.target.value)} placeholder="Tahun ajaran, misalnya 2026/2027" style={styles.input} />
             <button type="submit" style={styles.primaryButton}><span className="action-icon" aria-hidden="true">+</span>Buat kelas</button>
           </form>
-        </details>
-        {classes.length > 0 ? <div className="module-list">{classes.map((kelas) => <article key={kelas.id} className="resource-row"><div className="module-row-main"><strong>{kelas.name}</strong><span>{kelas.subject} · {kelas.academic_year}</span><span>Kode gabung: <strong>{kelas.join_code}</strong></span></div><span className="module-status module-status-terbit">aktif</span></article>)}</div> : <p style={styles.empty}>Belum ada kelas. Buat kelas untuk dapat dipilih sebagai tujuan penugasan.</p>}
+        ) : null}
+        {classes.length === 0 ? (
+          <p style={styles.empty}>Belum ada kelas. Buat kelas untuk dapat dipilih sebagai tujuan penugasan.</p>
+        ) : activeClasses.length === 0 ? (
+          <p style={styles.empty}>Tidak ada kelas aktif. Aktifkan kembali kelas dari seksi Diarsipkan di bawah.</p>
+        ) : (
+          groupClassesByLevel(activeClasses).map((group) => (
+            <div key={group.key} className="kelas-row-group">
+              <div className="kelas-row-group-head">
+                <span>{group.label}</span>
+                <span className="kelas-row-group-count">{group.classes.length} kelas</span>
+              </div>
+              <div className="kelas-row-list">
+                {group.classes.map((kelas) => renderClassRow(kelas))}
+              </div>
+            </div>
+          ))
+        )}
+        {archivedClasses.length > 0 ? (
+          <div className="kelas-row-archive">
+            <button type="button" className="kelas-row-archive-toggle" aria-expanded={archivedClassesOpen} onClick={() => setArchivedClassesOpen((current) => !current)}>
+              <span>Diarsipkan ({archivedClasses.length})</span>
+              <span aria-hidden="true">{archivedClassesOpen ? "▾" : "▸"}</span>
+            </button>
+            {archivedClassesOpen ? (
+              <div className="kelas-row-list">
+                {archivedClasses.map((kelas) => renderClassRow(kelas))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </section>
 
       {selectedId ? (
@@ -4374,7 +4556,7 @@ export default function GuruPage() {
               Kelas
               <select aria-label="Saring kelas penugasan" value={assignmentClassFilter} onChange={(event) => setAssignmentClassFilter(event.target.value)}>
                 <option value="semua">Semua kelas</option>
-                {classes.map((kelas) => <option key={kelas.id} value={String(kelas.id)}>{kelas.name}</option>)}
+                {activeClasses.map((kelas) => <option key={kelas.id} value={String(kelas.id)}>{kelas.name}</option>)}
                 <option value="siswa">Siswa tertentu</option>
               </select>
             </label>
@@ -5049,6 +5231,38 @@ export default function GuruPage() {
           <button type="submit" style={styles.primaryButton}><span className="action-icon" aria-hidden="true">💾</span>Simpan data LKPD</button>
           <button type="button" onClick={cancelEditWorksheetMeta} style={styles.secondaryButton}><span className="action-icon" aria-hidden="true">✕</span>Batal</button>
         </form>
+      </Modal>
+
+      {/* Modal Edit Kelas (Langkah 3): label kelas + kode gabung + arsip
+          dalam satu tempat. Kode gabung di dalam modal boleh terlihat
+          (berbeda dari baris daftar yang menyembunyikannya). Aksi arsip /
+          buat kode baru melewati confirmDialog, yang menumpuk di atas
+          modal sesuai urutan lapisan Modal. */}
+      <Modal
+        open={editingClass !== null}
+        title="Edit kelas"
+        onClose={() => void requestEditModalClose(classMetaDirty, cancelEditClass)}
+      >
+        {editingClass ? (
+          <>
+            <form onSubmit={saveClassMeta} style={styles.form}>
+              <input required value={editClassName} onChange={(event) => setEditClassName(event.target.value)} placeholder="Nama kelas, misalnya XI DPIB" style={styles.input} />
+              <input required value={editClassSubject} onChange={(event) => setEditClassSubject(event.target.value)} placeholder="Mata pelajaran" style={styles.input} />
+              <input required value={editClassAcademicYear} onChange={(event) => setEditClassAcademicYear(event.target.value)} placeholder="Tahun ajaran, misalnya 2026/2027" style={styles.input} />
+              <button type="submit" disabled={classEditBusy} style={styles.primaryButton}><span className="action-icon" aria-hidden="true">💾</span>Simpan data kelas</button>
+              <button type="button" onClick={cancelEditClass} style={styles.secondaryButton}><span className="action-icon" aria-hidden="true">✕</span>Batal</button>
+            </form>
+            <div className="kelas-edit-code">
+              <span className="kelas-edit-code-label">Kode gabung</span>
+              <code className="kelas-edit-code-value">{editingClass.join_code}</code>
+              <button type="button" style={styles.secondaryButton} onClick={() => void copyJoinCode(editingClass)}>Salin</button>
+              <button type="button" style={styles.secondaryButton} disabled={classEditBusy} onClick={() => void regenerateClassCode()}>Buat kode baru</button>
+            </div>
+            <button type="button" style={styles.secondaryButton} disabled={classEditBusy} onClick={() => void toggleClassArchived()}>
+              {editingClass.is_archived ? "Aktifkan kembali" : "Arsipkan kelas"}
+            </button>
+          </>
+        ) : null}
       </Modal>
 
       {/* Lembar Nilai: rincian penilaian pengumpulan yang sama, kini

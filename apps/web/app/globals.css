@@ -1489,12 +1489,17 @@ a {
    guru yang panduan awalnya belum lengkap, dan baris ringkas
    "Panduan awal selesai" sesudahnya — keduanya hilang permanen
    lewat penanda server welcome_dismissed_at. Bukan modal: kartu
-   menempel di atas daftar modul dan tidak menghalangi apa pun. */
+   menempel di atas daftar modul dan tidak menghalangi apa pun.
+   Latar biru muda brand-50 + tepi biru lembut (#b2ddff, satu tingkat
+   lebih tua dari latar) membedakannya dari kartu isi yang putih;
+   kontras dijaga: teks isi memakai --color-ink penuh, tombol
+   sekunder tetap putih bertepi --color-border agar terdefinisi di
+   atas rona, dan garis pemisah checklist memakai --color-border. */
 .sambutan-card {
-  border: 1px solid var(--color-border-soft);
+  border: 1px solid #b2ddff;
   border-radius: var(--radius-lg);
   padding: 20px;
-  background: var(--color-surface);
+  background: var(--color-brand-50);
   box-shadow: var(--shadow-card);
 }
 
@@ -1524,7 +1529,7 @@ a {
 
 .sambutan-text {
   margin: 8px 0 0;
-  color: var(--color-muted);
+  color: var(--color-ink);
   font-size: 14px;
   line-height: 1.55;
 }
@@ -1537,7 +1542,7 @@ a {
 }
 
 .sambutan-action {
-  border: 1px solid var(--color-border-soft);
+  border: 1px solid var(--color-border);
   border-radius: 999px;
   padding: 8px 14px;
   background: var(--color-surface);
@@ -1558,7 +1563,7 @@ a {
   list-style: none;
   margin: 16px 0 0;
   padding: 12px 0 0;
-  border-top: 1px solid var(--color-border-soft);
+  border-top: 1px solid var(--color-border);
   display: grid;
   gap: 6px;
 }
@@ -1609,10 +1614,10 @@ a {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border: 1px solid var(--color-border-soft);
+  border: 1px solid #b2ddff;
   border-radius: var(--radius-lg);
   padding: 10px 16px;
-  background: var(--color-surface);
+  background: var(--color-brand-50);
 }
 
 .sambutan-ringkas-label {

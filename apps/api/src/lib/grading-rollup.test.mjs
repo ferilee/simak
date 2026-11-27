@@ -110,8 +110,8 @@ console.log("Case 3: kabel statis route + pemuat + tanpa migrasi");
   check("serializeAssignment mengirim grading + grading_by_class (aditif)",
     assignmentsRoute.includes("grading: gradingView") && assignmentsRoute.includes("grading_by_class: gradingView?.by_class ?? []"));
   const journal = JSON.parse(read("../../../../packages/db/migrations/meta/_journal.json"));
-  check("jurnal migrasi tetap 24 entri, terakhir 0023_jurnal_tanggapan",
-    journal.entries.length === 24 && journal.entries[journal.entries.length - 1].tag === "0023_jurnal_tanggapan");
+  check("jurnal migrasi tetap 25 entri, terakhir 0024_sambutan_guru",
+    journal.entries.length === 25 && journal.entries[journal.entries.length - 1].tag === "0024_sambutan_guru");
 }
 
 console.log(`\nHasil: ${passed} lulus, ${failed} gagal, ${passed + failed} total`);

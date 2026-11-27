@@ -194,7 +194,7 @@ console.log("Case 8: penguncian statis kabel basis data + rute");
   check("endpoint salin kelompok TIDAK berubah: tetap dijaga classShuffleLocked", copySegment.includes("classShuffleLocked(assignment, classId)"));
 
   const journal = JSON.parse(readRepo("packages/db/migrations/meta/_journal.json"));
-  check("tidak ada migrasi baru dari paket ini: jurnal 24 entri (0013 persetujuan-berbagi menyusul)", journal.entries.length === 24, `got ${journal.entries.length}`);
+  check("tidak ada migrasi baru dari paket ini: jurnal 25 entri (0013 persetujuan-berbagi menyusul)", journal.entries.length === 25, `got ${journal.entries.length}`);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

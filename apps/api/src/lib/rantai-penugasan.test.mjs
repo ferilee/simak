@@ -26,7 +26,7 @@
 //  - Wiring: /today membangun rencana dari data termuat + mengirim
 //    field rencana; GET /murid/modules/:id, resolusi attempt LKPD,
 //    dan pencatatan baca_materi_tuntas memanggil pemeriksaan kunci.
-//  - Paket ini TANPA migrasi: jurnal kini 24 entri berakhir di 0023.
+//  - Paket ini TANPA migrasi: jurnal kini 25 entri berakhir di 0024.
 import { readFileSync } from "node:fs";
 import {
   assignmentLockedMessage,
@@ -298,8 +298,8 @@ console.log("Kasus H: tanpa migrasi");
   const journal = JSON.parse(
     readFileSync(new URL("../../../../packages/db/migrations/meta/_journal.json", import.meta.url), "utf8"),
   );
-  check("jurnal migrasi tetap 24 entri", journal.entries.length === 24, `got ${journal.entries.length}`);
-  check("entri terakhir kini 0023_jurnal_tanggapan", journal.entries[journal.entries.length - 1].tag === "0023_jurnal_tanggapan");
+  check("jurnal migrasi tetap 25 entri", journal.entries.length === 25, `got ${journal.entries.length}`);
+  check("entri terakhir kini 0024_sambutan_guru", journal.entries[journal.entries.length - 1].tag === "0024_sambutan_guru");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

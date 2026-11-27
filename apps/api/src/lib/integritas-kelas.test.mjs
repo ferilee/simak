@@ -73,7 +73,7 @@ console.log("Case 2: agregasi sinyal, ambang risiko, dan batas tidak berubah");
 console.log("Case 3: Jalur — tidak ada migrasi baru");
 {
   const files = readdirSync(new URL("../../../../packages/db/migrations/", import.meta.url)).filter((name) => name.endsWith(".sql"));
-  check("tidak ada berkas migrasi 0024+", !files.some((name) => /^002[4-9]/.test(name)), files.join(","));
+  check("tidak ada berkas migrasi 0025+", !files.some((name) => /^002[5-9]/.test(name)), files.join(","));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

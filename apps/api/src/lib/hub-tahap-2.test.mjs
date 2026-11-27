@@ -25,7 +25,7 @@
 //    /murid/asesmen + /murid/handoff di murid.ts, serialisasi pemetaan
 //    di assignments.ts, klien ruas-hub memakai x-internal-secret dan
 //    TIDAK memperkenalkan env baru.
-//  - Migrasi: jurnal 24 entri; 0020_pemetaan_ruas tetap di idx 20;
+//  - Migrasi: jurnal 25 entri; 0020_pemetaan_ruas tetap di idx 20;
 //    SQL 0020 menambah ruas_topic_id/ruas_subject_id di assignments dan
 //    source (bawaan 'csv') + pulled_at di ruas_scores; skema Drizzle
 //    memuat kolom yang sama.
@@ -192,7 +192,7 @@ check("assignments: pemetaan termasuk kunci isi penugasan ditutup", assignmentsS
 
 // --- Migrasi & skema --------------------------------------------------------------------------------
 const journal = JSON.parse(readFileSync(new URL("../../../../packages/db/migrations/meta/_journal.json", import.meta.url), "utf8"));
-check("jurnal migrasi 24 entri", journal.entries.length === 24, `got ${journal.entries.length}`);
+check("jurnal migrasi 25 entri", journal.entries.length === 25, `got ${journal.entries.length}`);
 const entry0020 = journal.entries[20];
 check("entri 0020_pemetaan_ruas tetap di idx 20", entry0020.tag === "0020_pemetaan_ruas" && entry0020.idx === 20, JSON.stringify(entry0020));
 

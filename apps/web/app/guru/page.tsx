@@ -46,6 +46,7 @@ import {
 } from "../../lib/grup-lkpd";
 import { moduleIdentity, worksheetIdentity } from "../../lib/identitas-materi";
 import { groupClassesByLevel } from "../../lib/kelompok-kelas";
+import { welcomeChecklist, welcomeView, type WelcomeSignals } from "../../lib/sambutan-guru";
 import {
   EXIT_TICKET_CLASS_SECTIONS,
   exitTicketStudentMatches,
@@ -366,7 +367,8 @@ type GradeItemResponse = {
   };
 };
 type GradeItemSaveState = "saving" | "saved" | "error";
-type MeResponse = { ok: true; user: { role: "guru" | "murid" } };
+type MeResponse = { ok: true; user: { role: "guru" | "murid"; name?: string; welcome_dismissed_at?: string | null }; panduan_url?: string | null };
+type WelcomeDismissResponse = { ok: true; data: { welcome_dismissed_at: string | null } };
 
 export default function GuruPage() {
   const router = useRouter();
@@ -650,6 +652,17 @@ export default function GuruPage() {
   // menampilkan keadaan terakhir langkah itu persis.
   const [guruView, setGuruView] = useState<"langkah" | "perpustakaan" | "kurikulum" | "jurnal">("langkah");
   const langkahTampil = guruView === "langkah";
+  // Kartu sambutan guru (Langkah 1): nama + penanda tutup datang dari
+  // /auth/me saat loadModules. welcomeDismissedAt bertiga-keadaan:
+  // undefined = belum dimuat (kartu jangan dirender dulu, agar guru
+  // yang sudah menutup tidak melihat kartu sekilas), null = belum
+  // pernah ditutup, string = sudah ditutup pada waktu itu.
+  const [teacherName, setTeacherName] = useState("");
+  const [welcomeDismissedAt, setWelcomeDismissedAt] = useState<string | null | undefined>(undefined);
+  const [panduanUrl, setPanduanUrl] = useState<string | null>(null);
+  // Baris ringkas "Panduan awal selesai" dibuka lagi secara lokal —
+  // keadaan sesaat ini tidak menyentuh penanda server.
+  const [welcomeExpanded, setWelcomeExpanded] = useState(false);
   // Panel perpustakaan dipasang malas pada kunjungan pertama, lalu tidak
   // pernah dilepas (disembunyikan lewat data-active seperti panel langkah)
   // agar keadaan cari/saring/gulirnya utuh saat guru bolak-balik.
@@ -720,6 +733,18 @@ export default function GuruPage() {
     assignments.length > 0,
     false,
   ];
+
+  // Keadaan kartu sambutan guru dari penanda server + data halaman
+  // yang sudah dimuat (lib/sambutan-guru memutuskan penuh/ringkas/
+  // sembunyi). Selama /auth/me belum kembali (penanda undefined)
+  // kartu tidak dirender sama sekali.
+  const welcomeSignals: WelcomeSignals = {
+    dismissedAt: welcomeDismissedAt,
+    hasClass: activeClasses.length > 0,
+    hasModule: modules.length > 0,
+    hasAssignment: assignments.some((assignment) => assignment.status === "terbit"),
+  };
+  const welcomeState = welcomeDismissedAt === undefined ? "sembunyi" : welcomeView(welcomeSignals);
 
   // Peta murid → nama + kelas asal untuk chip murid terpilih pada pemilih
   // sasaran siswa tertentu (sumbernya daftar anggota per kelas dari API).
@@ -1166,6 +1191,21 @@ export default function GuruPage() {
     setGuruView("jurnal");
   }
 
+  // Kartu sambutan ditutup guru: kartu langsung hilang (optimistis)
+  // sementara server mencatat penanda welcome_dismissed_at lewat
+  // endpoint dismiss yang idempoten. Bila panggilan gagal, penanda
+  // server tetap NULL sehingga kartu tampil lagi pada kunjungan
+  // berikut — tidak ada keadaan yang terkunci salah.
+  async function dismissWelcome() {
+    setWelcomeDismissedAt(new Date().toISOString());
+    try {
+      const response = await apiRequest<WelcomeDismissResponse>("/guru/welcome/dismiss", { method: "POST" });
+      setWelcomeDismissedAt(response.data.welcome_dismissed_at ?? new Date().toISOString());
+    } catch {
+      // Abaikan — lihat komentar di atas.
+    }
+  }
+
   // Callback panel Perpustakaan Bersama sesudah guru menyalin: catat
   // drafnya, kembali ke tampilan langkah, lalu muat ulang daftar agar
   // draf salinannya ada dan dibuka oleh loadModules (logika yang sama
@@ -1183,6 +1223,9 @@ export default function GuruPage() {
         setMessage("Akun ini berperan sebagai murid. Keluar dahulu lalu masuk dengan akun guru.");
         return;
       }
+      setTeacherName(me.user.name ?? "");
+      setWelcomeDismissedAt(me.user.welcome_dismissed_at ?? null);
+      setPanduanUrl(me.panduan_url ?? null);
       const [response, worksheetResponse, classResponse, assignmentResponse, integrityResponse] = await Promise.all([
         apiRequest<ModulesResponse>("/modules"),
         apiRequest<WorksheetsResponse>("/worksheets"),
@@ -3921,6 +3964,42 @@ export default function GuruPage() {
 
           <div className="guru-content">
       <section className="wizard-step-panel module-overview" data-active={langkahTampil && guruStep === 0}>
+        {welcomeState === "penuh" || (welcomeState === "ringkas" && welcomeExpanded) ? (
+          <div className="sambutan-card">
+            <div className="sambutan-head">
+              <h3 className="sambutan-title">Selamat datang, {teacherName}</h3>
+              <button type="button" className="sambutan-close" aria-label="Tutup sambutan" onClick={dismissWelcome}>✕</button>
+            </div>
+            <p className="sambutan-text">Di SIMAK Anda menyusun materi dan LKPD untuk murid; penilaian sumatifnya tetap di RUAS. Akun dan kelas Anda terhubung di kedua aplikasi.</p>
+            <div className="sambutan-actions">
+              <button type="button" className="sambutan-action sambutan-action--utama" onClick={openLibraryView}>Pakai materi dari Perpustakaan Bersama</button>
+              <button type="button" className="sambutan-action" onClick={() => setShowCreateModule(true)}>Buat materi pertama saya</button>
+              {panduanUrl ? (
+                <a className="sambutan-action sambutan-action--tautan" href={panduanUrl} target="_blank" rel="noreferrer">Baca panduan singkat</a>
+              ) : null}
+            </div>
+            <ul className="sambutan-checklist">
+              {welcomeChecklist(welcomeSignals).map((item) => (
+                <li key={item.key}>
+                  <button type="button" className="sambutan-check-item" onClick={() => { setGuruView("langkah"); setGuruStep(item.step); }}>
+                    <span className={`sambutan-check-mark${item.done ? " is-done" : ""}`} aria-hidden="true">{item.done ? "✓" : "○"}</span>
+                    <span>{item.label}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <button type="button" className="sambutan-dismiss" onClick={dismissWelcome}>Jangan tampilkan lagi</button>
+          </div>
+        ) : welcomeState === "ringkas" ? (
+          <div className="sambutan-ringkas">
+            <span className="sambutan-ringkas-label">Panduan awal selesai ✓</span>
+            <span className="sambutan-ringkas-actions">
+              <button type="button" className="sambutan-ringkas-button" onClick={() => setWelcomeExpanded(true)}>Lihat lagi</button>
+              <button type="button" className="sambutan-ringkas-button" aria-label="Tutup sambutan" onClick={dismissWelcome}>✕</button>
+            </span>
+          </div>
+        ) : null}
+
         <div className="module-section-heading">
           <div>
             <h2 style={styles.sectionTitle}>Materi saya</h2>

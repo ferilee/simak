@@ -209,9 +209,9 @@ console.log("Case 8: kabel route — kepemilikan data + kelayakan sasaran");
 console.log("Case 9: Jalur — tidak ada migrasi melampaui 0013 (Persetujuan Berbagi)");
 {
   const files = readdirSync(new URL("../../../../packages/db/migrations/", import.meta.url)).filter((name) => name.endsWith(".sql"));
-  check("tidak ada berkas migrasi 0024+", !files.some((name) => /^002[4-9]/.test(name)), files.join(","));
+  check("tidak ada berkas migrasi 0025+", !files.some((name) => /^002[5-9]/.test(name)), files.join(","));
   const journal = JSON.parse(read("../../../../packages/db/migrations/meta/_journal.json"));
-  check("jurnal 24 entri (idx terakhir 23, 0023 jurnal-tanggapan)", journal.entries.length === 24 && journal.entries[journal.entries.length - 1].idx === 23);
+  check("jurnal 25 entri (idx terakhir 24, 0024 sambutan-guru)", journal.entries.length === 25 && journal.entries[journal.entries.length - 1].idx === 24);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

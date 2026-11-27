@@ -31,7 +31,7 @@
 //  - Ditinjau: entri perlu ditinjau selama reviewed_at NULL; membuka
 //    detail menandai yang dikembalikan (helper murni + jarum rute);
 //    ringkasan guru membawa unreviewed_count + unreviewed_total.
-//  - Migrasi: jurnal 24 entri; 0021_jurnal_belajar tetap di idx 21;
+//  - Migrasi: jurnal 25 entri; 0021_jurnal_belajar tetap di idx 21;
 //    SQL 0021 membuat journal_entries (FK student→users, linked module→
 //    modules, indeks student+date); 0023 menambah kolom tanggapan +
 //    reviewed_at (FK penanggap→users ON DELETE SET NULL); skema
@@ -292,7 +292,7 @@ check("jurnal tidak menyentuh XP (tanpa awardXp / xpLedger di lib + rute jurnal)
 const journal = JSON.parse(
   readFileSync(new URL("../../../../packages/db/migrations/meta/_journal.json", import.meta.url), "utf8"),
 );
-check("jurnal migrasi 24 entri", journal.entries.length === 24, `got ${journal.entries.length}`);
+check("jurnal migrasi 25 entri", journal.entries.length === 25, `got ${journal.entries.length}`);
 const entry0023 = journal.entries[23];
 check("entri 0023_jurnal_tanggapan di idx 23", entry0023.tag === "0023_jurnal_tanggapan" && entry0023.idx === 23, JSON.stringify(entry0023));
 

@@ -16,6 +16,13 @@ export const users = mysqlTable("users", {
   // bukan di perangkat — karena murid berbagi perangkat: penanda lokal
   // akan menyambut orang yang salah atau melewatkan yang berhak.
   welcomedAt: timestamp("welcomed_at"),
+  // Kapan guru menutup kartu sambutan di ruang kerja guru (NULL = belum
+  // pernah ditutup). Berbeda dari welcomed_at milik murid: kartu guru
+  // tampil penuh selama panduan awal belum lengkap, menyusut jadi satu
+  // baris sesudah lengkap, dan hanya hilang permanen lewat penanda ini.
+  // Penanda di server — bukan di perangkat — agar konsisten di semua
+  // perangkat guru (HP dan komputer sekolah).
+  welcomeDismissedAt: timestamp("welcome_dismissed_at"),
   // Slug avatar yang sedang dipasang murid (katalog statis di
   // apps/api/src/lib/avatar.ts; NULL = belum memasang avatar). Avatar
   // dimiliki lewat penukaran poin XP yang tercatat di buku besar

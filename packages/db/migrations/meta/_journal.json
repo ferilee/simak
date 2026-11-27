@@ -169,6 +169,13 @@
       "when": 1794889273874,
       "tag": "0023_jurnal_tanggapan",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "5",
+      "when": 1795813852778,
+      "tag": "0024_sambutan_guru",
+      "breakpoints": true
     }
   ]
 }

@@ -14,7 +14,7 @@
 //
 // Same convention as the other suites: no test database, so the pure
 // decision (planProfileSync) is tested behaviorally and the DB wiring
-// is locked statically. No migration: the journal stays at 24 entries.
+// is locked statically. No migration: the journal stays at 25 entries.
 import { readFileSync } from "node:fs";
 
 // The modules under test parse the environment / build the db pool at
@@ -213,7 +213,7 @@ const readRepo = (rel) => readFileSync(new URL(`../../../../${rel}`, import.meta
     handoff.includes("upsertSimakProfile(identity)"));
 
   const journal = JSON.parse(readRepo("packages/db/migrations/meta/_journal.json"));
-  check("journal has exactly 24 entries (no migration in this package)", journal.entries.length === 24,
+  check("journal has exactly 25 entries (no migration in this package)", journal.entries.length === 25,
     `got ${journal.entries.length}`);
 }
 

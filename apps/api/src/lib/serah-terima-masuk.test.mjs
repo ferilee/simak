@@ -28,7 +28,7 @@
 //    attachSessionCookie yang sama dengan login, dan dipasang di
 //    app.ts SEBELUM logger (token tak masuk log); Caddy mengarahkan
 //    /masuk-ruas/* ke API.
-//  - Migrasi: jurnal 24 entri; 0022_token_serah_terima tetap di
+//  - Migrasi: jurnal 25 entri; 0022_token_serah_terima tetap di
 //    idx 22; SQL 0022 membuat tabel ruas_handoff_tokens (token_hash
 //    varchar(64) PK, user_id FK ke users, expires/used/created);
 //    skema Drizzle mengekspor tabel yang sama.
@@ -185,7 +185,7 @@ for (const caddyName of ["Caddyfile.production", "Caddyfile", "Caddyfile.staging
 const journal = JSON.parse(
   readFileSync(new URL("../../../../packages/db/migrations/meta/_journal.json", import.meta.url), "utf8"),
 );
-check("jurnal migrasi 24 entri", journal.entries.length === 24, `got ${journal.entries.length}`);
+check("jurnal migrasi 25 entri", journal.entries.length === 25, `got ${journal.entries.length}`);
 const entry0022 = journal.entries[22];
 check("entri 0022_token_serah_terima tetap di idx 22", entry0022.tag === "0022_token_serah_terima" && entry0022.idx === 22, JSON.stringify(entry0022));
 

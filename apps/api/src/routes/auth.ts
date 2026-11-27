@@ -1,11 +1,16 @@
 import { Hono } from "hono";
+import { eq } from "drizzle-orm";
+import { db, schema } from "@simak/db";
 import { zValidator } from "@hono/zod-validator";
 import { loginSchema } from "@simak/shared";
 import { authenticateAgainstRuas, RuasAuthUnavailable } from "../lib/ruas-auth";
 import { attachSessionCookie, clearSessionCookie, createSession, getSessionFromRequest, revokeSession, SESSION_COOKIE } from "../lib/session";
 import { consumeLoginAttempt, clearLoginAttempts } from "../lib/rate-limit";
+import { panduanUrl } from "../lib/sambutan-guru";
 import { publicUser, upsertSimakProfile } from "../services/user-profile";
 import { getCookie } from "hono/cookie";
+
+const { users } = schema;
 
 // Satu pintu login guru + murid (blueprint Bagian 07).
 // Alur Tahap 0:
@@ -67,5 +72,27 @@ authRoutes.post("/logout", async (c) => {
 authRoutes.get("/me", async (c) => {
   const user = await getSessionFromRequest(c);
   if (!user) return c.json({ ok: false, message: "Belum masuk." }, 401);
-  return c.json({ ok: true, user: publicUser(user) });
+  // Penanda sambutan guru dibaca dari baris users (bukan dari sesi, yang
+  // tidak membawanya): hanya untuk peran guru, dan kegagalan query tidak
+  // boleh menggagalkan /me — penanda dianggap belum terisi (kartu
+  // sambutan boleh tampil; ada tombol tutupnya). panduan_url dari env
+  // SIMAK_PANDUAN_URL menyertai untuk semua peran (null bila tak diatur).
+  let welcomeDismissedAt: Date | null = null;
+  if (user.role === "guru") {
+    try {
+      const [me] = await db
+        .select({ welcomeDismissedAt: users.welcomeDismissedAt })
+        .from(users)
+        .where(eq(users.id, user.userId))
+        .limit(1);
+      welcomeDismissedAt = me?.welcomeDismissedAt ?? null;
+    } catch {
+      // Abaikan — lihat komentar di atas.
+    }
+  }
+  return c.json({
+    ok: true,
+    user: { ...publicUser(user), welcome_dismissed_at: welcomeDismissedAt },
+    panduan_url: panduanUrl(),
+  });
 });

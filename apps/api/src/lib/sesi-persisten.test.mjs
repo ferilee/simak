@@ -133,7 +133,7 @@ check("middleware loadSession meng-await getSessionFromRequest", middlewareSrc.i
 const journal = JSON.parse(
   readFileSync(new URL("../../../../packages/db/migrations/meta/_journal.json", import.meta.url), "utf8"),
 );
-check("jurnal migrasi 24 entri", journal.entries.length === 24, `got ${journal.entries.length}`);
+check("jurnal migrasi 25 entri", journal.entries.length === 25, `got ${journal.entries.length}`);
 const entry0019 = journal.entries[19];
 check("entri 0019_sesi_persisten tetap di idx 19", entry0019.tag === "0019_sesi_persisten" && entry0019.idx === 19, JSON.stringify(entry0019));
 

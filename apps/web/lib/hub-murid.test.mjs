@@ -77,8 +77,8 @@ check("guru: ringkasan tarikan menyebut terbarui/belum ada skor/tidak dikenal", 
 check("murid: memuat ringkasan hub dari /murid/asesmen secara gagal-lembut", muridPage.includes('apiRequest<HubResponse>("/murid/asesmen")') && muridPage.includes(".catch(() => setHub(null))"));
 check("murid: bagian Progres belajar tampil di dashboard", muridPage.includes("Progres belajar"));
 check("murid: progres menampilkan materi/LKPD + asesmen tertempel", muridPage.includes("chain.materials_completed") && muridPage.includes("chain.lkpd_submitted") && muridPage.includes("chain.assessment"));
-check("murid: status + skor asesmen tampil sebagai baris di kartu rantai progres",
-  muridPage.includes("Asesmen RUAS:") && muridPage.includes("assessmentStatusLabel(chain.assessment.status)") && muridPage.includes("Skor ${chain.assessment.score}"));
+check("murid: status + skor asesmen tampil sebagai poin berlabel di kartu rantai progres",
+  muridPage.includes('<span className="progres-poin-label">Asesmen RUAS</span>') && muridPage.includes("assessmentStatusLabel(chain.assessment.status)") && muridPage.includes("Skor ${chain.assessment.score}"));
 check("PENSIUN v1.0.76: beranda tanpa tombol Buka di RUAS per kartu + Buka RUAS umum",
   !muridPage.includes("Buka di RUAS") && !muridPage.includes("Buka RUAS"));
 check("PENSIUN v1.0.76: beranda tanpa kartu Asesmen RUAS + catatan lembut 'belum dapat dimuat'",

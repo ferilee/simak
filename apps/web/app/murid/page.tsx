@@ -802,16 +802,30 @@ export default function MuridPage() {
                         >
                           <div className="material-progress-fill" style={{ width: `${chain.materials_pct}%` }} />
                         </div>
-                        <span className="content-muted">
-                          Materi {chain.materials_completed} dari {chain.materials_total} tuntas · LKPD {chain.lkpd_submitted} dari {chain.lkpd_total} terkumpul · {chain.lkpd_graded} dinilai
-                        </span>
-                        {chain.assessment ? (
-                          <span className="content-muted">
-                            Asesmen RUAS: {chain.assessment.title ?? `Topik #${chain.assessment.topic_id}`}
-                            {chain.assessment.status ? ` · ${assessmentStatusLabel(chain.assessment.status)}` : ""}
-                            {chain.assessment.score !== null ? ` · Skor ${chain.assessment.score}` : ""}
-                          </span>
-                        ) : null}
+                        <ul className="progres-poin">
+                          <li className="progres-poin-item">
+                            <span className="progres-poin-label">Materi</span>
+                            <span className="progres-poin-value">{chain.materials_completed} dari {chain.materials_total} tuntas</span>
+                          </li>
+                          <li className="progres-poin-item">
+                            <span className="progres-poin-label">LKPD</span>
+                            <span className="progres-poin-value">{chain.lkpd_submitted} dari {chain.lkpd_total} terkumpul</span>
+                          </li>
+                          <li className="progres-poin-item">
+                            <span className="progres-poin-label">LKPD dinilai</span>
+                            <span className="progres-poin-value">{chain.lkpd_graded}</span>
+                          </li>
+                          {chain.assessment ? (
+                            <li className="progres-poin-item">
+                              <span className="progres-poin-label">Asesmen RUAS</span>
+                              <span className="progres-poin-value">
+                                {chain.assessment.title ?? `Topik #${chain.assessment.topic_id}`}
+                                {chain.assessment.status ? ` · ${assessmentStatusLabel(chain.assessment.status)}` : ""}
+                                {chain.assessment.score !== null ? ` · Skor ${chain.assessment.score}` : ""}
+                              </span>
+                            </li>
+                          ) : null}
+                        </ul>
                       </article>
                     ))}
                   </div>

@@ -3307,6 +3307,53 @@ button.wizard-library-link {
   text-overflow: ellipsis;
 }
 
+/* Keterangan kartu rangkaian di "Progres belajar" (Beranda murid):
+   dulu teks mengalir dua baris yang sulit dipindai; kini daftar poin
+   berlabel — label redup, nilai lebih tegas, penanda titik kecil
+   berwarna hijau senada bilah progres rangkaian (--color-success).
+   Informasi yang tampil persis sama seperti sebelumnya (materi,
+   LKPD terkumpul, LKPD dinilai, dan asesmen RUAS bila ada), hanya
+   disajikan satu poin per baris agar enak dibaca. */
+.progres-poin {
+  display: grid;
+  gap: 5px;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.progres-poin-item {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding-left: 14px;
+}
+
+.progres-poin-item::before {
+  content: "";
+  position: absolute;
+  top: 0.52em;
+  left: 1px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-success);
+}
+
+.progres-poin-label {
+  flex: 0 0 auto;
+  color: var(--color-muted);
+}
+
+.progres-poin-value {
+  min-width: 0;
+  font-weight: 600;
+}
+
 .wizard-footer {
   display: flex;
   justify-content: space-between;

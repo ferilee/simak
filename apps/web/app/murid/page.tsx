@@ -157,6 +157,7 @@ export default function MuridPage() {
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
+  const [kelasListOpen, setKelasListOpen] = useState(false);
   const [hasNewGrades, setHasNewGrades] = useState(false);
   const [welcomeStep, setWelcomeStep] = useState(0);
   const [activeTab, setActiveTab] = useState<MuridTab>("dashboard");
@@ -652,18 +653,36 @@ export default function MuridPage() {
           {studentStep === 0 ? (
             <div className="wizard-step-content">
               <section className="murid-home-card murid-home-card--kelas">
-                <div className="murid-home-card-head">
+                <div className="kelas-ringkas-bar">
                   <span className="murid-home-card-icon murid-home-card-icon--kelas" aria-hidden="true">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
                   </span>
-                  <div className="murid-home-card-titles">
-                    <h3>Kelas saya</h3>
-                    <span>{data.classes.length} kelas aktif</span>
-                  </div>
-                  <div className="murid-home-card-side">
+                  {data.classes.length > 0 ? (
+                    <button
+                      type="button"
+                      className="kelas-ringkas-toggle"
+                      aria-expanded={kelasListOpen}
+                      aria-controls="kelas-ringkas-list"
+                      onClick={() => setKelasListOpen(!kelasListOpen)}
+                    >
+                      <h3>Kelas saya</h3>
+                      <span className="kelas-ringkas-summary">
+                        {data.classes.length === 1
+                          ? `${data.classes[0].name} · ${data.classes[0].subject}`
+                          : `${data.classes.length} kelas aktif`}
+                      </span>
+                      <span className="kelas-ringkas-chevron" aria-hidden="true">{kelasListOpen ? "▾" : "▸"}</span>
+                    </button>
+                  ) : (
+                    <div className="kelas-ringkas-toggle kelas-ringkas-toggle--static">
+                      <h3>Kelas saya</h3>
+                      <span className="kelas-ringkas-summary">Belum ada kelas</span>
+                    </div>
+                  )}
+                  <div className="murid-home-card-side kelas-ringkas-side">
                     <MuridSectionChipPill chip={kelasSectionChip} />
                     {data.classes.length > 0 && !joinOpen ? (
-                      <button type="button" className="button button-secondary join-class-trigger" onClick={() => setJoinOpen(true)}>
+                      <button type="button" className="button button-secondary join-class-trigger kelas-ringkas-join" onClick={() => setJoinOpen(true)}>
                         + Gabung kelas
                       </button>
                     ) : null}
@@ -695,16 +714,16 @@ export default function MuridPage() {
                 ) : null}
                 {data.classes.length === 0 ? (
                   <p className="empty-state">Belum ada kelas. Masukkan kode kelas dari guru untuk bergabung.</p>
-                ) : (
-                  <div className="content-grid">
+                ) : kelasListOpen ? (
+                  <ul className="kelas-ringkas-list" id="kelas-ringkas-list">
                     {data.classes.map((kelas) => (
-                      <article key={kelas.id} className="content-card">
+                      <li key={kelas.id} className="kelas-ringkas-item">
                         <strong>{kelas.name}</strong>
-                        <span className="content-muted">{kelas.subject} · {kelas.academic_year}</span>
-                      </article>
+                        <span>{kelas.subject} · {kelas.academic_year}</span>
+                      </li>
                     ))}
-                  </div>
-                )}
+                  </ul>
+                ) : null}
               </section>
 
               <section className="murid-home-card murid-home-card--progres">

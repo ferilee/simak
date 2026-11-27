@@ -3186,6 +3186,127 @@ button.wizard-library-link {
   background: rgba(255, 255, 255, 0.6);
 }
 
+/* Bar ringkas "Kelas saya" (penyesuaian sesudah era kartu v1.0.74):
+   bagian ini jarang dibuka murid kecuali saat ada kelas baru, jadi
+   kartu besarnya (kepala kartu + kartu kelas bersarang, ±180px)
+   dipadatkan menjadi SATU bar ramping ±60px — ikon kecil, judul +
+   ringkasan sebaris yang menjadi tombol lipat, chip jumlah kelas,
+   dan tombol Gabung kelas kompak. Daftar kelas dilipat bawaan dan
+   tampil sebagai daftar baris tipis (bukan kartu bersarang) hanya
+   bila dibuka. Panel gabung kelas + teks keadaan kosong 0 kelas
+   tidak berubah perilaku; hanya diberi jarak atas dari bar. Kartu
+   Progres belajar (kartu .murid-home-card lainnya) tidak disentuh. */
+.murid-home-card--kelas {
+  padding: 12px 16px;
+}
+
+.kelas-ringkas-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.murid-home-card--kelas .murid-home-card-icon {
+  width: 32px;
+  height: 32px;
+}
+
+.murid-home-card--kelas .murid-home-card-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.kelas-ringkas-toggle {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: 0;
+  padding: 4px 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.kelas-ringkas-toggle--static {
+  cursor: default;
+}
+
+.kelas-ringkas-toggle h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.kelas-ringkas-summary {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-muted);
+  font-size: 14px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.kelas-ringkas-chevron {
+  flex: 0 0 auto;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.kelas-ringkas-side {
+  flex: 0 0 auto;
+}
+
+.kelas-ringkas-join {
+  padding: 5px 10px;
+  font-size: 13px;
+}
+
+.murid-home-card--kelas .wizard-join-panel {
+  margin-top: 12px;
+}
+
+.murid-home-card--kelas .empty-state {
+  margin-top: 10px;
+}
+
+.kelas-ringkas-list {
+  margin: 10px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--color-border-soft);
+  list-style: none;
+}
+
+.kelas-ringkas-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--color-border-soft);
+}
+
+.kelas-ringkas-item:last-child {
+  padding-bottom: 2px;
+  border-bottom: 0;
+}
+
+.kelas-ringkas-item strong {
+  white-space: nowrap;
+}
+
+.kelas-ringkas-item span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-muted);
+  font-size: 14px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .wizard-footer {
   display: flex;
   justify-content: space-between;

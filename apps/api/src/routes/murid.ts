@@ -533,6 +533,35 @@ muridRoutes.get("/today", async (c) => {
   } catch {
     // Abaikan — langkah materi tampil sebagai belum tuntas.
   }
+  // Statistik daftar materi (kartu materi pastel): jumlah blok dan
+  // jumlah kata per modul untuk baris meta kartu ("7 blok · ±10
+  // menit"). SATU query himpunan untuk semua modul terbit yang
+  // terlihat — bukan per modul. Jumlah kata memakai helper yang sama
+  // persis dengan jalur buka materi (lib/baca-wajar
+  // countMaterialWords atas { type, content: contentJson }) agar
+  // estimasi menit pada kartu selalu sejalan dengan target baca pada
+  // halaman materi. Pola gagal-aman yang sama dengan sinyal beranda
+  // lain: kegagalan → peta kosong (meta kartu tampil tanpa angka).
+  const moduleStatsById = new Map<number, { blockCount: number; wordCount: number }>();
+  try {
+    if (publishedModules.length > 0) {
+      const blockRows = await db
+        .select({ moduleId: moduleBlocks.moduleId, type: moduleBlocks.type, contentJson: moduleBlocks.contentJson })
+        .from(moduleBlocks)
+        .where(inArray(moduleBlocks.moduleId, publishedModules.map((module) => module.id)));
+      const blocksByModule = new Map<number, { type: string; content: Record<string, unknown> | null }[]>();
+      for (const row of blockRows) {
+        const list = blocksByModule.get(row.moduleId) ?? [];
+        list.push({ type: row.type, content: row.contentJson });
+        blocksByModule.set(row.moduleId, list);
+      }
+      for (const [moduleId, blocks] of blocksByModule) {
+        moduleStatsById.set(moduleId, { blockCount: blocks.length, wordCount: countMaterialWords(blocks) });
+      }
+    }
+  } catch {
+    // Abaikan — meta kartu tampil tanpa jumlah blok/menit.
+  }
   let submittedExitTicketAssignmentIds = new Set<number>();
   try {
     if (uniqueAssignments.length > 0) {
@@ -608,7 +637,10 @@ muridRoutes.get("/today", async (c) => {
       // pengelompokan per kelompok materi di web) dan material_completed
       // (penanda tuntas per modul dari himpunan baca_materi_tuntas di
       // atas — predikat yang sama dengan langkah materi kartu
-      // penugasan, hanya cakupannya per modul daftar ini).
+      // penugasan, hanya cakupannya per modul daftar ini). Dua field
+      // ADITIF lagi untuk kartu materi pastel: block_count dan
+      // word_count dari peta statistik himpunan di atas (0 bila modul
+      // tanpa blok atau querynya gagal — web menyembunyikan angkanya).
       modules: publishedModules
         .map((module, index) => ({
           module,
@@ -634,6 +666,8 @@ muridRoutes.get("/today", async (c) => {
           locked: lock.locked,
           locked_by_title: lock.lockedByTitle,
           material_completed: completedMaterialModuleIds.has(module.id),
+          block_count: moduleStatsById.get(module.id)?.blockCount ?? 0,
+          word_count: moduleStatsById.get(module.id)?.wordCount ?? 0,
         })),
       // Daftar penugasan terkirim dalam URUTAN GLOBAL rencana (rantai
       // menurut ATP, bebas terakhir) — klien tidak mengurutkan ulang.

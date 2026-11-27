@@ -5584,6 +5584,146 @@ button.wizard-library-link {
   padding: 0 12px 12px;
 }
 
+/* Kartu materi PASTEL (daftar materi murid): kartu besar sangat
+   membulat berwarna pastel per kelompok materi — warna datang dari
+   properti CSS --mcard-bg/--mcard-tile/--mcard-accent yang diisi
+   sebaris oleh kartu (lib/kartu-materi). Judul selalu teks gelap
+   netral (bukan warna aksen) dan dibatasi dua baris; subjudul satu
+   baris. Hanya CSS dasar yang aman untuk Safari lama (tanpa :has()
+   dan tanpa container queries). */
+.mcard {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-radius: 22px;
+  padding: 16px;
+  background: var(--mcard-bg);
+  color: var(--color-ink);
+  text-decoration: none;
+}
+a.mcard {
+  transition: box-shadow 160ms ease, transform 160ms ease;
+}
+a.mcard:hover {
+  box-shadow: var(--shadow-card);
+  transform: translateY(-1px);
+}
+.mcard-tile {
+  flex: 0 0 auto;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: var(--mcard-tile);
+  color: var(--mcard-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+}
+.mcard-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.mcard-title {
+  font-size: 16.5px;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.mcard-subtitle {
+  color: #475467;
+  font-size: 13.5px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.mcard-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: 3px;
+  font-size: 12.5px;
+}
+.mcard-meta-text {
+  color: #475467;
+  font-weight: 600;
+}
+.mcard-done {
+  color: var(--color-success);
+  font-weight: 750;
+}
+.mcard-arrow {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--mcard-tile);
+  color: var(--mcard-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 25px;
+  font-weight: 700;
+  line-height: 1;
+  padding-bottom: 2px;
+}
+.mcard--locked {
+  opacity: 0.66;
+  filter: saturate(0.5);
+}
+.mcard--archive {
+  opacity: 0.85;
+}
+.mcard--locked.mcard--archive {
+  opacity: 0.6;
+}
+
+/* Kepala seksi "Materi Terkini" pada tampilan ringkas tab Materi:
+   judul di kiri, tombol teks "Lihat semua ›" di kanan. */
+.mcard-recent-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.mcard-recent-head h4 {
+  margin: 0;
+  font-size: 16px;
+}
+.mcard-view-all {
+  border: 0;
+  background: transparent;
+  color: var(--color-brand-700);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  padding: 4px 2px;
+}
+.mcard-show-less {
+  border: 0;
+  background: transparent;
+  color: var(--color-brand-700);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 4px 2px;
+  margin-bottom: 10px;
+}
+
 /* Panel "Jurnal Belajar" guru (Hub Murid Tahap 3): daftar kelas →
    murid beserta jumlah entri + entri terakhir, lalu entri per murid.
    Murni baca — tidak ada kontrol penilaian di panel ini. */

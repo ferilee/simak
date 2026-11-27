@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, Suspense, useEffect, useState } from "react";
+import { FormEvent, Suspense, useEffect, useState, type CSSProperties } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiRequest } from "../../lib/api";
 import { decideBaruMarkers, readNilaiSayaBaseline } from "../../lib/nilai-saya";
@@ -11,6 +11,7 @@ import { avatarImagePath, priceLabel, stateLabel, type AvatarCatalogItem, type A
 import { allStepsDone, planAssignmentSteps, planReminderLevel, worksheetStatusFromProgress } from "../../lib/pengingat";
 import { circleAriaLabel, initialPagerIndex, planCircle } from "../../lib/navigasi-tugas";
 import { ARCHIVE_GROUP_NAME, MATERIAL_FILTERS, guidedGroupName, planGuidedMaterials, shouldShowHero, type GuidedModule, type GuidedMaterialsPlan, type MaterialFilter } from "../../lib/materi-terpandu";
+import { glyphForGroup, paletteForGroup, readingMinutes } from "../../lib/kartu-materi";
 import { assessmentStatusLabel, type HubData } from "../../lib/hub-murid";
 import { kelasChip, progresChip, type MuridSectionChip } from "../../lib/beranda-murid";
 import { muridTabFromSearch, type MuridHomeTab } from "../../lib/tab-murid";
@@ -47,6 +48,11 @@ type ModuleSummary = {
   // murid ini untuk modul ini) — dasar hero, progres kelompok, dan
   // arsip "Sudah tuntas" pada daftar materi terpandu.
   material_completed: boolean;
+  // Statistik isi modul untuk baris meta kartu pastel ("7 blok ·
+  // ±10 menit"): jumlah blok + jumlah kata (helper baca-wajar yang
+  // sama dengan halaman materi); 0 = tidak ada angka yang ditampilkan.
+  block_count: number;
+  word_count: number;
 };
 
 // Bentuk masukan perencana daftar materi terpandu (lib/materi-
@@ -62,6 +68,11 @@ type MaterialCardData = {
   materialCompleted: boolean;
   locked: boolean;
   lockedByTitle: string | null;
+  // Meta kartu pastel: jumlah blok + jumlah kata dari server, dan
+  // updated_at baris modul (dasar urutan "Materi Terkini").
+  block_count: number;
+  word_count: number;
+  updated_at: string;
 };
 type AssignmentSummary = {
   id: number;
@@ -287,9 +298,33 @@ export default function MuridPage() {
     materialCompleted: module.material_completed,
     locked: module.locked,
     lockedByTitle: module.locked_by_title,
+    block_count: module.block_count,
+    word_count: module.word_count,
+    updated_at: module.updated_at,
   }));
   const guidedPlan = planGuidedMaterials(materialInputs, materialFilter, materialQuery);
   const archiveOpen = archiveOpenOverride ?? guidedPlan.archiveOpenByDefault;
+
+  // Tampilan ringkas tab Materi (kartu pastel): bawaan hanya "Materi
+  // Terkini" — tiga modul paling baru — dan daftar lengkap (saringan,
+  // pencarian, hero, kelompok, arsip) baru tampil sesudah murid
+  // mengetuk "Lihat semua". Tiga terkini diambil dari rencana terpandu
+  // TANPA saringan/kata cari (keadaan bawaan), digabung dari bagian
+  // kelompok + arsip + hero, didedupe per id, lalu diurut updated_at
+  // menurun: modul yang paling baru diterbitkan/diperbarui di atas.
+  const [materialsExpanded, setMaterialsExpanded] = useState(false);
+  const recentModules = (() => {
+    const recentPlan = planGuidedMaterials(materialInputs, "semua", "");
+    const byId = new Map<number, GuidedModule<MaterialCardData>>();
+    if (recentPlan.hero) byId.set(recentPlan.hero.id, recentPlan.hero);
+    for (const section of recentPlan.groups) {
+      for (const module of section.modules) byId.set(module.id, module);
+    }
+    for (const module of recentPlan.archive) byId.set(module.id, module);
+    return [...byId.values()]
+      .sort((a, b) => (a.updated_at < b.updated_at ? 1 : a.updated_at > b.updated_at ? -1 : 0))
+      .slice(0, 3);
+  })();
 
   // Chip status kepala kartu bagian beranda (calon v1.0.74,
   // lib/beranda-murid): diturunkan dari data yang sudah dimuat tiap
@@ -814,8 +849,27 @@ export default function MuridPage() {
               </div>
               {data.modules.length === 0 ? (
                 <p className="empty-state">Belum ada materi terbit untuk kelas Anda.</p>
+              ) : !materialsExpanded ? (
+                <div className="mcard-recent">
+                  <div className="mcard-recent-head">
+                    <h4>Materi Terkini</h4>
+                    {guidedPlan.totalCount > 3 ? (
+                      <button type="button" className="mcard-view-all" onClick={() => setMaterialsExpanded(true)}>
+                        Lihat semua ›
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="content-list">
+                    {recentModules.map((module) => (
+                      <GuidedModuleCard key={module.id} module={module} inArchive={module.materialCompleted} />
+                    ))}
+                  </div>
+                </div>
               ) : (
                 <>
+                  <button type="button" className="mcard-show-less" onClick={() => setMaterialsExpanded(false)}>
+                    ‹ Tampilkan lebih sedikit
+                  </button>
                   <div className="material-controls">
                     <div className="material-filter-chips" role="group" aria-label="Saring materi menurut ketuntasan">
                       {MATERIAL_FILTERS.map((item) => (
@@ -944,38 +998,6 @@ function MuridSectionChipPill({ chip }: { chip: MuridSectionChip | null }) {
   return <span className={`murid-home-chip murid-home-chip--${chip.tone}`}>{chip.label}</span>;
 }
 
-// Thumbnail sampul pada kartu daftar materi: URL diterbitkan segar dari
-// kuncinya lewat /uploads/download; selama belum terbit tidak ada yang
-// dirender agar kartu tanpa sampul tidak berubah bentuk.
-function ModuleListCover({ moduleId, coverKey }: { moduleId: number; coverKey: string }) {
-  const [url, setUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void apiRequest<{ ok: true; data: { download_url: string } }>(
-      `/uploads/download?moduleId=${moduleId}&key=${encodeURIComponent(coverKey)}`,
-    )
-      .then((response) => {
-        if (!cancelled) setUrl(response.data.download_url);
-      })
-      .catch(() => {
-        // Kartu tetap tampil tanpa thumbnail.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [moduleId, coverKey]);
-
-  if (!url) return null;
-  return (
-    <img
-      src={url}
-      alt="Sampul materi"
-      style={{ width: "100%", height: 130, objectFit: "cover", borderRadius: 8, display: "block" }}
-    />
-  );
-}
-
 // Kartu hero daftar materi terpandu (v1.0.65): menunjuk SATU materi
 // yang memang giliran murid ini — modul belum-tuntas + tidak-terkunci
 // paling awal pada urutan server — agar murid tidak perlu memilih
@@ -1035,40 +1057,72 @@ function MaterialHero({ plan }: { plan: GuidedMaterialsPlan<MaterialCardData> })
   return null;
 }
 
-// Satu kartu modul pada daftar materi terpandu. Modul terkunci
-// digambar sebagai kartu bertanda kunci BUKAN tautan (penegakan
-// server v1.0.63 menolak bukanya juga); modul tuntas hanya tinggal di
-// arsip (redup + lencana Tuntas, tetap tautan untuk dibaca ulang —
-// dan tetap tunduk pada kunci bila ternyata terkunci); modul isi
-// hero berlencana "Giliranmu" juga di sini. Penanda status dibatasi
-// keadaan yang datanya ada: Tuntas / Terkunci / Giliranmu / tanpa
-// penanda (belum mulai).
+// Satu kartu modul pada daftar materi murid — kini KARTU PASTEL
+// (lib/kartu-materi): ubin glyph per kelompok materi di kiri, judul
+// gelap netral (maks. dua baris), subjudul deskripsi (satu baris),
+// baris meta "jumlah blok · ±menit baca" + status, dan lingkaran
+// panah di kanan; warna kartu/ubin/aksen dari palet kelompoknya lewat
+// properti CSS --mcard-*. Gambar sampul TIDAK lagi digambar di kartu
+// daftar. Modul terkunci digambar sebagai kartu redup bertanda kunci
+// BUKAN tautan (penegakan server v1.0.63 menolak bukanya juga) dengan
+// catatan penghambat yang sama seperti sebelumnya; modul tuntas
+// berpenanda "✓ Tuntas" dan varian arsipnya sedikit lebih redup,
+// tetap tautan untuk dibaca ulang. Modul isi hero berlencana
+// "Giliranmu" dan label ATP tetap tampil sebagai lencana kecil.
 function GuidedModuleCard({ module, inArchive = false }: { module: GuidedModule<MaterialCardData>; inArchive?: boolean }) {
-  return module.locked ? (
-    <article className="content-card assignment-card--locked">
-      {module.cover_key ? <ModuleListCover moduleId={module.id} coverKey={module.cover_key} /> : null}
-      <span className="content-label">{module.subject}</span>
-      <strong>{module.title}</strong>
-      <span className="content-muted">{module.description ?? "Materi pembelajaran SIMAK."}</span>
-      {module.materialCompleted ? <span className="material-done-badge">✓ Sudah tuntas</span> : null}
-      <span className="assignment-locked-note">
-        🔒 Terkunci{module.lockedByTitle ? <> — selesaikan dulu: <strong>{module.lockedByTitle}</strong></> : ""}
+  const palette = paletteForGroup(module.topicGroup);
+  const minutes = readingMinutes(module.word_count);
+  const metaText = [
+    module.block_count > 0 ? `${module.block_count} blok` : null,
+    minutes !== null ? `±${minutes} menit` : null,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(" · ");
+  const style = {
+    "--mcard-bg": palette.bg,
+    "--mcard-tile": palette.tile,
+    "--mcard-accent": palette.accent,
+  } as CSSProperties;
+  const className = `mcard${module.locked ? " mcard--locked" : ""}${inArchive ? " mcard--archive" : ""}`;
+  const body = (
+    <>
+      <span className="mcard-tile" aria-hidden="true">
+        {glyphForGroup(module.topicGroup)}
       </span>
-    </article>
-  ) : (
-    <Link href={`/murid/modules/${module.id}`} className={`content-card content-link${inArchive ? " material-card--completed" : ""}`}>
-      {module.cover_key ? <ModuleListCover moduleId={module.id} coverKey={module.cover_key} /> : null}
-      <span className="content-label">{module.subject}</span>
-      <strong>{module.title}</strong>
-      <span className="content-muted">{module.description ?? "Materi pembelajaran SIMAK."}</span>
-      {module.atpLabel || module.isHero || inArchive ? (
-        <span className="material-card-badges">
+      <span className="mcard-body">
+        <strong className="mcard-title">{module.title}</strong>
+        <span className="mcard-subtitle">{module.description ?? "Materi pembelajaran SIMAK."}</span>
+        <span className="mcard-meta">
+          {metaText ? <span className="mcard-meta-text">{metaText}</span> : null}
+          {module.materialCompleted ? <span className="mcard-done">✓ Tuntas</span> : null}
           {module.atpLabel ? <span className="material-atp-badge">{module.atpLabel}</span> : null}
           {module.isHero ? <span className="material-turn-badge">Giliranmu</span> : null}
-          {inArchive ? <span className="material-done-badge">✓ Tuntas</span> : null}
         </span>
-      ) : null}
-      <span className="content-action">{inArchive ? "Baca lagi →" : "Baca materi →"}</span>
+        {module.locked ? (
+          <span className="assignment-locked-note">
+            🔒 Terkunci{module.lockedByTitle ? <> — selesaikan dulu: <strong>{module.lockedByTitle}</strong></> : ""}
+          </span>
+        ) : null}
+      </span>
+      <span className="mcard-arrow" aria-hidden="true">
+        {module.locked ? (
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+            <rect x="5" y="10.5" width="14" height="9.5" rx="2" fill="currentColor" stroke="none" />
+            <path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" />
+          </svg>
+        ) : (
+          "›"
+        )}
+      </span>
+    </>
+  );
+  return module.locked ? (
+    <article className={className} style={style}>
+      {body}
+    </article>
+  ) : (
+    <Link href={`/murid/modules/${module.id}`} className={className} style={style}>
+      {body}
     </Link>
   );
 }
